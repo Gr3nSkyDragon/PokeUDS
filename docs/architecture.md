@@ -82,6 +82,22 @@ UDS. If the Festival Plaza's local trade uses it, the SecureData payloads are Pi
 carry their own encryption on top of UDS's. The record finder would then see nothing in an Azahar
 log; that alone would tell us Pia is in play, and the decoding layer comes next.
 
+## Virtual Console
+
+The VC titles are a different kind of game: the 3DS emulates the Game Boy link cable over UDS, so
+there is no 3DS game protocol to learn, only the VC's Pia session and the original Game Boy one.
+
+```
+ Game Boy cable     pokeuds/vc/link.py       syncs, room choice, blocks, trade screen (pret)
+ Pia session        pokeuds/vc/session.py    hello, setup, mesh, pings, reliable unit stream
+ Pia frames         pokeuds/vc/pia.py        CRC prefix, messages, HMAC "PokemonSIO" tail
+ UDS                pokeuds/uds              data channel 243, passphrase TRL_NETWORK
+```
+
+`vc/trade.py` runs them together. The engine answers each 3DS unit after seeing it (the VC paces
+one unit per exchange); as host it answers the joiner's unit k with unit k+1, after its own `$EF`.
+See [vc.md](vc.md).
+
 ## Received Pokemon
 
 As in pokeldn, each received record is written the moment it arrives (`received.save`), decrypted, in

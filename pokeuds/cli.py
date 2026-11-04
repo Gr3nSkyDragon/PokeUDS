@@ -5,6 +5,7 @@
     sniff    decrypt a session between two other consoles into a transcript
     analyze  summarize an Azahar log or a sniff transcript, and find Pokemon inside
     pkx      show a .pk6/.pk7 (or .ek6/.ek7) file
+    vc       Virtual Console Gen 1/2: trade, show or convert a .pk1/.pk2
     trade    trade with a retail console (xy, oras, sm, usum), joining or hosting
 """
 
@@ -180,6 +181,13 @@ def cmd_analyze(args) -> int:
             target = folder / f"msg{record.message}_{s.species:03d}_{s.pid:08X}.{pkx.guess_format(record.record).extension}"
             target.write_bytes(pkx.to_stored(record.record))
             print(f"    -> {target}")
+    from .capture import vc as vccap
+
+    streams = vccap.unit_streams(messages)
+    for direction, stream in streams.items():
+        print(f"VC game stream ({direction}): {len(stream)} Game Boy bytes, starting {bytes(stream[:16]).hex(' ')}")
+    for found in vccap.find_parties(streams):
+        print("    " + vccap.describe(found))
     if args.out:
         transcript.write_jsonl(messages, args.out)
         print(f"transcript written to {args.out}")
@@ -240,6 +248,68 @@ def cmd_trade(args) -> int:
     return 0
 
 
+def cmd_vc_show(args) -> int:
+    from . import gbpk
+
+    record = gbpk.load(args.file)
+    print(f"Generation {record.generation}: {record.describe()}, moves {record.moves}"
+          + (f", item {record.held_item:#04x}" if record.generation == 2 else ""))
+    if record.generation == 2 and (problems := gbpk.gen1_compatible(record)):
+        print("cannot go through the Time Capsule: " + "; ".join(problems))
+    return 0
+
+
+def cmd_vc_convert(args) -> int:
+    from . import gbpk
+
+    record = gbpk.load(args.file)
+    out = gbpk.gen2_to_gen1(record) if record.generation == 2 else gbpk.gen1_to_gen2(record)
+    target = Path(args.output) if args.output else Path(args.file).with_suffix("." + out.extension)
+    target.write_bytes(out.to_file())
+    print(f"{out.describe()} -> {target}")
+    return 0
+
+
+def cmd_vc_trade(args) -> int:
+    from . import gbpk
+    from .games import vc as titles
+    from .radio import open_radio
+    from .uds import Station
+    from .vc.trade import VcTrade
+
+    offer = gbpk.load(args.offer)
+    mail_file = Path(args.offer).with_suffix(".mail")
+    mail = mail_file.read_bytes()[:47] if offer.generation == 2 and mail_file.exists() else b""
+    if args.role == "host" and not args.as_title:
+        raise SystemExit("hosting needs --as TITLE (the VC title PokeUDS stands in for)")
+    station = Station(open_radio(args.radio), args.mac or random_mac(), _uds_key(args.keys), name=args.name)
+    station.start(titles.CHANNEL if args.role == "host" else args.channel)
+    trade = VcTrade(station, offer, Path(args.output), trades=args.trades, trainer_name=args.name, offer_mail=mail)
+    try:
+        if args.role == "host":
+            title = titles.TITLES[args.as_title]
+            partner = {"gen1": 1, "gen2": 2}.get(args.partner, title.generation)
+            print(f"hosting as {title.name} (experimental); choose Join in the 3DS's VC link menu")
+            trade.host(title, partner, args.seconds)
+        else:
+            partner = {"gen1": 1, "gen2": 2}.get(args.partner)
+            print("looking for a VC host; choose Host in the 3DS's VC link menu")
+            trade.join(args.seconds, partner)
+        print(f"connected: {trade.mode.key} trade, offering {offer.describe()}; walk to the Trade Center table")
+        trade.run(args.run_seconds)
+    except TimeoutError as exc:
+        print(f"stopped: {exc}", file=sys.stderr)
+        return 1
+    except KeyboardInterrupt:
+        pass
+    finally:
+        if trade.session:
+            trade.session.leave(0)
+        station.close()
+    print(f"{len(trade.saved)} file(s) written to {args.output}")
+    return 0
+
+
 GAME_KEYS = ["xy", "oras", "sm", "usum"]
 
 
@@ -279,6 +349,32 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("pkx", aliases=["pk6", "pk7"], help="show a .pk6/.pk7 (or .ek6/.ek7) file")
     p.add_argument("file")
     p.set_defaults(func=cmd_pkx)
+
+    vc = sub.add_parser("vc", help="Virtual Console Gen 1/2 (Red, Blue, Yellow, Gold, Silver, Crystal)")
+    vsub = vc.add_subparsers(dest="vc_command", required=True)
+    p = vsub.add_parser("trade", help="trade through the VC link menu (Gen 1, Gen 2, or the Time Capsule)")
+    _add_radio(p)
+    _add_keys(p)
+    p.add_argument("--offer", required=True, help=".pk1 or .pk2 to send (a .pk2 may have a .mail beside it)")
+    p.add_argument("--output", default="received", help="folder for the Pokemon received (default: received/)")
+    p.add_argument("--role", choices=["join", "host"], default="join",
+                   help="join the 3DS's network (default; the 3DS chooses Host) or host one (experimental)")
+    p.add_argument("--as", dest="as_title", choices=["red", "blue", "yellow", "gold", "silver", "crystal"],
+                   help="as host: the title PokeUDS stands in for (its comm id)")
+    p.add_argument("--partner", choices=["gen1", "gen2"],
+                   help="the 3DS's generation; join finds it from the beacon, host defaults to --as's")
+    p.add_argument("--trades", type=int, default=1, help="how many trades before PokeUDS chooses Cancel")
+    p.add_argument("--name", default="POKEUDS", help="trainer name the 3DS sees (Game Boy text, up to 7)")
+    p.add_argument("--seconds", type=float, default=120.0, help="how long to wait for the 3DS")
+    p.add_argument("--run-seconds", type=float, help="stop after this long (default: when the session ends)")
+    p.set_defaults(func=cmd_vc_trade)
+    p = vsub.add_parser("show", help="show a .pk1/.pk2 file")
+    p.add_argument("file")
+    p.set_defaults(func=cmd_vc_show)
+    p = vsub.add_parser("convert", help="convert .pk1 <-> .pk2 as the Time Capsule does")
+    p.add_argument("file")
+    p.add_argument("--output")
+    p.set_defaults(func=cmd_vc_convert)
 
     p = sub.add_parser("trade", help="trade with a retail console")
     p.add_argument("game", choices=GAME_KEYS)

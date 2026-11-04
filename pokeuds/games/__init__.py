@@ -1,8 +1,8 @@
 """Game protocols on top of UDS.
 
 Implemented as alpha (UDS session in both roles, trade messages pending captures): Pokemon X/Y and
-ORAS (``gen6``), Sun/Moon and Ultra Sun/Ultra Moon (``gen7``). Planned: the Virtual Console
-Generation 1 and 2 games, which use UDS directly with the "TRL_NETWORK" passphrase.
+ORAS (``gen6``), Sun/Moon and Ultra Sun/Ultra Moon (``gen7``). The Virtual Console Game Boy titles
+(``vc``, with the trade itself in ``pokeuds.vc``) implement the whole trade, tested in simulation.
 """
 
 from __future__ import annotations
