@@ -57,8 +57,11 @@ pip install -r requirements-gui.txt
 python -m gui
 ```
 
-Pick a game, the Pokemon to offer and who hosts, then Start ([docs/gui.md](docs/gui.md)). Settings, Debug
-tools adds a demo radio that trades with a simulated 3DS, a network scan and capture analysis.
+Pick a game, the Pokemon to offer and who hosts, then Start ([docs/gui.md](docs/gui.md)). The Bank keeps
+every Pokemon received, imported or built; the Builder makes a legal one with PKHeX when you have no file
+([docs/pkhex.md](docs/pkhex.md); build the helper once with `dotnet build -c Release services/pkhex`); the
+Board page installs the ESP32 firmware. Settings, Debug tools adds a demo radio that trades with a
+simulated 3DS, a network scan and capture analysis.
 
 ### The command line
 
@@ -123,7 +126,7 @@ filled in from captures.
 | `pokeuds/gbpk.py` | .pk1/.pk2 records and the Time Capsule conversions |
 | `profiles/` | Per-game constants filled in from captures |
 | `gui/`, `pokeuds/app/` | The app (Flet) and what it shares with the command line: settings, catalog, child runs, progress |
-| `docs/` | [The app](docs/gui.md), [architecture](docs/architecture.md), [UDS protocol](docs/uds.md), [Virtual Console](docs/vc.md), [hardware](docs/hardware.md), [captures](docs/captures.md) |
+| `docs/` | [The app](docs/gui.md), [architecture](docs/architecture.md), [UDS protocol](docs/uds.md), [Virtual Console](docs/vc.md), [hardware](docs/hardware.md), [captures](docs/captures.md), [PKHeX helper](docs/pkhex.md), [Mystery Gift feasibility](docs/mystery_gift.md) |
 
 ```bash
 python -m pytest -q
