@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+build/
+dist/
+
+# Local secrets and outputs: never commit console keys, captures or received Pokemon.
+aes_keys.txt
+*.keys
+received/
+captures/
+*.log
+profiles/*.local.toml

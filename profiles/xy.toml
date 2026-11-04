@@ -1,0 +1,29 @@
+# Pokemon X / Y local wireless profile.
+#
+# These values are fixed per game, not per console. None of them are published, so they come from
+# captures (docs/captures.md). Values left empty make `pokeuds trade xy` stop and say which field
+# is missing. Copy this file to profiles/xy.local.toml (ignored by git) to fill it in locally.
+
+[network]
+# UDS communication id the game passes to the NWM service (BeginHostingNetwork / beacon tag).
+# Azahar logs it as wlanCommId=0x........ on BeginHostingNetwork and ConnectToNetwork.
+wlan_comm_id = ""
+
+# The passphrase the game passes to ConnectToNetwork, as hex bytes, including any trailing NUL.
+# Azahar logs it as "ConnectToNetwork key-derivation input ... inputBytes=..". It is only an input
+# to the CCMP key derivation; the derivation also needs the console's keyslot 0x2D key.
+passphrase_hex = ""
+
+# NetworkInfo.id (a sub-id inside the comm id); 0 unless a capture shows otherwise.
+id = 0
+
+# Nodes per network as the game creates it (a trade is 2).
+max_nodes = 2
+
+# Preferred channel when hosting; 0 lets the station pick 11 like the NWM default.
+channel = 0
+
+[trade]
+# SecureData channel(s) the game binds for trade traffic. From the "channel=" field of the
+# UDS DATA TRACE lines.
+data_channels = []
