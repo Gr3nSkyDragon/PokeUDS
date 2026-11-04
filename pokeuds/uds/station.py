@@ -30,7 +30,7 @@ import queue
 import threading
 import time
 from dataclasses import dataclass, field
-from typing import Callable
+from typing import Callable, Iterable
 
 from ..radio.base import DISCOVERY_CHANNELS, Radio
 from ..util import BROADCAST, mac_str
@@ -127,7 +127,7 @@ class Station:
 
     # -- scanning ---------------------------------------------------------------------------------
 
-    def scan(self, seconds: float, *, wlan_comm_id: int | None = None, channels=DISCOVERY_CHANNELS,
+    def scan(self, seconds: float, *, wlan_comm_id: int | Iterable[int] | None = None, channels=DISCOVERY_CHANNELS,
              until: Callable[[bcn.Beacon], bool] | None = None) -> list[bcn.Beacon]:
         """Hop ``channels`` for ``seconds`` collecting the UDS beacons heard meanwhile (optionally of
         one game). While hosting or connected the radio stays on the network's channel."""
@@ -156,10 +156,11 @@ class Station:
             index += 1
         return self._matching(wlan_comm_id, started)
 
-    def _matching(self, wlan_comm_id: int | None, since: float) -> list[bcn.Beacon]:
+    def _matching(self, wlan_comm_id: int | Iterable[int] | None, since: float) -> list[bcn.Beacon]:
+        wanted = None if wlan_comm_id is None else {wlan_comm_id} if isinstance(wlan_comm_id, int) else set(wlan_comm_id)
         with self._lock:
             return [b for host, b in self.beacons.items() if self._beacon_times.get(host, 0) >= since
-                    and (wlan_comm_id is None or b.info.wlan_comm_id == wlan_comm_id)]
+                    and (wanted is None or b.info.wlan_comm_id in wanted)]
 
     # -- hosting ----------------------------------------------------------------------------------
 

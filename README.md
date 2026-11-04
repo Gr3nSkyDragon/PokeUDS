@@ -4,15 +4,19 @@ PokeUDS trades with retail Pokemon games on Nintendo 3DS over local wireless (UD
 [pokeldn](https://github.com/Decryptu/pokeldn) does for Switch: a computer with an ESP32-S3 board or a
 USB Wi-Fi adapter stands in for a second console. Nothing is installed on the 3DS.
 
-Status: **foundation**. The radio backends and the UDS layer (scanning, hosting, joining, CCMP,
+Status: **alpha**. The radio backends and the UDS layer (scanning, hosting, joining, CCMP,
 SecureData) work and are tested against each other in simulation; nothing has run on hardware yet.
-The Pokemon X/Y trade messages that ride inside UDS are not mapped yet; they need captures
+The Generation 6 trade messages that ride inside UDS are not mapped yet; they need captures
 ([docs/captures.md](docs/captures.md)).
 
 | | X/Y | ORAS | Sun/Moon | USUM | VC Gen 1 | VC Gen 2 |
 |---|:---:|:---:|:---:|:---:|:---:|:---:|
-| UDS session | ✓ (untested on hardware) | planned | planned | planned | planned | planned |
-| Trade | needs captures | - | - | - | - | - |
+| UDS session, join | ✓ | ✓ | planned | planned | planned | planned |
+| UDS session, host | ✓ | ✓ | planned | planned | planned | planned |
+| Trade messages | needs captures | needs captures | - | - | - | - |
+
+✓ works in simulation, untested on hardware. X/Y and ORAS share one module (`games/gen6`): the same
+PSS, the same record format, and they trade with each other.
 
 ## Hardware
 
@@ -56,9 +60,19 @@ python -m pokeuds sniff --radio esp32 --keys aes_keys.txt --game xy --out captur
 python -m pokeuds trade xy --radio esp32 --keys aes_keys.txt --offer my.pk6 --output received
 ```
 
-`trade` loads and checks the offer, finds the console, joins its network and then stops with an
-explanation, since the X/Y messages are not mapped yet; whatever the console sends is logged.
-Received Pokemon go to `--output` as `<time>_xy_trade<N>_<species>_<nickname>_<PID>.pk6`.
+```bash
+python -m pokeuds trade oras --role host --radio esp32 --keys aes_keys.txt --offer my.pk6
+```
+
+`trade` loads and checks the offer, then either finds the console and joins its network
+(`--role join`, the default) or opens a network and waits for the console to join (`--role host`,
+advertising the profile's application data or `--application-data HEX`). Once connected it records
+what the console sends for `--listen` seconds and saves any Pokemon found in it, then stops with an
+explanation, since the trade messages are not mapped yet. Received Pokemon go to `--output` as
+`<time>_<game>_trade<N>_<species>_<nickname>_<PID>.pk6`.
+
+Each game reads its constants from `profiles/<game>.toml` (or an untracked `<game>.local.toml`),
+filled in from captures.
 
 ## Layout
 
@@ -68,7 +82,7 @@ Received Pokemon go to `--output` as `<time>_xy_trade<N>_<species>_<nickname>_<P
 | `pokeuds/uds/` | 802.11 frames, beacons, CCMP and key derivation, SecureData, EAPoL, the station (host/client), the sniffer |
 | `pokeuds/pk6.py`, `received.py` | Generation 6 records (crypto, checksum, summary) and the output folder |
 | `pokeuds/capture/` | Azahar-log and sniff transcripts, Pokemon finder |
-| `pokeuds/games/xy/` | X/Y profile and trade session |
+| `pokeuds/games/gen6/` | X/Y and ORAS: game registry, profile loader, trade session (join and host) |
 | `profiles/` | Per-game constants filled in from captures |
 | `docs/` | [Architecture](docs/architecture.md), [UDS protocol](docs/uds.md), [hardware](docs/hardware.md), [captures](docs/captures.md) |
 

@@ -5,7 +5,7 @@ the NWM system module to scan, host or join, and then sends and receives SecureD
 numbered data channels. PokeUDS does NWM's job in Python, and then plays the game's part on top.
 
 ```
- game protocol      pokeuds/games/xy        trade messages, the offer, the received record
+ game protocol      pokeuds/games/gen6      trade messages, the offer, the received record
  ------------------------------------------------------------------------------------------
  UDS (NWM)          pokeuds/uds/station     beacons, auth/assoc, EAPoL join, node ids,
                     pokeuds/uds/{beacon,     CCMP, SecureData channels, keepalive
@@ -47,8 +47,18 @@ CCMP packet number), since a monitor sees every copy.
 ## Games
 
 A game module gets a connected `Station` and speaks the game's messages through `send`/`recv`.
-Per-game constants (comm id, passphrase, data channels) live in `profiles/<game>.toml`, filled in
-from captures, so no value in the code is a guess.
+Per-game constants (comm id, passphrase, data channels, the application data a host advertises)
+live in `profiles/<game>.toml`, filled in from captures, so no value in the code is a guess.
+
+Games that share a protocol share a module. `games/gen6` covers X/Y and ORAS: one `Gen6Trade`
+session with both roles, parameterized by a `Game` entry (titles, origin versions) and its profile.
+A profile's `also_join_comm_ids` lets one game join another's networks (ORAS with an X/Y host) if
+captures show their comm ids differ.
+
+| role | the session |
+|---|---|
+| join | scan for the profile's comm ids, pick the strongest host, join it as a client |
+| host | open a network with the profile's comm id and application data, wait for an EAPoL join |
 
 ## Received Pokemon
 

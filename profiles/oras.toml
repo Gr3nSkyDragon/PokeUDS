@@ -1,0 +1,39 @@
+# Pokemon Omega Ruby / Alpha Sapphire local wireless profile.
+#
+# Same fields as xy.toml, all from captures (docs/captures.md). ORAS trades with X/Y (verified
+# in azahar_uds: X with Alpha Sapphire), so the comm id and passphrase may turn out to be X/Y's;
+# record what the captures show rather than copying xy.toml. Copy to profiles/oras.local.toml
+# (ignored by git) to fill it in locally.
+
+[network]
+# UDS communication id the game passes to the NWM service (BeginHostingNetwork / beacon tag).
+# Azahar logs it as wlanCommId=0x........ on BeginHostingNetwork and ConnectToNetwork;
+# `pokeuds scan` shows it as "comm" for a console idling in the PSS.
+wlan_comm_id = ""
+
+# The passphrase the game passes to ConnectToNetwork, as hex bytes, including any trailing NUL.
+# Azahar logs it as "ConnectToNetwork key-derivation input ... inputBytes=..". It is only an input
+# to the CCMP key derivation; the derivation also needs the console's keyslot 0x2D key.
+passphrase_hex = ""
+
+# NetworkInfo.id (a sub-id inside the comm id); 0 unless a capture shows otherwise.
+id = 0
+
+# Nodes per network as the game creates it (a trade is 2).
+max_nodes = 2
+
+# Preferred channel when hosting; 0 picks 11 like the NWM default.
+channel = 0
+
+# Application data a host advertises in its beacon (hex); likely what the PSS lists a player from
+# (unconfirmed). Copy it from `pokeuds scan` (appdata) or BeginHostingNetwork in an Azahar log.
+application_data_hex = ""
+
+# Comm ids of other games' networks this game may join, if they differ from wlan_comm_id.
+# If ORAS and X/Y use different comm ids, put X/Y's here so ORAS can join an X/Y host.
+also_join_comm_ids = []
+
+[trade]
+# SecureData channel(s) the game binds for trade traffic. From the "channel=" field of the
+# UDS DATA TRACE lines.
+data_channels = []

@@ -1,4 +1,4 @@
-# Captures needed for Pokemon X/Y
+# Captures needed for Generation 6 (X/Y, ORAS)
 
 PokeUDS can already bring up the UDS session X/Y uses. What it cannot do yet is talk to the game:
 there is no decompilation of the Generation 6 games (no pret project covers them), and nothing public
@@ -32,6 +32,19 @@ run (Azahar's `log/azahar_log.txt`, copied after closing the game).
 3. **A cancelled trade.** Offer a Pokemon, then back out at the final confirmation.
 4. **Two trades in one session**, if the game allows it without leaving the trade screen.
 5. **X with Y**, if you have both, so a version check in the messages would show up.
+
+Then the same for ORAS:
+
+6. **ORAS with ORAS**, runs 1 and 2 above (retail requests, Azahar requests). This tells us ORAS's comm
+   id and passphrase for `profiles/oras.toml`, and whether its messages differ from X/Y's.
+7. **ORAS with X/Y**, once in each direction (an ORAS console requesting an X/Y one, and back). If ORAS
+   and X/Y turn out to use different comm ids, this shows which network the mixed pair uses, and the
+   other id goes into `also_join_comm_ids`.
+
+For each run, note which side PokeUDS would have to play: the console that ends up **hosting** the
+trade's network (Azahar logs `BeginHostingNetwork`) and the one that **joins** (`ConnectToNetwork`).
+PokeUDS can take either role; a run where Azahar hosts gives the application data a host advertises
+(`application_data_hex`), and a run where Azahar joins gives the passphrase.
 
 Also helpful: `python -m pokeuds scan --radio esp32 --seconds 60 --json captures/pss.json` with a
 retail console idling in the PSS, which records its presence beacons and application data directly.

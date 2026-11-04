@@ -6,7 +6,8 @@
 
 [network]
 # UDS communication id the game passes to the NWM service (BeginHostingNetwork / beacon tag).
-# Azahar logs it as wlanCommId=0x........ on BeginHostingNetwork and ConnectToNetwork.
+# Azahar logs it as wlanCommId=0x........ on BeginHostingNetwork and ConnectToNetwork;
+# `pokeuds scan` shows it as "comm" for a console idling in the PSS.
 wlan_comm_id = ""
 
 # The passphrase the game passes to ConnectToNetwork, as hex bytes, including any trailing NUL.
@@ -20,8 +21,16 @@ id = 0
 # Nodes per network as the game creates it (a trade is 2).
 max_nodes = 2
 
-# Preferred channel when hosting; 0 lets the station pick 11 like the NWM default.
+# Preferred channel when hosting; 0 picks 11 like the NWM default.
 channel = 0
+
+# Application data a host advertises in its beacon (hex); likely what the PSS lists a player from
+# (unconfirmed). Copy it from `pokeuds scan` (appdata) or BeginHostingNetwork in an Azahar log.
+application_data_hex = ""
+
+# Comm ids of other games' networks this game may join, if they differ from wlan_comm_id.
+# X/Y trade with ORAS; if ORAS uses its own comm id, X/Y joining an ORAS host needs it here.
+also_join_comm_ids = []
 
 [trade]
 # SecureData channel(s) the game binds for trade traffic. From the "channel=" field of the

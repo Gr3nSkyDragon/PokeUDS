@@ -5,7 +5,7 @@
     sniff    decrypt a session between two other consoles into a transcript
     analyze  summarize an Azahar log or a sniff transcript, and find Pokemon inside
     pk6      show a .pk6/.ek6 file
-    trade    trade with a retail console (xy)
+    trade    trade with a retail console (xy, oras), joining or hosting
 """
 
 from __future__ import annotations
@@ -99,14 +99,14 @@ def cmd_scan(args) -> int:
 def _profile_passphrase(args) -> tuple[bytes, int | None]:
     if args.passphrase:
         return parse_hex(args.passphrase), args.comm_id
-    if args.game == "xy":
-        from .games.xy import profile
+    if args.game:
+        from .games.gen6 import profile
 
-        prof = profile.load(args.profile)
+        prof = profile.load(args.game, args.profile)
         if not prof.passphrase:
             raise SystemExit(f"{prof.source} has no passphrase_hex yet; pass --passphrase (docs/captures.md)")
         return prof.passphrase, args.comm_id or prof.wlan_comm_id
-    raise SystemExit("give --passphrase HEX or --game xy")
+    raise SystemExit("give --passphrase HEX or --game GAME")
 
 
 def cmd_sniff(args) -> int:
@@ -161,11 +161,14 @@ def cmd_analyze(args) -> int:
     messages, facts = transcript.load(args.capture)
     print(transcript.summarize(messages))
     if facts.passphrases:
-        print("passphrase candidates (profiles/xy.toml network.passphrase_hex):")
+        print("passphrase candidates (profiles/<game>.toml network.passphrase_hex):")
         for value in sorted(facts.passphrases):
             print(f"    {value}")
     if facts.wlan_comm_ids:
         print("wlan comm ids: " + ", ".join(f"0x{c:08X}" for c in sorted(facts.wlan_comm_ids)))
+    for hosted in facts.hosting:
+        print("hosted network: " + ", ".join(f"{k}={v}" for k, v in hosted.items()
+                                             if k in ("wlanCommId", "id", "channel", "maxNodes", "applicationDataSize")))
     for record in transcript.find_pokemon(messages):
         s = record.summary
         m = messages[record.message]
@@ -186,44 +189,55 @@ def cmd_analyze(args) -> int:
 def cmd_pk6(args) -> int:
     record = pk6.load(args.file)
     s = pk6.summary(record)
+    from .games.gen6 import VERSION_NAMES
+
+    version = VERSION_NAMES.get(s.version, f"version {s.version}")
     print(f"species {s.species}  nickname '{s.nickname}'  OT '{s.ot_name}' {s.tid:05d}/{s.sid:05d}  "
-          f"PID {s.pid:08X}  EC {s.encryption_constant:08X}  language {s.language}"
+          f"PID {s.pid:08X}  EC {s.encryption_constant:08X}  language {s.language}  from {version}"
           f"{'  shiny' if s.shiny else ''}{'  egg' if s.is_egg else ''}")
     print(f"checksum valid, {len(record)} bytes")
     return 0
 
 
 def cmd_trade(args) -> int:
-    if args.game != "xy":
-        raise SystemExit("only xy is implemented")
-    from .games.xy import profile
-    from .games.xy.trade import ProtocolNotMapped, XyTrade
+    from .games import gen6
+    from .games.gen6 import profile
+    from .games.gen6.trade import Gen6Trade, ProtocolNotMapped
     from .radio import open_radio
     from .uds import Station
 
+    game = gen6.get(args.game)
     offer = pk6.load(args.offer)
-    prof = profile.load(args.profile)
+    prof = profile.load(game.key, args.profile)
     if missing := prof.missing():
         raise SystemExit(f"{prof.source} is missing {', '.join(missing)}; these come from captures "
                          "(docs/captures.md)")
     station = Station(open_radio(args.radio), args.mac or random_mac(), _uds_key(args.keys), name=args.name)
     station.start(args.channel)
-    trade = XyTrade(station, prof, offer, Path(args.output))
+    trade = Gen6Trade(station, game, prof, offer, Path(args.output))
     try:
         if args.role == "host":
-            trade.host()
-            print("hosting; waiting for the console to join")
-            while station.role.name == "HOST" and not any(p.connected for p in station.peers.values()):
-                time.sleep(0.2)
+            appdata = parse_hex(args.application_data) if args.application_data is not None else None
+            trade.host(appdata)
+            print(f"hosting {game.name} on channel {station.network.channel}; waiting {args.seconds:.0f} s "
+                  "for the console to join")
+            trade.wait_for_partner(args.seconds)
         else:
             trade.join(args.seconds)
-        trade.run()
+        print(f"connected as {station.role.value}, node {station.node_id}")
+        trade.run(args.listen)
     except ProtocolNotMapped as exc:
         print(f"stopped: {exc}", file=sys.stderr)
         return 2
+    except TimeoutError as exc:
+        print(f"stopped: {exc}", file=sys.stderr)
+        return 1
     finally:
         station.close()
     return 0
+
+
+GAME_KEYS = ["xy", "oras"]
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -245,8 +259,8 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("sniff", help="decrypt another pair of consoles' session")
     _add_radio(p)
     _add_keys(p)
-    p.add_argument("--game", choices=["xy"], help="take the passphrase and comm id from the game profile")
-    p.add_argument("--profile", help="profile file (default profiles/xy[.local].toml)")
+    p.add_argument("--game", choices=GAME_KEYS, help="take the passphrase and comm id from the game profile")
+    p.add_argument("--profile", help="profile file (default profiles/<game>[.local].toml)")
     p.add_argument("--passphrase", help="the game's UDS passphrase as hex")
     p.add_argument("--comm-id", type=lambda s: int(s, 0))
     p.add_argument("--seconds", type=float)
@@ -264,15 +278,20 @@ def main(argv: list[str] | None = None) -> int:
     p.set_defaults(func=cmd_pk6)
 
     p = sub.add_parser("trade", help="trade with a retail console")
-    p.add_argument("game", choices=["xy"])
+    p.add_argument("game", choices=GAME_KEYS)
     _add_radio(p)
     _add_keys(p)
     p.add_argument("--offer", required=True, help="the .pk6 to send")
     p.add_argument("--output", default="received", help="folder for the Pokemon received (default: received/)")
-    p.add_argument("--role", choices=["join", "host"], default="join")
+    p.add_argument("--role", choices=["join", "host"], default="join",
+                   help="join the console's network (default) or host one for it to join")
+    p.add_argument("--application-data", metavar="HEX",
+                   help="as host: beacon application data, overriding the profile's application_data_hex")
     p.add_argument("--name", default="PokeUDS", help="the Mii name other consoles see")
-    p.add_argument("--profile", help="profile file (default profiles/xy[.local].toml)")
-    p.add_argument("--seconds", type=float, default=60.0, help="how long to look for the console")
+    p.add_argument("--profile", help="profile file (default profiles/<game>[.local].toml)")
+    p.add_argument("--seconds", type=float, default=60.0,
+                   help="how long to look for the console (join) or wait for it to join (host)")
+    p.add_argument("--listen", type=float, default=20.0, help="how long to record the console once connected")
     p.set_defaults(func=cmd_trade)
 
     args = parser.parse_args(argv)

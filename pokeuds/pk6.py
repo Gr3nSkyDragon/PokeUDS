@@ -1,4 +1,4 @@
-"""Generation 6 Pokemon records (X/Y, Omega Ruby/Alpha Sapphire).
+"""Generation 6 Pokemon records (X/Y, Omega Ruby/Alpha Sapphire), shared by both games.
 
 A record is 232 bytes in a box (``.pk6`` decrypted, ``.ek6`` encrypted) and 260 bytes in a party
 (the extra 28 bytes hold status and battle stats). Encryption: the 0xE0 bytes after the 8-byte
@@ -106,6 +106,7 @@ class Summary:
     language: int
     is_egg: bool
     level: int | None
+    version: int                 # Origin game (0xDF): 24 X, 25 Y, 26 Alpha Sapphire, 27 Omega Ruby.
 
     @property
     def shiny(self) -> bool:
@@ -119,7 +120,7 @@ def summary(pkx: bytes) -> Summary:
     iv32, = struct.unpack_from("<I", pkx, 0x74)
     level = pkx[0xEC] if len(pkx) == PARTY_SIZE else None
     return Summary(ec, pid, species, item, tid, sid, _text(pkx[0x40:0x5A]), _text(pkx[0xB0:0xCA]), pkx[0xE3],
-                   bool(iv32 >> 30 & 1), level)
+                   bool(iv32 >> 30 & 1), level, pkx[0xDF])
 
 
 def looks_like_pk6(pkx: bytes) -> bool:
