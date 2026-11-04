@@ -14,3 +14,8 @@ received/
 captures/
 *.log
 profiles/*.local.toml
+
+# The PKHeX helper build output.
+services/pkhex/bin/
+services/pkhex/obj/
+services/pkhex/publish/
