@@ -18,11 +18,12 @@ from gui.views.board import BoardView  # noqa: E402
 from gui.views.builder import BuilderView  # noqa: E402
 from gui.views.bank import BankView  # noqa: E402
 from gui.views.debug import DebugView  # noqa: E402
+from gui.views.gifts import GiftsView  # noqa: E402
 from gui.views.radio import RadioView  # noqa: E402
 from gui.views.settings import SettingsView  # noqa: E402
 from gui.views.trade import TradeView  # noqa: E402
 
-PAGES = (TradeView, BankView, BuilderView, RadioView, BoardView, SettingsView)
+PAGES = (TradeView, BankView, BuilderView, GiftsView, RadioView, BoardView, SettingsView)
 
 
 class Shell:

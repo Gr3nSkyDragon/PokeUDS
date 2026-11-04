@@ -59,3 +59,29 @@ def test_build_and_keep(tmp_path):
     entry = builder.keep(builder.build(wish, Trainer("DANA", 2468)), b, wish)
     assert entry.shiny and entry.legal and entry.source == "built" and entry.meta["built_for"] == "gsc"
     assert bank.games_for(entry) == ["rby", "gsc"]
+
+
+@pytest.mark.skipif(pkhex.helper_path() is None, reason="the PKHeX helper is not built")
+def test_gifts_page_builds_headless(tmp_path, monkeypatch):
+    pytest.importorskip("flet")
+    monkeypatch.setenv("POKEUDS_DATA", str(tmp_path))
+    from gui.app import App
+    from gui.views.gifts import GiftsView
+    from pokeuds.app.settings import Settings
+
+    app = App(None, Settings(output=str(tmp_path / "received")))
+    view = GiftsView(app)
+    view.cards["oras"] = pkhex.shared().gifts("oras")
+    view.control()
+    ray = next(c for c in view.cards["oras"] if c["species_name"] == "Rayquaza" and c["shiny"] == "always")
+    view.gift = pkhex.shared().gift("oras", key=ray["key"], trainer=view.trainer())
+    view.control()                                   # with the result panel
+    view._keep(None)
+    assert view.saved and view.saved.species == "Rayquaza" and view.saved.source == "gift"
+    view.mode = "custom"
+    view.lists["oras"] = {"species": [[25, "Pikachu"]], "items": [[50, "Rare Candy"]]}
+    for kind in ("pokemon", "item"):
+        view.form["kind"] = kind
+        view.control()
+    view.mode = "file"
+    view.control()

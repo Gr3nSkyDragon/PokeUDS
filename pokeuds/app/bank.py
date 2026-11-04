@@ -26,7 +26,8 @@ from .settings import data_dir
 
 EXTENSIONS = (".pk1", ".pk2", ".pk6", ".pk7")
 IMPORTABLE = EXTENSIONS + (".ek6", ".ek7")
-SOURCES = {"received": "Received", "imported": "Imported", "built": "Built", "converted": "Converted"}
+SOURCES = {"received": "Received", "imported": "Imported", "built": "Built", "converted": "Converted",
+           "gift": "Mystery Gift"}
 _UNSAFE = re.compile(r"[^\w\-]+", re.UNICODE)
 
 

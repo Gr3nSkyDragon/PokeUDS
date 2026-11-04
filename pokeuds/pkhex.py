@@ -57,6 +57,16 @@ class Built:
     summary: dict
 
 
+@dataclass
+class Gift:
+    card: dict                # card_id, title, kind, games, species_name, level, shiny, ot, moves, ...
+    card_data: bytes          # the 264-byte card (.wc6 / .wc7)
+    full_data: bytes          # the 784-byte distribution file (.wc6full / .wc7full)
+    extension: str            # "wc6" or "wc7"
+    pokemon: Built | None     # None for an item, BP or beans card
+    custom: bool
+
+
 class Helper:
     def __init__(self, path: Path | None = None) -> None:
         path = path or helper_path()
@@ -93,6 +103,28 @@ class Helper:
 
     def check(self, game: str, data: bytes) -> Built:
         return self._built(self.request("check", game=game, data=base64.b64encode(data).decode()))
+
+    # Mystery Gift cards, Gen 6 and 7 (docs/mystery_gift.md).
+
+    def gifts(self, game: str, all: bool = False) -> list[dict]:
+        """The official Pokemon cards PKHeX knows that reach the game's versions, newest card id first, one per
+        card, species and form; ``all`` lists every card (items and revisions too) with its bytes (``card_data``)."""
+        return self.request("gifts", game=game, all=all)["gifts"]
+
+    def gift(self, game: str, *, key: str | None = None, data: bytes | None = None, trainer: dict | None = None) -> "Gift":
+        """An official card (by key) or a .wc6/.wc7/full file's bytes, made into its Pokemon for the trainer."""
+        fields = {"key": key} if key else {"data": base64.b64encode(data or b"").decode()}
+        return self._gift(self.request("gift", game=game, trainer=trainer or {}, **fields))
+
+    def card(self, game: str, trainer: dict | None = None, **fields) -> "Gift":
+        """A custom card from the form's fields (services/pkhex/Gifts.cs), and the Pokemon it gives."""
+        return self._gift(self.request("card", game=game, trainer=trainer or {},
+                                       **{k: v for k, v in fields.items() if v is not None}))
+
+    def _gift(self, reply: dict) -> "Gift":
+        pokemon = self._built({**reply["pokemon"]}) if reply.get("pokemon") else None
+        return Gift(reply["card"], base64.b64decode(reply.get("card_data", "")), base64.b64decode(reply.get("full_data", "")),
+                    reply.get("card_extension", ""), pokemon, bool(reply.get("custom")))
 
     @staticmethod
     def _built(reply: dict) -> Built:

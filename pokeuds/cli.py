@@ -9,6 +9,7 @@
     trade    trade with a retail console (xy, oras, sm, usum), joining or hosting
     board    ESP32-S3 boards: list, check, download or flash esp32-uds-bridge
     build    build a legal Pokemon with the PKHeX helper (docs/pkhex.md)
+    gift     Gen 6/7 Mystery Gift cards: list PKHeX's, show a .wc6/.wc7, make its Pokemon, build a custom card
 """
 
 from __future__ import annotations
@@ -450,6 +451,64 @@ def cmd_build(args) -> int:
     return 0 if built.legal else 1
 
 
+def _gift_line(card: dict) -> str:
+    what = (f"{card.get('species_name', '?')} Lv {card.get('level', '?')}, shiny {card.get('shiny', '?')}"
+            + (f", OT {card['ot']}" if card.get("ot") else ", your OT") if card["kind"] in ("pokemon", "egg") else
+            f"{card.get('item') or card['kind']} x{card.get('quantity', 1)}")
+    return f"{card['key']:<14} {card.get('date') or '----------':<10} {card['kind']:<7} {card['title'][:36]:<36} {what}"
+
+
+def cmd_gift(args) -> int:
+    from . import pkhex
+    from .app import bank as bank_mod
+
+    helper = pkhex.shared()
+    trainer = {"ot": args.ot, "tid": args.tid, "sid": args.sid} if hasattr(args, "ot") else {}
+    if args.gift_command == "list":
+        found = 0
+        for card in helper.gifts(args.game):
+            if args.search and args.search.lower() not in json.dumps(card, ensure_ascii=False).lower():
+                continue
+            print(_gift_line(card))
+            found += 1
+        print(f"{found} card(s)")
+        return 0
+    if args.gift_command == "card":
+        gift = helper.card(args.game, trainer=trainer, kind=args.kind, card_id=args.card_id, title=args.title,
+                           species=args.species, level=args.level, shiny=args.shiny, item=args.item,
+                           quantity=args.quantity, versions=args.versions, nickname=args.nickname,
+                           ot="" if args.your_ot else args.card_ot, tid=args.tid, sid=args.sid)
+    elif args.source.lower().endswith((".wc6", ".wc7", ".wc6full", ".wc7full")) or Path(args.source).exists():
+        gift = helper.gift(args.game, data=Path(args.source).read_bytes(), trainer=trainer)
+    else:
+        gift = helper.gift(args.game, key=args.source, trainer=trainer)
+    print(_gift_line(gift.card))
+    print(f"for {', '.join(gift.card['games'])}" + (" (a custom card)" if gift.custom else ""))
+    if args.gift_command == "card" or getattr(args, "save_card", None):
+        target = Path(args.out if args.gift_command == "card" else args.save_card)
+        full = target.suffix.lower().endswith("full")
+        target.write_bytes(gift.full_data if full else gift.card_data)
+        print(f"Saved the card as {target}" + (" (784-byte full file)" if full else ""))
+    p = gift.pokemon
+    if p is None:
+        print("An item card: only a Mystery Gift can deliver it, not a trade.")
+        return 0
+    s = p.summary
+    print(f"gives {s['species_name']} Lv {s['level']}{' (shiny)' if s['shiny'] else ''}, OT {s['ot_name']} {s.get('shown_id', s['tid'])}, "
+          f"{'legal' if p.legal else 'NOT legal: ' + p.report.splitlines()[0]}")
+    if args.gift_command == "show":
+        return 0
+    if getattr(args, "pokemon_out", None):
+        path = Path(args.pokemon_out)
+        path.write_bytes(pkx.to_stored(p.data))
+        print(f"Saved its Pokemon as {path}")
+    if getattr(args, "bank", False) or (args.gift_command == "make" and not getattr(args, "pokemon_out", None)):
+        entry, _ = bank_mod.Bank().deposit(pkx.to_stored(p.data), p.extension, source="gift",
+                                           note=gift.card["title"], extra={"card_id": gift.card["card_id"]})
+        print(f"Kept in the bank as {entry.id}")
+    return 0
+
+
 GAME_KEYS = ["xy", "oras", "sm", "usum"]
 
 
@@ -547,6 +606,47 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--out", help="write the record to this file or folder")
     p.add_argument("--bank", action="store_true", help="also keep it in the bank (the default without --out)")
     p.set_defaults(func=cmd_build)
+
+    gf = sub.add_parser("gift", help="Gen 6/7 Mystery Gift cards (docs/mystery_gift.md)")
+    gsub = gf.add_subparsers(dest="gift_command", required=True)
+
+    def _gift_trainer(p) -> None:
+        p.add_argument("--ot", default="POKEUDS", help="the receiver: OT of a card that gives your own Pokemon")
+        p.add_argument("--tid", type=int, default=12345)
+        p.add_argument("--sid", type=int, default=54321)
+
+    p = gsub.add_parser("list", help="the official cards PKHeX knows for a game")
+    p.add_argument("game", choices=GAME_KEYS)
+    p.add_argument("--search", help="only cards mentioning this (title, species, OT)")
+    p.set_defaults(func=cmd_gift)
+    for name, text in (("show", "show a card (official key, .wc6/.wc7 or full file) and what it gives"),
+                       ("make", "make a card's Pokemon for the trainer, for a trade (default: into the bank)")):
+        p = gsub.add_parser(name, help=text)
+        p.add_argument("game", choices=GAME_KEYS)
+        p.add_argument("source", help="a key from `gift list`, or a .wc6/.wc7/.wc6full/.wc7full file")
+        _gift_trainer(p)
+        p.add_argument("--save-card", help="write the card to this file (.wc6/.wc7, or .wc6full/.wc7full for 784 bytes)")
+        if name == "make":
+            p.add_argument("--pokemon-out", help="write the Pokemon to this .pk6/.pk7")
+            p.add_argument("--bank", action="store_true", help="also keep it in the bank")
+        p.set_defaults(func=cmd_gift)
+    p = gsub.add_parser("card", help="build a custom card (its Pokemon matches no real event: PKHeX flags it)")
+    p.add_argument("game", choices=GAME_KEYS)
+    p.add_argument("--out", required=True, help="the card file: .wc6/.wc7, or .wc6full/.wc7full")
+    p.add_argument("--kind", choices=["pokemon", "item", "bp", "beans"], default="pokemon")
+    p.add_argument("--card-id", type=int, default=2000)
+    p.add_argument("--title", default="PokeUDS gift")
+    p.add_argument("--species", type=int)
+    p.add_argument("--level", type=int, default=10)
+    p.add_argument("--shiny", choices=["random", "always", "never"], default="random")
+    p.add_argument("--nickname")
+    p.add_argument("--item", type=int, help="item id (item card), or the bean kind")
+    p.add_argument("--quantity", type=int, default=1)
+    p.add_argument("--versions", type=int, default=0, help="RestrictVersion bits: 1 X/Sun, 2 Y/Moon, 4 AS/US, 8 OR/UM; 0 all")
+    p.add_argument("--card-ot", default="", help="the card's own OT (default: the receiver is the OT)")
+    p.add_argument("--your-ot", action="store_true", help=argparse.SUPPRESS)
+    _gift_trainer(p)
+    p.set_defaults(func=cmd_gift)
 
     p = sub.add_parser("trade", help="trade with a retail console")
     p.add_argument("game", choices=GAME_KEYS)

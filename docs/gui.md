@@ -20,6 +20,7 @@ A desktop app (Flet 1.0.5, the toolkit pokeldn uses) over the same code as the c
 | Radio | ESP32-S3 (port found by its USB id, or chosen) or a USB Wi-Fi adapter through ldnd.exe 0.0.5 (Windows); "Check the radio" runs `probe` |
 | Board | ESP32-S3 boards: their firmware and build, update, download the released esp32-uds-bridge images, install one or a chosen `.bin` (`board ...` children; docs/hardware.md) |
 | Builder | a legal Pokemon built by PKHeX (game, species, level and wishes, the trainer), kept in the bank and offered in a trade (docs/pkhex.md) |
+| Gifts | Gen 6/7 Mystery Gift cards: PKHeX's official events, a `.wc6`/`.wc7` (or full) file, or a custom card; the card's Pokemon into the bank and a trade, the card saved as a file (docs/mystery_gift.md) |
 | Bank | every Pokemon the app keeps, received ones included: details, PKHeX legality, offer in a trade, Time Capsule copy, import, export, delete |
 | Settings | `aes_keys.txt`, the output folder, the trainer name the 3DS sees, Debug tools |
 | Debug | only with Settings, Debug tools on: the demo radio, a network scan, capture analysis |
