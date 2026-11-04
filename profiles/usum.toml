@@ -1,0 +1,38 @@
+# Pokemon Ultra Sun / Ultra Moon local wireless profile (Festival Plaza, Link Trade).
+#
+# Same fields as xy.toml, all from captures (docs/captures.md). azahar_uds has completed a trade
+# between Ultra Sun and Ultra Moon, so an Azahar log of that is the quickest source. USUM trade with
+# Sun/Moon. Copy to profiles/usum.local.toml (ignored by git) to fill it in locally.
+
+[network]
+# UDS communication id the game passes to the NWM service (BeginHostingNetwork / beacon tag).
+# Azahar logs it as wlanCommId=0x........ on BeginHostingNetwork and ConnectToNetwork;
+# `pokeuds scan` shows it as "comm" for a console idling in the Festival Plaza.
+wlan_comm_id = ""
+
+# The passphrase the game passes to ConnectToNetwork, as hex bytes, including any trailing NUL.
+# Azahar logs it as "ConnectToNetwork key-derivation input ... inputBytes=..". It is only an input
+# to the CCMP key derivation; the derivation also needs the console's keyslot 0x2D key.
+passphrase_hex = ""
+
+# NetworkInfo.id (a sub-id inside the comm id); 0 unless a capture shows otherwise.
+id = 0
+
+# Nodes per network as the game creates it (a trade is 2).
+max_nodes = 2
+
+# Preferred channel when hosting; 0 picks 11 like the NWM default.
+channel = 0
+
+# Application data a host advertises in its beacon (hex); likely what the Festival Plaza lists a player from
+# (unconfirmed). Copy it from `pokeuds scan` (appdata) or BeginHostingNetwork in an Azahar log.
+application_data_hex = ""
+
+# Comm ids of other games' networks this game may join, if they differ from wlan_comm_id.
+# If USUM and Sun/Moon use different comm ids, put Sun/Moon's here so USUM can join a Sun/Moon host.
+also_join_comm_ids = []
+
+[trade]
+# SecureData channel(s) the game binds for trade traffic. From the "channel=" field of the
+# UDS DATA TRACE lines.
+data_channels = []

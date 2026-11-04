@@ -1,18 +1,18 @@
-"""Generation 6 (X/Y, ORAS) local wireless trade, in either role.
+"""A local wireless trade with a 3DS Pokemon game, in either role (Generations 6 and 7).
 
 Status: the UDS session is complete in both roles.
 
-- **join**: find a console of the game (or of a game this one trades with), join its network.
+- **join**: find a console of the game (or of a game it trades with), join its network.
 - **host**: open a network the console can join, advertising the profile's application data,
   and wait for the console's EAPoL join.
 
-The game-level exchange inside the session (PSS presence, request/accept, showing the offer,
-confirmation, swap) is not mapped yet; it needs the captures in docs/captures.md. ``run``
-therefore records what the console sends, saves any Pokemon record found in it, and then stops
-with ``ProtocolNotMapped`` instead of sending invented messages.
+The game-level exchange inside the session (presence in the PSS or Festival Plaza,
+request/accept, showing the offer, confirmation, swap) is not mapped yet; it needs the captures
+in docs/captures.md. ``run`` therefore records what the console sends, saves any Pokemon record
+found in it, and then stops with ``ProtocolNotMapped`` instead of sending invented messages.
 
-A finished trade does what pokeldn's do: offer one .pk6, receive the console's Pokemon, write it
-to the output folder (``pokeuds.received.save``).
+A finished trade does what pokeldn's do: offer one record, receive the console's Pokemon, write
+it to the output folder (``pokeuds.received.save``).
 """
 
 from __future__ import annotations
@@ -22,10 +22,10 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from ... import pk6, received
-from ...uds import Beacon, Role, SecureData, Station
-from ...util import mac_str
-from . import Game
+from .. import pkx, received
+from ..uds import Beacon, Role, SecureData, Station
+from ..util import mac_str
+from .base import Game
 from .profile import Profile
 
 log = logging.getLogger(__name__)
@@ -37,16 +37,19 @@ class ProtocolNotMapped(NotImplementedError):
 
 
 @dataclass
-class Gen6Trade:
+class LocalTrade:
     station: Station
     game: Game
     profile: Profile
-    offer: bytes                         # Decrypted pk6 we send.
+    offer: bytes                         # Decrypted record we send.
     output: Path
     trades_done: int = 0
     heard: list[SecureData] = field(default_factory=list)
     saved: list[Path] = field(default_factory=list)
     partner: Beacon | None = None
+
+    def __post_init__(self) -> None:
+        pkx.check_format(self.offer, self.game.record)
 
     # -- session ----------------------------------------------------------------------------------
 
@@ -56,7 +59,8 @@ class Gen6Trade:
         log.info("looking for %s (comm id %s)", self.game.name, ", ".join(f"{c:08X}" for c in ids))
         found = self.station.scan(seconds, wlan_comm_id=ids, until=lambda b: True)
         if not found:
-            raise TimeoutError(f"no {self.game.name} network heard; is the console in the PSS with wireless on?")
+            raise TimeoutError(f"no {self.game.name} network heard; is the console in the {self.game.hub} "
+                               "with wireless on?")
         target = max(found, key=lambda b: b.rssi if b.rssi is not None else -100)
         log.info("joining %s on channel %d", mac_str(target.host), target.channel)
         self.station.connect(target, self.profile.passphrase)
@@ -88,8 +92,8 @@ class Gen6Trade:
     def receive_record(self, record: bytes) -> Path:
         """Called once the console's Pokemon has arrived."""
         self.trades_done += 1
-        path = received.save(record, self.output, game=self.game.key, trade=self.trades_done)
-        s = pk6.summary(record if pk6.checksum_valid(record) else pk6.decrypt(record))
+        path = received.save(record, self.output, game=self.game.key, trade=self.trades_done, fmt=self.game.record)
+        s = pkx.summary(record if pkx.checksum_valid(record) else pkx.decrypt(record))
         log.info("received species %d %r (PID %08X) -> %s", s.species, s.nickname, s.pid, path)
         print(f"[done] trade {self.trades_done} complete: {path}")
         self.saved.append(path)
@@ -106,7 +110,7 @@ class Gen6Trade:
                 self.heard.append(packet)
                 log.info("console -> us: channel %d node %d, %d bytes: %s", packet.channel, packet.src_node,
                          len(packet.payload), packet.payload[:32].hex())
-                for _off, _size, record in pk6.find_records(packet.payload):
+                for _off, _size, record in pkx.find_records(packet.payload, self.game.record):
                     self.receive_record(record)
 
     def run(self, listen_seconds: float = 20.0) -> None:

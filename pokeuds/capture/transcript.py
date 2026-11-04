@@ -20,7 +20,7 @@ from collections import Counter, defaultdict
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-from .. import pk6
+from .. import pkx
 from ..util import parse_hex
 
 _PAIRS = re.compile(r"(\w+)=([^,]*)")
@@ -129,7 +129,7 @@ class FoundRecord:
     message: int
     offset: int
     size: int
-    summary: pk6.Summary
+    summary: pkx.Summary
     record: bytes
 
 
@@ -137,8 +137,8 @@ def find_pokemon(messages: list[Message]) -> list[FoundRecord]:
     """Every Gen 6 record inside any message, also across consecutive fragments of one channel."""
     found = []
     for message in messages:
-        for offset, size, record in pk6.find_records(message.payload):
-            found.append(FoundRecord(message.index, offset, size, pk6.summary(record), record))
+        for offset, size, record in pkx.find_records(message.payload):
+            found.append(FoundRecord(message.index, offset, size, pkx.summary(record), record))
     if found:
         return found
     # A record may be split across messages: try each direction/channel stream concatenated.
@@ -150,9 +150,9 @@ def find_pokemon(messages: list[Message]) -> list[FoundRecord]:
         for message in stream:
             starts.append((len(joined), message.index))
             joined += message.payload
-        for offset, size, record in pk6.find_records(joined):
+        for offset, size, record in pkx.find_records(joined):
             first = max((s for s in starts if s[0] <= offset), default=(0, stream[0].index))
-            found.append(FoundRecord(first[1], offset - first[0], size, pk6.summary(record), record))
+            found.append(FoundRecord(first[1], offset - first[0], size, pkx.summary(record), record))
     return found
 
 

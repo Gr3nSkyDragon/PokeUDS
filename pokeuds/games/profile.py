@@ -10,9 +10,9 @@ import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from ...util import parse_hex
+from ..util import parse_hex
 
-PROFILE_DIR = Path(__file__).resolve().parents[3] / "profiles"
+PROFILE_DIR = Path(__file__).resolve().parents[2] / "profiles"
 
 
 @dataclass

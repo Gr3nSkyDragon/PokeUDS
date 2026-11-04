@@ -5,7 +5,7 @@ the NWM system module to scan, host or join, and then sends and receives SecureD
 numbered data channels. PokeUDS does NWM's job in Python, and then plays the game's part on top.
 
 ```
- game protocol      pokeuds/games/gen6      trade messages, the offer, the received record
+ game protocol      pokeuds/games/          trade messages, the offer, the received record
  ------------------------------------------------------------------------------------------
  UDS (NWM)          pokeuds/uds/station     beacons, auth/assoc, EAPoL join, node ids,
                     pokeuds/uds/{beacon,     CCMP, SecureData channels, keepalive
@@ -50,15 +50,37 @@ A game module gets a connected `Station` and speaks the game's messages through 
 Per-game constants (comm id, passphrase, data channels, the application data a host advertises)
 live in `profiles/<game>.toml`, filled in from captures, so no value in the code is a guess.
 
-Games that share a protocol share a module. `games/gen6` covers X/Y and ORAS: one `Gen6Trade`
-session with both roles, parameterized by a `Game` entry (titles, origin versions) and its profile.
-A profile's `also_join_comm_ids` lets one game join another's networks (ORAS with an X/Y host) if
-captures show their comm ids differ.
+One `LocalTrade` session (`games/trade.py`) serves every 3DS game, in both roles. It is
+parameterized by a `Game` entry and that game's profile:
+
+| game | generation | trading starts in | record | trades with |
+|---|---|---|---|---|
+| `xy` | 6 | PSS | PK6 | `oras` |
+| `oras` | 6 | PSS | PK6 | `xy` |
+| `sm` | 7 | Festival Plaza (Link Trade) | PK7 | `usum` |
+| `usum` | 7 | Festival Plaza (Link Trade) | PK7 | `sm` |
+
+`games/gen6` and `games/gen7` only declare their games (titles, origin version bytes, partners).
+PK6 and PK7 share their layout, encryption and checksum (PKHeX derives both from `G6PKM`), so
+`pkx.py` handles both and a `Format` carries the differences: extension and species range. An
+offer the game cannot hold, such as a Gen 7 species for X/Y, is refused before the radio opens.
+
+A profile's `also_join_comm_ids` lets one game join a partner game's networks (ORAS with an X/Y host,
+Sun/Moon with a USUM host) if captures show their comm ids differ. If the game protocols themselves
+turn out to differ (Gen 7 may run on Pia's local mode; see below), the session will dispatch to a
+per-generation message layer; the UDS part stays shared.
 
 | role | the session |
 |---|---|
 | join | scan for the profile's comm ids, pick the strongest host, join it as a client |
 | host | open a network with the profile's comm id and application data, wait for an EAPoL join |
+
+### Gen 7 and Pia
+
+Sun/Moon and USUM run their online play on Nintendo's Pia library, which also has a local mode over
+UDS. If the Festival Plaza's local trade uses it, the SecureData payloads are Pia packets, which can
+carry their own encryption on top of UDS's. The record finder would then see nothing in an Azahar
+log; that alone would tell us Pia is in play, and the decoding layer comes next.
 
 ## Received Pokemon
 

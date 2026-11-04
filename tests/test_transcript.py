@@ -1,6 +1,6 @@
-from pokeuds import pk6
+from pokeuds import pkx
 from pokeuds.capture import transcript
-from tests.test_pk6 import make_record
+from tests.test_pkx import make_record
 
 
 def colon_hex(data: bytes) -> str:
@@ -9,7 +9,7 @@ def colon_hex(data: bytes) -> str:
 
 def test_azahar_log(tmp_path):
     record = make_record(0x76543210, species=658, nickname="Greninja")
-    rx_payload = b"\x07\x00\x01\x00" + pk6.encrypt(record)
+    rx_payload = b"\x07\x00\x01\x00" + pkx.encrypt(record)
     log = tmp_path / "azahar_log.txt"
     log.write_text("\n".join([
         "[  10.000000] Service.NWM <Info> core/hle/service/nwm/nwm_uds.cpp:ConnectToNetworkHLE:2733: "
@@ -37,7 +37,7 @@ def test_azahar_log(tmp_path):
 
 
 def test_record_split_across_messages():
-    record = pk6.encrypt(make_record(0x00ABCDEF))
+    record = pkx.encrypt(make_record(0x00ABCDEF))
     messages = [transcript.Message(i, None, "rx", 1, i, 1, 2, chunk)
                 for i, chunk in enumerate([b"\x99" * 5 + record[:100], record[100:200], record[200:]])]
     found = transcript.find_pokemon(messages)

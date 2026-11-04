@@ -4,8 +4,8 @@
     scan     list UDS networks on the air (any 3DS game), with their decrypted node lists
     sniff    decrypt a session between two other consoles into a transcript
     analyze  summarize an Azahar log or a sniff transcript, and find Pokemon inside
-    pk6      show a .pk6/.ek6 file
-    trade    trade with a retail console (xy, oras), joining or hosting
+    pkx      show a .pk6/.pk7 (or .ek6/.ek7) file
+    trade    trade with a retail console (xy, oras, sm, usum), joining or hosting
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ import sys
 import time
 from pathlib import Path
 
-from . import pk6
+from . import pkx
 from .util import mac_str, parse_hex, parse_mac, random_mac
 
 
@@ -100,7 +100,7 @@ def _profile_passphrase(args) -> tuple[bytes, int | None]:
     if args.passphrase:
         return parse_hex(args.passphrase), args.comm_id
     if args.game:
-        from .games.gen6 import profile
+        from .games import profile
 
         prof = profile.load(args.game, args.profile)
         if not prof.passphrase:
@@ -177,8 +177,8 @@ def cmd_analyze(args) -> int:
         if args.extract:
             folder = Path(args.extract)
             folder.mkdir(parents=True, exist_ok=True)
-            target = folder / f"msg{record.message}_{s.species:03d}_{s.pid:08X}.pk6"
-            target.write_bytes(pk6.to_stored(record.record))
+            target = folder / f"msg{record.message}_{s.species:03d}_{s.pid:08X}.{pkx.guess_format(record.record).extension}"
+            target.write_bytes(pkx.to_stored(record.record))
             print(f"    -> {target}")
     if args.out:
         transcript.write_jsonl(messages, args.out)
@@ -186,10 +186,10 @@ def cmd_analyze(args) -> int:
     return 0
 
 
-def cmd_pk6(args) -> int:
-    record = pk6.load(args.file)
-    s = pk6.summary(record)
-    from .games.gen6 import VERSION_NAMES
+def cmd_pkx(args) -> int:
+    record = pkx.load(args.file)
+    s = pkx.summary(record)
+    from .games import VERSION_NAMES
 
     version = VERSION_NAMES.get(s.version, f"version {s.version}")
     print(f"species {s.species}  nickname '{s.nickname}'  OT '{s.ot_name}' {s.tid:05d}/{s.sid:05d}  "
@@ -200,21 +200,24 @@ def cmd_pk6(args) -> int:
 
 
 def cmd_trade(args) -> int:
-    from .games import gen6
-    from .games.gen6 import profile
-    from .games.gen6.trade import Gen6Trade, ProtocolNotMapped
+    from .games import get, profile
+    from .games.trade import LocalTrade, ProtocolNotMapped
     from .radio import open_radio
     from .uds import Station
 
-    game = gen6.get(args.game)
-    offer = pk6.load(args.offer)
+    game = get(args.game)
+    offer = pkx.load(args.offer)
+    try:
+        pkx.check_format(offer, game.record)
+    except ValueError as exc:
+        raise SystemExit(f"{args.offer}: {exc}; {game.name} cannot receive it")
     prof = profile.load(game.key, args.profile)
     if missing := prof.missing():
         raise SystemExit(f"{prof.source} is missing {', '.join(missing)}; these come from captures "
                          "(docs/captures.md)")
     station = Station(open_radio(args.radio), args.mac or random_mac(), _uds_key(args.keys), name=args.name)
     station.start(args.channel)
-    trade = Gen6Trade(station, game, prof, offer, Path(args.output))
+    trade = LocalTrade(station, game, prof, offer, Path(args.output))
     try:
         if args.role == "host":
             appdata = parse_hex(args.application_data) if args.application_data is not None else None
@@ -237,7 +240,7 @@ def cmd_trade(args) -> int:
     return 0
 
 
-GAME_KEYS = ["xy", "oras"]
+GAME_KEYS = ["xy", "oras", "sm", "usum"]
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -270,18 +273,18 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("analyze", help="summarize a capture and find Pokemon records in it")
     p.add_argument("capture", help="an Azahar log (azahar_uds) or a `pokeuds sniff --out` file")
     p.add_argument("--out", help="write the parsed transcript as JSON lines")
-    p.add_argument("--extract", help="write every Pokemon found as .pk6 into this folder")
+    p.add_argument("--extract", help="write every Pokemon found as .pk6/.pk7 into this folder")
     p.set_defaults(func=cmd_analyze)
 
-    p = sub.add_parser("pk6", help="show a .pk6/.ek6 file")
+    p = sub.add_parser("pkx", aliases=["pk6", "pk7"], help="show a .pk6/.pk7 (or .ek6/.ek7) file")
     p.add_argument("file")
-    p.set_defaults(func=cmd_pk6)
+    p.set_defaults(func=cmd_pkx)
 
     p = sub.add_parser("trade", help="trade with a retail console")
     p.add_argument("game", choices=GAME_KEYS)
     _add_radio(p)
     _add_keys(p)
-    p.add_argument("--offer", required=True, help="the .pk6 to send")
+    p.add_argument("--offer", required=True, help="the .pk6 (X/Y, ORAS) or .pk7 (SM, USUM) to send")
     p.add_argument("--output", default="received", help="folder for the Pokemon received (default: received/)")
     p.add_argument("--role", choices=["join", "host"], default="join",
                    help="join the console's network (default) or host one for it to join")

@@ -1,12 +1,16 @@
-"""Generation 6 Pokemon records (X/Y, Omega Ruby/Alpha Sapphire), shared by both games.
+"""Generation 6 and 7 Pokemon records (``.pk6``: X/Y, ORAS; ``.pk7``: Sun/Moon, USUM).
 
-A record is 232 bytes in a box (``.pk6`` decrypted, ``.ek6`` encrypted) and 260 bytes in a party
+PKHeX derives PK7 from the same base as PK6 (``G6PKM``): one layout for the fields read here, one
+encryption, one checksum. The formats differ in the species range and the meaning of some later
+fields, so each game names its ``Format`` and everything else is shared.
+
+A record is 232 bytes in a box (``.pk6``/``.pk7`` decrypted, ``.ek6``/``.ek7`` encrypted) and 260 in a party
 (the extra 28 bytes hold status and battle stats). Encryption: the 0xE0 bytes after the 8-byte
 header are four 56-byte blocks, shuffled by ``(EC >> 13) & 31`` and XORed with an LCRNG stream
 seeded by the encryption constant; party stats are XORed with a stream restarted from the same
 seed. The checksum at 0x06 is the 16-bit sum of the words from 0x08 to 0xE8.
 
-Offsets and tables follow PKHeX (PK6.cs, G6PKM.cs, PokeCrypto.cs).
+Offsets and tables follow PKHeX (PK6.cs, PK7.cs, G6PKM.cs, PokeCrypto.cs).
 """
 
 from __future__ import annotations
@@ -14,6 +18,19 @@ from __future__ import annotations
 import struct
 from dataclasses import dataclass
 from pathlib import Path
+
+
+
+@dataclass(frozen=True)
+class Format:
+    generation: int
+    extension: str
+    max_species: int     # The last species the generation's newest games know.
+
+
+PK6 = Format(6, "pk6", 721)
+PK7 = Format(7, "pk7", 807)   # Sun/Moon end at 802; Ultra Sun/Ultra Moon add up to 807.
+FORMATS = {f.extension: f for f in (PK6, PK7)}
 
 STORED_SIZE = 232
 PARTY_SIZE = 260
@@ -106,7 +123,7 @@ class Summary:
     language: int
     is_egg: bool
     level: int | None
-    version: int                 # Origin game (0xDF): 24 X, 25 Y, 26 Alpha Sapphire, 27 Omega Ruby.
+    version: int                 # Origin game (0xDF), e.g. 24 X, 27 Omega Ruby, 30 Sun, 33 Ultra Moon.
 
     @property
     def shiny(self) -> bool:
@@ -123,19 +140,22 @@ def summary(pkx: bytes) -> Summary:
                    bool(iv32 >> 30 & 1), level, pkx[0xDF])
 
 
-def looks_like_pk6(pkx: bytes) -> bool:
-    """A decrypted record that passes the checks a game would make before showing it."""
+def looks_like(pkx: bytes, fmt: Format = PK7) -> bool:
+    """A decrypted record that passes the checks a game would make before showing it.
+
+    The default, PK7, accepts every Gen 6 species too: use it when the generation is not known.
+    """
     if not checksum_valid(pkx):
         return False
     s = summary(pkx)
-    return 0 < s.species <= 721 and struct.unpack_from("<H", pkx, 4)[0] == 0  # Sanity word is 0.
+    return 0 < s.species <= fmt.max_species and struct.unpack_from("<H", pkx, 4)[0] == 0  # Sanity word is 0.
 
 
 def load(path: str | Path) -> bytes:
-    """A decrypted record from a .pk6/.ek6 file, as PKHeX and pokeldn's bank write them."""
+    """A decrypted record from a .pk6/.ek6/.pk7/.ek7 file, as PKHeX and pokeldn's bank write them."""
     raw = Path(path).expanduser().read_bytes()
     if len(raw) not in SIZES:
-        raise ValueError(f"{path}: {len(raw)} bytes is not a Generation 6 record (232 or 260)")
+        raise ValueError(f"{path}: {len(raw)} bytes is not a Generation 6/7 record (232 or 260)")
     if checksum_valid(raw):
         return raw
     decrypted = decrypt(raw)
@@ -148,8 +168,26 @@ def to_stored(pkx: bytes) -> bytes:
     return pkx[:STORED_SIZE]
 
 
-def find_records(blob: bytes) -> list[tuple[int, int, bytes]]:
-    """(offset, size, decrypted record) for every encrypted or plain Gen 6 record inside ``blob``.
+def check_format(pkx: bytes, fmt: Format) -> None:
+    """Refuse a record the target game cannot hold (a Gen 7 species offered to X/Y, say)."""
+    s = summary(pkx)
+    if not 0 < s.species <= fmt.max_species:
+        raise ValueError(f"species {s.species} does not exist in Generation {fmt.generation} "
+                         f"(1-{fmt.max_species})")
+
+
+def guess_format(pkx: bytes) -> Format:
+    """PK7 for a record that can only be Generation 7 (its species or origin), else PK6.
+
+    Only a guess: a Gen 6-born Pokemon moved to Gen 7 by Pokemon Bank reads as PK6 here. Use the
+    game's own format whenever the game is known.
+    """
+    s = summary(pkx)
+    return PK7 if s.species > PK6.max_species or s.version >= 30 else PK6
+
+
+def find_records(blob: bytes, fmt: Format = PK7) -> list[tuple[int, int, bytes]]:
+    """(offset, size, decrypted record) for every encrypted or plain Gen 6/7 record inside ``blob``.
 
     Used on captured trade messages, where the record's position is not known yet.
     """
@@ -160,7 +198,7 @@ def find_records(blob: bytes) -> list[tuple[int, int, bytes]]:
             if window[4:6] != b"\0\0":   # The sanity word is 0 and is not encrypted.
                 continue
             for candidate in (decrypt(window), window):
-                if looks_like_pk6(candidate):
+                if looks_like(candidate, fmt):
                     if not any(o <= offset < o + s for o, s, _ in found):
                         found.append((offset, size, candidate))
                     break
