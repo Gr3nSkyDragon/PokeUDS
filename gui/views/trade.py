@@ -52,6 +52,10 @@ class TradeView(View):
             self.offer = catalog.describe_offer(self.entry, files[0].path)
             self.save()
 
+    def from_bank(self, e=None) -> None:
+        self.app.bank_for = self.entry.key
+        self.app.navigate("bank")
+
     def problems(self) -> list[str]:
         return catalog.missing_for_start(self.entry, self.app.settings, self.offer)
 
@@ -119,6 +123,7 @@ class TradeView(View):
                        t.label(Path(self.offer.path).name if self.offer else
                                "Accepts " + ", ".join(f".{x}" for x in entry.extensions))],
                       spacing=2, expand=True),
+            t.secondary("From the bank", self.from_bank, ft.Icons.INVENTORY_2_OUTLINED, disabled=busy),
             t.secondary("Choose file", self.choose_offer, ft.Icons.FOLDER_OPEN, disabled=busy),
         ], spacing=12))
         if self.offer and not self.offer.problem:

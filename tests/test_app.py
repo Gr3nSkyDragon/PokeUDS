@@ -107,7 +107,8 @@ def test_gui_pages_build(data, offers):
     from gui.app import App
     from gui.views.debug import DebugView
     from gui.views.radio import RadioView
-    from gui.views.received import ReceivedView
+    from gui.views.bank import BankView
+    from gui.views.board import BoardView
     from gui.views.settings import SettingsView, name_problem
     from gui.views.trade import TradeView
 
@@ -116,8 +117,20 @@ def test_gui_pages_build(data, offers):
     app = App(None, settings)
     trade = TradeView(app)
     assert trade.offer and "Charmander" in trade.offer.summary and trade.problems() == []
-    for cls in (TradeView, RadioView, ReceivedView, SettingsView, DebugView):
+    for cls in (TradeView, BankView, RadioView, BoardView, SettingsView, DebugView):
         cls(app).control()
-    trade.pick_game("gsc")
-    assert trade.offer is None and settings.last_game == "gsc"
+    app.views = {"trade": trade}
+    bank_view = BankView(app)
+    bank_view.control()                              # deposits what the received folder holds
+    entries = bank_view.bank.entries()
+    assert sorted(e.extension for e in entries) == ["pk1", "pk2"]
+    bank_view.selected = entries[0].id
+    bank_view.control()                              # with the detail panel
+    pk2_entry = next(e for e in entries if e.extension == "pk2")
+    bank_view._offer(pk2_entry, "gsc")
+    assert settings.offers["gsc"] == str(pk2_entry.path) and trade.entry.key == "gsc" and trade.offer
+    trade.pick_game("rby")
+    settings.offers.pop("usum", None)
+    trade.pick_game("usum")
+    assert trade.offer is None and settings.last_game == "usum"
     assert name_problem("POKEUDS") == "" and name_problem("TOOLONGNAME") and name_problem("")

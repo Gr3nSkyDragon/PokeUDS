@@ -25,6 +25,7 @@ class Settings:
     radio: str = "esp32"               # "esp32" or "ldnd"
     port: str = ""                     # ESP32 serial port or ldnd pipe; "" finds it
     output: str = str(Path.home() / "PokeUDS" / "received")
+    bank: str = ""                     # the bank folder; "" is <data>/bank
     trainer_name: str = "POKEUDS"
     debug: bool = False
     last_game: str = "rby"

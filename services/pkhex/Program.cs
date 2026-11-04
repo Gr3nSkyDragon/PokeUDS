@@ -98,6 +98,8 @@ static class Program
             ["balls"] = Combo(source.Balls, b => b.Value > 0),
             ["natures"] = game.Generation >= 3 ? Combo(source.Natures) : new JsonArray(),
             ["languages"] = Combo(source.Languages),
+            ["growth"] = new JsonArray(Enumerable.Range(0, sav.MaxSpeciesID + 1)
+                .Select(i => (JsonNode)sav.Personal[(ushort)i].EXPGrowth).ToArray()),
         };
     }
 

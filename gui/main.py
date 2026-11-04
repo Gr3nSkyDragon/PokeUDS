@@ -15,13 +15,13 @@ import flet as ft  # noqa: E402
 from gui import theme as t  # noqa: E402
 from gui.app import App  # noqa: E402
 from gui.views.board import BoardView  # noqa: E402
+from gui.views.bank import BankView  # noqa: E402
 from gui.views.debug import DebugView  # noqa: E402
 from gui.views.radio import RadioView  # noqa: E402
-from gui.views.received import ReceivedView  # noqa: E402
 from gui.views.settings import SettingsView  # noqa: E402
 from gui.views.trade import TradeView  # noqa: E402
 
-PAGES = (TradeView, RadioView, BoardView, ReceivedView, SettingsView)
+PAGES = (TradeView, BankView, RadioView, BoardView, SettingsView)
 
 
 class Shell:
@@ -34,6 +34,7 @@ class Shell:
                                       label_type=ft.NavigationRailLabelType.ALL,
                                       leading=ft.Container(t.mark(), padding=ft.Padding(0, 18, 0, 18)))
         app.navigate = self.navigate
+        app.views = self.views
         app.rebuild_shell = self.rebuild
         app.listeners.append(self._changed)
 

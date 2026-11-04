@@ -22,6 +22,8 @@ class App:
         self.log: list[str] = []
         self.listeners: list[Callable[[], None]] = []
         self.navigate: Callable[[str], None] = lambda key: None
+        self.views: dict = {}                    # key -> view, set by the shell
+        self.bank_for = ""                       # a game key while the Bank page picks an offer for it
 
     # -- threads --------------------------------------------------------------------------------
 
