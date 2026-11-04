@@ -1,4 +1,4 @@
-"""A model of a retail 3DS Virtual Console host, for tests.
+"""A model of a retail 3DS Virtual Console game, for tests and the demo radio.
 
 It plays the measured behaviour (mgba_LDN wiki/vc_link.md): host's first unit $EF, then one unit per
 exchange with the partner's reply to the same index; random numbers paced, party block, patch lists

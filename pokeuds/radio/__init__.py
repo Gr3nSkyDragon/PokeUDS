@@ -2,6 +2,7 @@
 
 - ``esp32`` or ``esp32:COM4``: an ESP32-S3 running esp32-uds-bridge (found by USB ID if no port).
 - ``ldnd`` or ``ldnd:\\\\.\\pipe\\name``: a USB Wi-Fi adapter through legacy ldnd.exe 0.0.5 (Windows).
+- ``demo:red`` (any VC title; ``gold-tc`` for the Time Capsule): a simulated 3DS, no hardware.
 """
 
 from __future__ import annotations
@@ -22,7 +23,11 @@ def open_radio(spec: str) -> Radio:
         from .ldnd import DEFAULT_PIPE, LdndRadio
 
         return LdndRadio(arg or DEFAULT_PIPE)
-    raise ValueError(f"unknown radio {spec!r}: use esp32[:PORT] or ldnd[:PIPE]")
+    if kind == "demo":
+        from .demo import DemoRadio
+
+        return DemoRadio(arg)
+    raise ValueError(f"unknown radio {spec!r}: use esp32[:PORT], ldnd[:PIPE] or demo:TITLE")
 
 
 __all__ = ["DISCOVERY_CHANNELS", "Radio", "RxFrame", "open_radio"]

@@ -14,11 +14,12 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import sys
 import time
 from pathlib import Path
 
-from . import pkx
+from . import pkx, status
 from .util import mac_str, parse_hex, parse_mac, random_mac
 
 
@@ -30,10 +31,14 @@ def _add_radio(p: argparse.ArgumentParser) -> None:
 
 
 def _add_keys(p: argparse.ArgumentParser, required: bool = True) -> None:
-    p.add_argument("--keys", required=required, help="aes_keys.txt holding the keyslot 0x2D key")
+    p.add_argument("--keys", required=required, help="aes_keys.txt holding the keyslot 0x2D key (not needed with --radio demo)")
 
 
-def _uds_key(path: str | None) -> bytes | None:
+def _uds_key(path: str | None, radio: str = "") -> bytes | None:
+    if radio.startswith("demo"):
+        from .radio.demo import DEMO_KEY
+
+        return DEMO_KEY            # the simulated console's; no console key is involved
     if not path:
         return None
     from .keys import KeyFile
@@ -225,6 +230,7 @@ def cmd_trade(args) -> int:
                          "(docs/captures.md)")
     station = Station(open_radio(args.radio), args.mac or random_mac(), _uds_key(args.keys), name=args.name)
     station.start(args.channel)
+    status.emit("radio", description=station.radio.describe())
     trade = LocalTrade(station, game, prof, offer, Path(args.output))
     try:
         if args.role == "host":
@@ -232,17 +238,27 @@ def cmd_trade(args) -> int:
             trade.host(appdata)
             print(f"hosting {game.name} on channel {station.network.channel}; waiting {args.seconds:.0f} s "
                   "for the console to join")
+            status.emit("hosting", game=game.key, channel=station.network.channel)
             trade.wait_for_partner(args.seconds)
+            status.emit("partner-joined")
         else:
+            status.emit("searching", game=game.key)
             trade.join(args.seconds)
+            status.emit("joined", channel=station.radio.channel)
         print(f"connected as {station.role.value}, node {station.node_id}")
+        status.emit("session", state="listening")
         trade.run(args.listen)
     except ProtocolNotMapped as exc:
         print(f"stopped: {exc}", file=sys.stderr)
+        status.emit("stopped", reason="protocol-not-mapped", message=str(exc))
         return 2
     except TimeoutError as exc:
         print(f"stopped: {exc}", file=sys.stderr)
+        status.emit("stopped", reason="timeout", message=str(exc))
         return 1
+    except KeyboardInterrupt:
+        status.emit("stopped", reason="user")
+        return 130
     finally:
         station.close()
     return 0
@@ -282,32 +298,45 @@ def cmd_vc_trade(args) -> int:
     mail = mail_file.read_bytes()[:47] if offer.generation == 2 and mail_file.exists() else b""
     if args.role == "host" and not args.as_title:
         raise SystemExit("hosting needs --as TITLE (the VC title PokeUDS stands in for)")
-    station = Station(open_radio(args.radio), args.mac or random_mac(), _uds_key(args.keys), name=args.name)
+    if not args.keys and not args.radio.startswith("demo"):
+        raise SystemExit("--keys aes_keys.txt is needed (the keyslot 0x2D key)")
+    station = Station(open_radio(args.radio), args.mac or random_mac(), _uds_key(args.keys, args.radio), name=args.name)
     station.start(titles.CHANNEL if args.role == "host" else args.channel)
+    status.emit("radio", description=station.radio.describe())
     trade = VcTrade(station, offer, Path(args.output), trades=args.trades, trainer_name=args.name, offer_mail=mail)
     try:
         if args.role == "host":
             title = titles.TITLES[args.as_title]
             partner = {"gen1": 1, "gen2": 2}.get(args.partner, title.generation)
             print(f"hosting as {title.name} (experimental); choose Join in the 3DS's VC link menu")
+            status.emit("hosting", game=title.key, channel=titles.CHANNEL)
             trade.host(title, partner, args.seconds)
+            status.emit("partner-joined")
         else:
             partner = {"gen1": 1, "gen2": 2}.get(args.partner)
             print("looking for a VC host; choose Host in the 3DS's VC link menu")
+            status.emit("searching", game="vc")
             trade.join(args.seconds, partner)
+            status.emit("joined", channel=station.radio.channel)
         print(f"connected: {trade.mode.key} trade, offering {offer.describe()}; walk to the Trade Center table")
+        status.emit("mode", mode=trade.mode.key)
         trade.run(args.run_seconds)
+        status.emit("stopped", reason="session-ended")
     except TimeoutError as exc:
         print(f"stopped: {exc}", file=sys.stderr)
+        status.emit("stopped", reason="timeout", message=str(exc))
         return 1
     except KeyboardInterrupt:
-        pass
+        status.emit("stopped", reason="user")
+        stopped = True
+    else:
+        stopped = False
     finally:
         if trade.session:
             trade.session.leave(0)
         station.close()
     print(f"{len(trade.saved)} file(s) written to {args.output}")
-    return 0
+    return 130 if stopped else 0
 
 
 GAME_KEYS = ["xy", "oras", "sm", "usum"]
@@ -354,7 +383,7 @@ def main(argv: list[str] | None = None) -> int:
     vsub = vc.add_subparsers(dest="vc_command", required=True)
     p = vsub.add_parser("trade", help="trade through the VC link menu (Gen 1, Gen 2, or the Time Capsule)")
     _add_radio(p)
-    _add_keys(p)
+    _add_keys(p, required=False)
     p.add_argument("--offer", required=True, help=".pk1 or .pk2 to send (a .pk2 may have a .mail beside it)")
     p.add_argument("--output", default="received", help="folder for the Pokemon received (default: received/)")
     p.add_argument("--role", choices=["join", "host"], default="join",
@@ -396,7 +425,20 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.WARNING - 10 * min(args.verbose, 2),
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
-    return args.func(args)
+    if status.enabled() and os.environ.get("POKEUDS_MANAGED"):
+        status.watch_stdin_for_stop()
+    try:
+        return args.func(args)
+    except SystemExit as exc:
+        if exc.code not in (None, 0) and not isinstance(exc.code, int):
+            status.emit("error", message=str(exc.code))
+        raise
+    except KeyboardInterrupt:
+        status.emit("stopped", reason="user")
+        return 130
+    except Exception as exc:
+        status.emit("error", message=f"{type(exc).__name__}: {exc}")
+        raise
 
 
 if __name__ == "__main__":

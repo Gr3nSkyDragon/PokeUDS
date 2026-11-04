@@ -22,7 +22,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .. import pkx, received
+from .. import pkx, received, status
 from ..uds import Beacon, Role, SecureData, Station
 from ..util import mac_str
 from .base import Game
@@ -96,6 +96,8 @@ class LocalTrade:
         s = pkx.summary(record if pkx.checksum_valid(record) else pkx.decrypt(record))
         log.info("received species %d %r (PID %08X) -> %s", s.species, s.nickname, s.pid, path)
         print(f"[done] trade {self.trades_done} complete: {path}")
+        status.emit("received", trade=self.trades_done, path=str(path),
+                    summary=f"species {s.species} '{s.nickname}' PID {s.pid:08X}", files=[str(path)])
         self.saved.append(path)
         return path
 
@@ -108,6 +110,7 @@ class LocalTrade:
                 if packet is None:
                     continue
                 self.heard.append(packet)
+                status.emit("note", text=f"console sent {len(packet.payload)} bytes on channel {packet.channel}")
                 log.info("console -> us: channel %d node %d, %d bytes: %s", packet.channel, packet.src_node,
                          len(packet.payload), packet.payload[:32].hex())
                 for _off, _size, record in pkx.find_records(packet.payload, self.game.record):

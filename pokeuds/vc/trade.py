@@ -19,7 +19,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .. import gbpk
+from .. import gbpk, status
 from ..games import vc as titles
 from ..uds import BROADCAST_NODE, Role as UdsRole, Station
 from ..util import mac_str
@@ -138,6 +138,8 @@ class VcTrade:
             mail.write_bytes(trade.received_mail)
             self.saved.append(mail)
         print(f"[done] trade {n} complete: {received.describe()} -> {path}")
+        status.emit("received", trade=n, path=str(path), summary=received.describe(), sent=trade.sent.describe(),
+                    files=[str(f) for f in self.saved])
 
     def run(self, seconds: float | None = None) -> None:
         """Drive the session until it closes, the trades are done and the partner leaves, or ``seconds`` pass."""
@@ -159,8 +161,22 @@ class VcTrade:
     def step(self, now: int) -> None:
         session, engine = self.session, self.engine
         session.poll(now)
+        self._report(session, engine)
         if session.state is State.JOINED and self._role is Role.HOST and not self._first_sent:
             self._first_sent = session.queue_unit(0xEF)        # the host's first unit, before the joiner's
         for byte in session.pop_units():
             session.queue_unit(engine.respond(byte))           # joiner: unit k; host: unit k+1
         session.flush(now)
+
+    def _report(self, session: Session, engine: link.TradeEngine) -> None:
+        if session.state is not getattr(self, "_last_state", None):
+            self._last_state = session.state
+            status.emit("session", state=session.state.value)
+        phase = engine.phase()
+        if phase != getattr(self, "_last_phase", None):
+            self._last_phase = phase
+            status.emit("phase", phase=phase)
+        notes = getattr(self, "_notes", 0)
+        for text in engine.log[notes:]:
+            status.emit("note", text=text)
+        self._notes = len(engine.log)

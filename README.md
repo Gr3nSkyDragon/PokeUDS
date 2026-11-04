@@ -46,6 +46,21 @@ python -m venv .venv && . .venv/bin/activate
 pip install -r requirements-dev.txt
 ```
 
+### The app
+
+```bash
+pip install -r requirements-gui.txt
+```
+
+```bash
+python -m gui
+```
+
+Pick a game, the Pokemon to offer and who hosts, then Start ([docs/gui.md](docs/gui.md)). Settings, Debug
+tools adds a demo radio that trades with a simulated 3DS, a network scan and capture analysis.
+
+### The command line
+
 ```bash
 python -m pokeuds probe --radio esp32
 ```
@@ -106,7 +121,8 @@ filled in from captures.
 | `pokeuds/vc/` | Virtual Console: Pia frames and session, the Game Boy trade engine, the end-to-end trade |
 | `pokeuds/gbpk.py` | .pk1/.pk2 records and the Time Capsule conversions |
 | `profiles/` | Per-game constants filled in from captures |
-| `docs/` | [Architecture](docs/architecture.md), [UDS protocol](docs/uds.md), [Virtual Console](docs/vc.md), [hardware](docs/hardware.md), [captures](docs/captures.md) |
+| `gui/`, `pokeuds/app/` | The app (Flet) and what it shares with the command line: settings, catalog, child runs, progress |
+| `docs/` | [The app](docs/gui.md), [architecture](docs/architecture.md), [UDS protocol](docs/uds.md), [Virtual Console](docs/vc.md), [hardware](docs/hardware.md), [captures](docs/captures.md) |
 
 ```bash
 python -m pytest -q

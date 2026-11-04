@@ -6,7 +6,7 @@ import pytest
 
 from pokeuds import gbpk
 from pokeuds.vc import gbdata, link
-from tests.vc_model import Model3DS, play
+from pokeuds.vc.model import Model3DS, play
 
 
 def gen1_mon(dex=25, level=12, nick="SPARKY", ot="ASH", ot_id=12345, catch_rate=0xBE, fe_inside=False):

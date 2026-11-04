@@ -1,0 +1,3 @@
+# The desktop app: pip install -r requirements-gui.txt, then python -m gui
+-r requirements.txt
+flet[all]==1.0.5

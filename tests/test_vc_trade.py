@@ -14,51 +14,8 @@ from pokeuds.vc import link, pia
 from pokeuds.vc.session import Config, Role, Session, State
 from pokeuds.vc.trade import VcTrade, choose_mode
 from tests.test_vc_link import gen1_mon, gen2_mon, party
-from tests.vc_model import Model3DS
-
-
-class SimulatedVcHost:
-    """A retail 3DS hosting from the VC link menu: UDS host, Pia host session, the model game."""
-
-    def __init__(self, air, key, title, model):
-        self.station = Station(SimRadio(air), bytes.fromhex("02000000AA01"), key, name="RETAIL")
-        self.station.start(titles.CHANNEL)
-        self.appdata = b"\x08" + os.urandom(7) + b"\x01" + bytes(7)
-        self.station.host(wlan_comm_id=title.comm_id, passphrase=titles.PASSPHRASE, channel=titles.CHANNEL,
-                          max_nodes=2, application_data=self.appdata)
-        self.model = model
-        self.session = None
-        self.stop = threading.Event()
-        self.thread = threading.Thread(target=self._run, daemon=True)
-        self.thread.start()
-
-    def _run(self):
-        while not self.stop.is_set() and not any(p.connected for p in self.station.peers.values()):
-            time.sleep(0.01)
-        send = lambda raw, bc: self.station.send(BROADCAST_NODE if bc else 2, pia.UDS_CHANNEL, raw)
-        self.session = s = Session(Role.HOST, send, Config(name="RETAIL", application_data=self.appdata))
-        t0 = time.monotonic()
-        now = lambda: int((time.monotonic() - t0) * 1000)
-        s.start(now())
-        gen = self.model.run()
-        first = False
-        while not self.stop.is_set():
-            packet = self.station.recv(pia.UDS_CHANNEL, timeout=0.005)
-            while packet is not None:
-                s.receive(now(), packet.payload)
-                packet = self.station.recv(pia.UDS_CHANNEL, timeout=0)
-            s.poll(now())
-            if s.state is State.JOINED and not first:
-                first = s.queue_unit(next(gen))          # $EF
-            for byte in s.pop_units():
-                if not self.model.done:
-                    s.queue_unit(gen.send(byte))
-            s.flush(now())
-
-    def close(self):
-        self.stop.set()
-        self.thread.join(timeout=2)
-        self.station.close()
+from pokeuds.radio.demo import SimulatedVcHost
+from pokeuds.vc.model import Model3DS
 
 
 @pytest.fixture
