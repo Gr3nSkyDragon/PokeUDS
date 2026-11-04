@@ -25,6 +25,10 @@ ESPRESSIF_JTAG_PID = 0x1001
 PING_INTERVAL = 2.0
 PONG_TIMEOUT = 8.0
 COMMAND_TIMEOUT = 3.0
+OPEN_TIMEOUT = 25.0     # covers firmware 1.8's restart from Switch mode into 3DS mode
+HELLO_WINDOW = 4.0      # HELLOs on one connection before it is reopened
+REOPEN_DELAY = 1.0
+MIN_FIRMWARE = (1, 7)   # the first 3DS-only image with the screen; 1.8 adds the Switch side
 
 
 def find_port() -> str | None:
@@ -45,6 +49,8 @@ class Esp32Radio(Radio):
         self.hello: bytes | None = None
         self.firmware = "?"
         self.factory_mac = b""
+        self.version = (0, 0)
+        self.features = 0
         self._decoder = wire.Decoder()
         self._rx: queue.Queue[RxFrame] = queue.Queue(maxsize=4096)
         self._write_lock = threading.Lock()
@@ -61,33 +67,87 @@ class Esp32Radio(Radio):
     # -- link ---------------------------------------------------------------------------------
 
     def open(self) -> None:
+        """Connect and say HELLO until the firmware answers.
+
+        Opening the native USB port can reset the chip, and firmware 1.8 boots in Switch mode until
+        a HELLO restarts it in 3DS mode: the port then drops and comes back (on Linux and macOS
+        sometimes under another name). So a lost port is closed, found again and reopened, and
+        HELLO is repeated, until OPEN_TIMEOUT.
+        """
         import serial
 
+        auto = not self.port_name
         name = self.port_name or find_port()
         if not name:
             raise RuntimeError(
                 "No ESP32-S3 found. Connect the board's native USB port (Espressif USB "
                 "Serial/JTAG, 303A:1001) or pass --port.")
+        deadline = time.monotonic() + OPEN_TIMEOUT
+        restarted = opened = False
+        while True:
+            try:
+                self._attach(serial.Serial(name, self.baud, timeout=0.02, write_timeout=1.0))
+                opened = True
+                if self._say_hello(min(deadline, time.monotonic() + HELLO_WINDOW)):
+                    break
+            except (OSError, serial.SerialException) as exc:   # The port went away under us.
+                log.debug("ESP32 on %s: %s", name, exc)
+            lost = self._reader is not None and not self._reader.is_alive()
+            self._detach()
+            if time.monotonic() >= deadline:
+                if not opened:
+                    raise RuntimeError(f"Could not open {name}. Is the board plugged in, and is no other program using it?")
+                raise RuntimeError(
+                    f"Something is on {name} but it did not answer. Is the esp32-uds-bridge "
+                    "firmware (1.7 or later) flashed? Firmware 1.8 restarts once into its 3DS mode; "
+                    "if the board is stuck, unplug it and plug it back in.")
+            if lost and not restarted:
+                restarted = True
+                log.info("ESP32 on %s restarted (firmware 1.8 switching to its 3DS mode); waiting for it", name)
+            time.sleep(REOPEN_DELAY)
+            if auto:
+                name = find_port() or name
         self.port_name = name
-        self.serial = serial.Serial(name, self.baud, timeout=0.02, write_timeout=1.0)
-        self._reader = threading.Thread(target=self._read_loop, name="esp32-rx", daemon=True)
-        self._reader.start()
-        # Opening the native USB port can reset the chip, so keep asking until it answers.
-        deadline = time.monotonic() + 10.0
-        while time.monotonic() < deadline and not self._hello_event.is_set():
-            self._send(wire.Type.HELLO)
-            self._hello_event.wait(0.5)
-        if not self._hello_event.is_set():
-            self.close()
-            raise RuntimeError(
-                f"Something is on {name} but it did not answer. Is the esp32-uds-bridge "
-                "firmware flashed?")
         ack = self.hello or b""
         if len(ack) >= 3:
             self.firmware = f"{ack[1]}.{ack[2]} (protocol {ack[0]})"
+            self.version = (ack[1], ack[2])
         if len(ack) >= 9:
             self.factory_mac = ack[3:9]
+        self.features = ack[9] if len(ack) >= 10 else 0
+        if self.features & wire.FEATURE_LINK_PORT:
+            self.firmware += ", VC-Adapter board build"
         log.info("ESP32 on %s, firmware %s", name, self.firmware)
+        if self.version < MIN_FIRMWARE:
+            log.warning("firmware %d.%d is older than %d.%d, which PokeUDS is tested with; update it on the Board page",
+                        *self.version, *MIN_FIRMWARE)
+
+    def _attach(self, port) -> None:
+        self.serial = port
+        self._stop.clear()
+        self._decoder = wire.Decoder()
+        self._hello_event.clear()
+        self._reader = threading.Thread(target=self._read_loop, name="esp32-rx", daemon=True)
+        self._reader.start()
+
+    def _say_hello(self, until: float) -> bool:
+        while time.monotonic() < until and self._reader.is_alive():
+            self._send(wire.Type.HELLO)
+            if self._hello_event.wait(0.5):
+                return True
+        return False
+
+    def _detach(self) -> None:
+        self._stop.set()
+        if self._reader is not None:
+            self._reader.join(timeout=1.0)
+            self._reader = None
+        if self.serial is not None:
+            try:
+                self.serial.close()
+            except Exception:
+                pass
+            self.serial = None
 
     def describe(self) -> str:
         return f"ESP32 on {self.port_name}, firmware {self.firmware}"
@@ -220,10 +280,4 @@ class Esp32Radio(Radio):
                 self._command(wire.Type.STOP)
         except Exception:
             pass
-        self._stop.set()
-        if self._reader:
-            self._reader.join(timeout=1.0)
-        try:
-            self.serial.close()
-        finally:
-            self.serial = None
+        self._detach()

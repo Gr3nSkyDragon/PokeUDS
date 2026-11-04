@@ -7,6 +7,7 @@
     pkx      show a .pk6/.pk7 (or .ek6/.ek7) file
     vc       Virtual Console Gen 1/2: trade, show or convert a .pk1/.pk2
     trade    trade with a retail console (xy, oras, sm, usum), joining or hosting
+    board    ESP32-S3 boards: list, check, download or flash esp32-uds-bridge
 """
 
 from __future__ import annotations
@@ -339,6 +340,70 @@ def cmd_vc_trade(args) -> int:
     return 130 if stopped else 0
 
 
+def cmd_board(args) -> int:
+    from .app import board
+
+    if args.board_command == "list":
+        found = board.ports()
+        for port in found:
+            print(port.label())
+        status.emit("boards", ports=[{"device": p.device, "description": p.description, "native": p.native} for p in found])
+        if not found:
+            print("No ESP32-S3 found (Espressif USB 303A:1001, or a CP210x/CH340 UART bridge).")
+        return 0
+    if args.board_command == "check":
+        port = args.port or next((p.device for p in board.ports() if p.native), None)
+        if not port:
+            print("No ESP32-S3 on its native USB port. Plug in the port marked USB (not UART), or pass --port.")
+            return 1
+        print(f"Asking the board on {port} for its firmware (1.8 restarts into its 3DS mode first)")
+        try:
+            found = board.identify(port)
+        except RuntimeError as exc:
+            print(exc)
+            return 1
+        update = board.update_for(found)
+        build = {"gblink": "GB-Link build", "vcadapter": "VC-Adapter board build", "": "3DS only"}[found.build]
+        print(f"esp32-uds-bridge {found.firmware} ({build}) on {found.port}, MAC {found.mac}")
+        if update:
+            print(f"Update available: {update.name}")
+        status.emit("board", port=found.port, firmware=found.firmware, build=found.build, mac=found.mac,
+                    update=update.name if update else "")
+        return 0
+    if args.board_command == "download":
+        try:
+            written = board.download()
+        except OSError as exc:
+            print(f"Download failed: {exc}")
+            print(f"The images are also on {board.RELEASES_PAGE}; Install from a file takes one.")
+            return 1
+        for path in written:
+            print(f"Saved {path}")
+        status.emit("firmware", files=[str(p) for p in written])
+        return 0
+    if args.board_command == "flash":
+        image = Path(args.firmware) if args.firmware else (board.recommended() or None)
+        if image is None:
+            print("No firmware downloaded: run `pokeuds board download` or pass --firmware FILE.bin")
+            return 1
+        image = getattr(image, "path", image)
+        info = board.image_info(image)
+        if info and info.build == "vcadapter":
+            print("Note: this is the VC-Adapter board build (1.9 beta), meant for that board on a link port.")
+        port = args.port or next((p.device for p in board.ports()), None)
+        if not port:
+            print("No board found. If it is plugged in, hold BOOT while plugging it in, then release it.")
+            return 1
+        try:
+            board.flash(port, image)
+        except Exception as exc:           # esptool.FatalError, a serial error, a bad image
+            print(f"Flashing failed: {exc}")
+            print("If the board is not detected, hold BOOT while plugging it in, then release it, and try again.")
+            return 1
+        return 0
+    return 2
+
+
 GAME_KEYS = ["xy", "oras", "sm", "usum"]
 
 
@@ -404,6 +469,18 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("file")
     p.add_argument("--output")
     p.set_defaults(func=cmd_vc_convert)
+
+    bd = sub.add_parser("board", help="ESP32-S3 boards and their esp32-uds-bridge firmware")
+    bsub = bd.add_subparsers(dest="board_command", required=True)
+    bsub.add_parser("list", help="list attached boards").set_defaults(func=cmd_board)
+    p = bsub.add_parser("check", help="read a board's firmware version and build")
+    p.add_argument("--port")
+    p.set_defaults(func=cmd_board)
+    bsub.add_parser("download", help="fetch the newest esp32-uds-bridge images from VC-Adapter's releases").set_defaults(func=cmd_board)
+    p = bsub.add_parser("flash", help="write a firmware image at 0x0 (default: the newest downloaded GB-Link build)")
+    p.add_argument("--port")
+    p.add_argument("--firmware", help="a merged esp32-uds-bridge .bin")
+    p.set_defaults(func=cmd_board)
 
     p = sub.add_parser("trade", help="trade with a retail console")
     p.add_argument("game", choices=GAME_KEYS)

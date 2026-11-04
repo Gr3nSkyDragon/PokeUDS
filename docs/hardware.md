@@ -2,10 +2,9 @@
 
 ## ESP32-S3
 
-Flash [esp32-uds-bridge](https://github.com/Gr3nSkyDragon/VC-Adapter/tree/main/firmware/esp32-uds-bridge)
-(the azahar_uds firmware flasher works, or esptool at address `0x0000`). Connect the board by its
-**native** USB port, which shows up as Espressif USB Serial/JTAG (`303A:1001`); PokeUDS finds it by
-that id, or pass `--radio esp32:COM4` / `--radio esp32:/dev/ttyACM0`.
+PokeUDS runs VC-Adapter's [esp32-uds-bridge](https://github.com/Gr3nSkyDragon/VC-Adapter/tree/main/firmware/esp32-uds-bridge)
+unchanged. Connect the board by its **native** USB port, which shows up as Espressif USB Serial/JTAG
+(`303A:1001`); PokeUDS finds it by that id, or pass `--radio esp32:COM4` / `--radio esp32:/dev/ttyACM0`.
 
 ```bash
 python -m pokeuds probe --radio esp32
@@ -18,6 +17,61 @@ for our MAC and for one watched peer. PokeUDS starts it with a twin hardware add
 does), because the chip does not pass unicast data for its own MAC to the capture path. The cost is
 that our unicast frames are not hardware-ACKed, so the console retransmits some of them; the UDS layer
 drops the duplicates.
+
+### Which firmware
+
+| image | firmware | use it? |
+|---|---|---|
+| `esp32-uds-bridge-fw1.8-esp32s3-gblink.bin` | 1.8, GB-Link build | **yes**: the 3DS raw radio (every generation, Gen 6, Gen 7 and VC, trades over it), the optional screen, and a Switch side PokeUDS does not use |
+| `esp32-uds-bridge-fw1.7-esp32s3.bin` | 1.7 | works: the 3DS side alone, with the screen |
+| `esp32-uds-bridge-fw1.9-esp32s3-vcadapter.bin` | 1.9 beta, VC-Adapter board build | for that board on a console's link port; the 3DS radio is the same, but a plain board wants the GB-Link build |
+
+Nothing in the firmware needs changing for PokeUDS: it only uses the raw radio (START with a twin
+address, TX_FRAME, SET_BEACON, SET_WATCH, PING), never the board-side Game Boy wrapper (`GB_*`) or the
+key store (`SET_KEY`), since CCMP runs on the PC with the key from your `aes_keys.txt`.
+
+Two things PokeUDS handles for 1.8:
+
+- **Two modes.** 1.8 boots in Switch mode (GB-Link Switch LDN's bridge) until a HELLO from this protocol
+  restarts it in 3DS mode, and remembers the mode in flash. The first connection after a Switch session
+  therefore drops while the board restarts; PokeUDS closes the port, finds the board again (its port can
+  come back under another name) and repeats HELLO for up to 25 s.
+- **The features byte.** HELLO_ACK has a tenth byte from 1.8 on; bit 0 marks the VC-Adapter board build.
+  `probe` and the Board page name the build.
+
+**The screen.** A 128x64 SSD1306 I2C OLED (SDA GPIO8, SCL GPIO9, 3V3, GND; connect it before powering
+the board) shows the firmware, whether a host has said HELLO, and the raw radio's channel and frame
+counts while PokeUDS drives it, as it does for Azahar. PokeUDS sends nothing for it. It dims after a
+minute idle and turns off after ten; BOOT wakes it.
+
+### Installing the firmware
+
+The app's **Board** page lists boards, reads their firmware, downloads the released images from
+VC-Adapter's releases into the data folder (`firmware/`; checked against the release's `SHA256SUMS`
+when it has one), and installs one, or a `.bin` you choose. The same steps from the command line:
+
+```bash
+python -m pokeuds board list
+```
+
+```bash
+python -m pokeuds board check
+```
+
+```bash
+python -m pokeuds board download
+```
+
+```bash
+python -m pokeuds board flash --port COM4
+```
+
+`flash` takes the newest downloaded GB-Link image (or `--firmware FILE.bin`), checks it is a merged
+ESP32-S3 image (its bootloader at 0x0 with the S3's chip id, esptool's checksum and digest) and writes it
+at `0x0` with esptool 5.6.0 (`pip install -r requirements-gui.txt`), at 460800 baud. Writing at 0x0
+erases the keys a board stores; PokeUDS stores none there, Azahar users store theirs again. If the board
+is not detected, hold **BOOT** while plugging it in, then release it. A USB-UART port (CP210x, CH340)
+can be flashed through, but trades need the native USB port.
 
 ## USB Wi-Fi adapter (Windows)
 

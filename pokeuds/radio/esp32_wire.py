@@ -34,7 +34,7 @@ class Type(enum.IntEnum):
     PING = 0x09         # {token:u32} -> PONG
 
     # Device -> host.
-    HELLO_ACK = 0x81    # {proto:u8, fw_major:u8, fw_minor:u8, factory_mac[6]}
+    HELLO_ACK = 0x81    # {proto:u8, fw_major:u8, fw_minor:u8, factory_mac[6]}, 1.8 on + {features:u8}
     STATUS = 0x82       # {request_type:u8, result:s32 LE}, echoes the request's seq
     RX = 0x83           # {channel:u8, rssi:s8, rx_flags:u8, mpdu...}
     LOG = 0x84          # {text...}
@@ -45,6 +45,7 @@ class Type(enum.IntEnum):
 
 TX_NO_ACK = 1 << 0       # Group addressed: do not wait for an ACK.
 RX_TRUNCATED = 1 << 0    # The radio delivered fewer bytes than the frame's length.
+FEATURE_LINK_PORT = 1 << 0   # HELLO_ACK features: the VC-Adapter board build (console link port on its GPIOs)
 
 
 @dataclass

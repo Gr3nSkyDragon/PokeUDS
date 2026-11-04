@@ -1,3 +1,4 @@
 # The desktop app: pip install -r requirements-gui.txt, then python -m gui
 -r requirements.txt
 flet[all]==1.0.5
+esptool==5.6.0          # the Board page: flashing esp32-uds-bridge

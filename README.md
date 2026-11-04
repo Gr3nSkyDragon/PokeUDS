@@ -32,7 +32,8 @@ both directions ([docs/vc.md](docs/vc.md)).
 Either radio works; see [docs/hardware.md](docs/hardware.md).
 
 - **ESP32-S3** flashed with [esp32-uds-bridge](https://github.com/Gr3nSkyDragon/VC-Adapter/tree/main/firmware/esp32-uds-bridge),
-  connected by its native USB port. Any OS.
+  firmware 1.8 (GB-Link build; 1.7 works too), connected by its native USB port. Any OS. The app's
+  Board page downloads and installs it.
 - **USB Wi-Fi adapter** through legacy **ldnd.exe 0.0.5** (unlimitedcoder2's gist), Windows only. Not the
   ldnrs revision.
 

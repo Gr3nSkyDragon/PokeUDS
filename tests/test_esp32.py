@@ -71,3 +71,74 @@ def test_session(board):
     assert by_type[wire.Type.TX_FRAME][:2] == bytes([wire.TX_NO_ACK, 22])  # Broadcast data at 11 Mbps.
     assert wire.Type.STOP in by_type
     assert radio._status_results == {} and radio._awaiting == set()
+
+
+class SwitchModeBoard(FakeBoard):
+    """Firmware 1.8 in Switch mode: the first HELLO restarts the board, so that port dies."""
+
+    def __init__(self, ports):
+        super().__init__()
+        self.ports = ports
+        self.dead = False
+
+    def write(self, data):
+        if self.dead:
+            raise OSError("device disconnected")
+        for frame in self.decoder.feed(data):
+            if frame.type == wire.Type.HELLO:
+                self.dead = True
+                self.ports.append(ThreeDSModeBoard())   # comes back after the restart
+
+    def read(self, count):
+        time.sleep(0.002)
+        if self.dead:
+            raise OSError("device disconnected")
+        return b""
+
+
+class ThreeDSModeBoard(FakeBoard):
+    def write(self, data):
+        for frame in self.decoder.feed(data):
+            self.received.append(frame)
+            if frame.type == wire.Type.HELLO:   # 1.8: a features byte after the MAC (none set: gblink build)
+                self._reply(wire.Type.HELLO_ACK, frame.seq, bytes([1, 1, 8]) + bytes.fromhex("A0B1C2D3E4F5") + b"\x00")
+            else:
+                self._reply(wire.Type.STATUS, frame.seq, bytes([frame.type]) + struct.pack("<i", 0))
+
+
+def test_survives_the_switch_to_3ds_mode_restart(monkeypatch):
+    import serial
+
+    from pokeuds.radio import esp32
+
+    monkeypatch.setattr(esp32, "REOPEN_DELAY", 0.05)
+    opened = []
+    ports = []
+    ports.append(SwitchModeBoard(ports))
+
+    def open_port(*a, **k):
+        if not ports:
+            raise serial.SerialException("could not open port")
+        opened.append(ports.pop(0))
+        return opened[-1]
+
+    monkeypatch.setattr(serial, "Serial", open_port)
+    radio = Esp32Radio("FAKE")
+    radio.open()
+    assert len(opened) == 2 and radio.version == (1, 8) and radio.features == 0
+    assert radio.firmware == "1.8 (protocol 1)"
+    radio.start(1, bytes.fromhex("020000000001"))
+    radio.close()
+    assert wire.Type.START in {f.type for f in opened[1].received}
+
+
+def test_vcadapter_build_is_named(board, monkeypatch):
+    def hello(self, data):
+        for frame in self.decoder.feed(data):
+            self._reply(wire.Type.HELLO_ACK, frame.seq, bytes([1, 1, 9]) + bytes(6) + bytes([wire.FEATURE_LINK_PORT]))
+    monkeypatch.setattr(FakeBoard, "write", hello)
+    radio = Esp32Radio("FAKE")
+    radio.open()
+    assert radio.firmware == "1.9 (protocol 1), VC-Adapter board build"
+    radio._hello_event.clear()       # no STOP round trip on close
+    radio.close()

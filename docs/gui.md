@@ -18,6 +18,7 @@ A desktop app (Flet 1.0.5, the toolkit pokeldn uses) over the same code as the c
 |---|---|
 | Trade | pick the game, who hosts, the Pokemon to offer, Start; the session panel follows the run: radio, 3DS connected, link up, Pokemon received, what happened, the log |
 | Radio | ESP32-S3 (port found by its USB id, or chosen) or a USB Wi-Fi adapter through ldnd.exe 0.0.5 (Windows); "Check the radio" runs `probe` |
+| Board | ESP32-S3 boards: their firmware and build, update, download the released esp32-uds-bridge images, install one or a chosen `.bin` (`board ...` children; docs/hardware.md) |
 | Received | the Pokemon in the output folder, newest first |
 | Settings | `aes_keys.txt`, the output folder, the trainer name the 3DS sees, Debug tools |
 | Debug | only with Settings, Debug tools on: the demo radio, a network scan, capture analysis |
@@ -41,6 +42,7 @@ at a time, since one radio serves one process.
 | `pokeuds/app/catalog.py` | the games the app lists, what each accepts, the command it runs, what blocks Start |
 | `pokeuds/app/runner.py` | the child process |
 | `pokeuds/app/progress.py` | events to headline, steps and notes |
+| `pokeuds/app/board.py` | boards, firmware images, download and flashing |
 | `gui/` | the Flet pages |
 
 ## The demo radio
