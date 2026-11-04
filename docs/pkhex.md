@@ -55,7 +55,38 @@ shiny, gender, OT, TID, move names, IVs, item, nature, ability, ball, origin).
 3. The level, moves (or, with none asked, the moves it would know at that level), item, ball and nickname
    are applied, and PKHeX's `LegalityAnalysis` checks the result.
 4. The first record that is legal and still has every wish is returned. None: the request is refused
-   with the reason (Rowlet in X/Y: "not available in these games").
+   with PKHeX's reason, or "the encounter could not meet every request". (A species the game does not
+   have, Rowlet in X/Y, is refused by PokeUDS before PKHeX is asked.)
+
+## The Builder page and `pokeuds build`
+
+The app's **Builder** page collects the wishes (game, species, level, nickname, shiny, gender, nature,
+ability, held item, ball, up to four moves) and the original trainer, which it keeps for the next build.
+The trainer is entered as each generation shows it: a five-digit ID (and SID from Gen 3 on), or from Gen
+7 the six-digit ID and four-digit SID. Build puts the result in the bank (source "built", with PKHeX's
+verdict) and offers it in the games that take it. Without the helper the page says how to build it,
+with a button that runs `dotnet build` when the .NET SDK is installed.
+
+The same from the command line; names or numbers are accepted, `--out` takes a file or a folder, and
+without `--out` the result goes to the bank:
+
+```bash
+python -m pokeuds build xy "mr. mime" --level 20 --nature timid --moves confusion "magical leaf" --out mime.pk6
+```
+
+```bash
+python -m pokeuds build gsc togepi --level 5 --shiny --ot KRIS --tid 2468 --female
+```
+
+Things to know:
+
+- **Shiny-locked Pokemon** (ORAS's Rayquaza, the Tapus) come back as their official event gifts when
+  shiny is asked for, since that is the only legal shiny; they keep the event's OT, ID and met data.
+- **Gen 2 shininess** is a DV pattern; encounters that ignore the shiny wish (Gen 2 eggs, for one) are
+  given shiny DVs and checked again.
+- A wish PKHeX cannot meet is refused with its reason ("Invalid Move 1" for a move the species cannot
+  know at that level); nothing is kept.
+- Forms other than the base form are not offered yet.
 
 ## From Python
 

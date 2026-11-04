@@ -64,7 +64,11 @@ class Entry:
     def describe(self) -> str:
         name = f"{self.species}" + (f" '{self.nickname}'" if self.nickname and self.nickname.upper() != self.species.upper() else "")
         level = f" Lv {self.level}" if self.level else ""
-        return f"{name}{level}, OT {self.ot} {self.tid:05d}"
+        return f"{name}{level}, OT {self.ot} {self.shown_tid()}"
+
+    def shown_tid(self) -> str:
+        """The trainer ID as the game shows it: five digits, six from Gen 7 on."""
+        return f"{self.tid:06d}" if self.generation >= 7 else f"{self.tid:05d}"
 
     def data(self) -> bytes:
         return self.path.read_bytes()

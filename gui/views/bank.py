@@ -113,7 +113,7 @@ class BankView(View):
         busy = self.app.busy()
         facts = [
             ("Species", f"{e.species} (#{e.dex})"), ("Nickname", e.nickname or "-"),
-            ("Level", str(e.level) if e.level else "-"), ("Trainer", f"{e.ot} {e.tid:05d}"),
+            ("Level", str(e.level) if e.level else "-"), ("Trainer", f"{e.ot} {e.shown_tid()}"),
             ("Format", f".{e.extension} (Generation {e.generation})"),
             ("From", bank.SOURCES.get(e.source, e.source) + f", {e.when}"),
         ]

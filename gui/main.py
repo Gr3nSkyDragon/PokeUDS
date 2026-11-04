@@ -15,13 +15,14 @@ import flet as ft  # noqa: E402
 from gui import theme as t  # noqa: E402
 from gui.app import App  # noqa: E402
 from gui.views.board import BoardView  # noqa: E402
+from gui.views.builder import BuilderView  # noqa: E402
 from gui.views.bank import BankView  # noqa: E402
 from gui.views.debug import DebugView  # noqa: E402
 from gui.views.radio import RadioView  # noqa: E402
 from gui.views.settings import SettingsView  # noqa: E402
 from gui.views.trade import TradeView  # noqa: E402
 
-PAGES = (TradeView, BankView, RadioView, BoardView, SettingsView)
+PAGES = (TradeView, BankView, BuilderView, RadioView, BoardView, SettingsView)
 
 
 class Shell:

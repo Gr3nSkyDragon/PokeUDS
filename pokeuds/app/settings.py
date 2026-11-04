@@ -30,6 +30,7 @@ class Settings:
     debug: bool = False
     last_game: str = "rby"
     offers: dict = field(default_factory=dict)      # game -> last offer file
+    trainer: dict = field(default_factory=dict)     # the Builder's OT: {ot, tid, sid, female}
 
     def radio_spec(self) -> str:
         return f"{self.radio}:{self.port}" if self.port else self.radio

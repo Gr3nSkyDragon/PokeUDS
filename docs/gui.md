@@ -19,6 +19,7 @@ A desktop app (Flet 1.0.5, the toolkit pokeldn uses) over the same code as the c
 | Trade | pick the game, who hosts, the Pokemon to offer (from the bank or a file), Start; the session panel follows the run: radio, 3DS connected, link up, Pokemon received, what happened, the log |
 | Radio | ESP32-S3 (port found by its USB id, or chosen) or a USB Wi-Fi adapter through ldnd.exe 0.0.5 (Windows); "Check the radio" runs `probe` |
 | Board | ESP32-S3 boards: their firmware and build, update, download the released esp32-uds-bridge images, install one or a chosen `.bin` (`board ...` children; docs/hardware.md) |
+| Builder | a legal Pokemon built by PKHeX (game, species, level and wishes, the trainer), kept in the bank and offered in a trade (docs/pkhex.md) |
 | Bank | every Pokemon the app keeps, received ones included: details, PKHeX legality, offer in a trade, Time Capsule copy, import, export, delete |
 | Settings | `aes_keys.txt`, the output folder, the trainer name the 3DS sees, Debug tools |
 | Debug | only with Settings, Debug tools on: the demo radio, a network scan, capture analysis |
@@ -44,6 +45,7 @@ at a time, since one radio serves one process.
 | `pokeuds/app/progress.py` | events to headline, steps and notes |
 | `pokeuds/app/board.py` | boards, firmware images, download and flashing |
 | `pokeuds/app/bank.py` | the bank folder |
+| `pokeuds/app/builder.py` | the Builder's wishes and trainer |
 | `gui/` | the Flet pages |
 
 ## The bank

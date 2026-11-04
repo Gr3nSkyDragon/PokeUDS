@@ -8,6 +8,7 @@
     vc       Virtual Console Gen 1/2: trade, show or convert a .pk1/.pk2
     trade    trade with a retail console (xy, oras, sm, usum), joining or hosting
     board    ESP32-S3 boards: list, check, download or flash esp32-uds-bridge
+    build    build a legal Pokemon with the PKHeX helper (docs/pkhex.md)
 """
 
 from __future__ import annotations
@@ -404,6 +405,51 @@ def cmd_board(args) -> int:
     return 2
 
 
+def cmd_build(args) -> int:
+    from . import pkhex
+    from .app import bank as bank_mod
+    from .app import builder
+
+    helper = pkhex.shared()
+    lists = helper.lists(args.game)
+
+    def pick(kind: str, value: str | None) -> int | None:
+        """A number, or a name from the game's list (case and spacing ignored)."""
+        if value is None:
+            return None
+        if value.isdigit():
+            return int(value)
+        key = value.replace(" ", "").replace("-", "").lower()
+        for number, name in lists[kind]:
+            if name.replace(" ", "").replace("-", "").lower() == key:
+                return number
+        raise SystemExit(f"no {kind[:-1] if kind != 'species' else kind} called {value!r} in {args.game}")
+
+    wish = builder.Wish(args.game, pick("species", args.species), args.level, args.shiny, pick("natures", args.nature),
+                        args.gender or "", args.ability or "", pick("items", args.item), pick("balls", args.ball),
+                        [pick("moves", m) for m in args.moves or []], args.nickname or "")
+    trainer = builder.Trainer(args.ot, args.tid, args.sid, args.female)
+    try:
+        built = builder.build(wish, trainer, helper)
+    except ValueError as exc:
+        print(f"PKHeX could not build it: {exc}")
+        return 1
+    s = built.summary
+    print(f"{s['species_name']} Lv {s['level']}{' (shiny)' if s['shiny'] else ''}, {'legal' if built.legal else 'NOT legal'}"
+          f", from {built.encounter or '?'}; moves {', '.join(m for m in s['moves'] if m)}")
+    if args.out:
+        out = Path(args.out)
+        if out.is_dir() or not out.suffix:
+            out = out / f"{s['species']:03d}_{s['species_name']}.{built.extension}"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_bytes(built.data if built.extension in ("pk1", "pk2") else pkx.to_stored(built.data))
+        print(f"Saved {out}")
+    if args.bank or not args.out:
+        entry = builder.keep(built, bank_mod.Bank(), wish)
+        print(f"Kept in the bank as {entry.id}")
+    return 0 if built.legal else 1
+
+
 GAME_KEYS = ["xy", "oras", "sm", "usum"]
 
 
@@ -481,6 +527,26 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--port")
     p.add_argument("--firmware", help="a merged esp32-uds-bridge .bin")
     p.set_defaults(func=cmd_board)
+
+    p = sub.add_parser("build", help="build a legal Pokemon with the PKHeX helper")
+    p.add_argument("game", choices=["rby", "gsc", "xy", "oras", "sm", "usum"])
+    p.add_argument("species", help="National Dex number or name")
+    p.add_argument("--level", type=int, default=50)
+    p.add_argument("--shiny", action="store_true")
+    p.add_argument("--nature", help="name or 0-24 (Gen 6/7)")
+    p.add_argument("--gender", choices=["male", "female"])
+    p.add_argument("--ability", choices=["1", "2", "hidden"])
+    p.add_argument("--item", help="held item, name or number (Gen 2 on)")
+    p.add_argument("--ball", help="name or number (Gen 6/7)")
+    p.add_argument("--moves", nargs="+", help="up to four, names or numbers (default: what it knows at that level)")
+    p.add_argument("--nickname")
+    p.add_argument("--ot", default="POKEUDS")
+    p.add_argument("--tid", type=int, default=12345)
+    p.add_argument("--sid", type=int, default=54321)
+    p.add_argument("--female", action="store_true", help="a female OT (Gen 2 on)")
+    p.add_argument("--out", help="write the record to this file or folder")
+    p.add_argument("--bank", action="store_true", help="also keep it in the bank (the default without --out)")
+    p.set_defaults(func=cmd_build)
 
     p = sub.add_parser("trade", help="trade with a retail console")
     p.add_argument("game", choices=GAME_KEYS)

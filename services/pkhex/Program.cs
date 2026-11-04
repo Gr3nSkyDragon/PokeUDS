@@ -221,6 +221,10 @@ static class Program
         {
             pk.SetNickname(nick);
         }
+        // Some encounters ignore the criteria's Shiny (Gen 2 eggs and gifts, whose shininess is only a DV
+        // pattern): make it shiny here and let the legality check refuse it where the game fixes it.
+        if ((bool?)request["shiny"] == true && !pk.IsShiny)
+            pk.SetShiny();
         pk.ResetPartyStats();
         pk.RefreshChecksum();
     }
