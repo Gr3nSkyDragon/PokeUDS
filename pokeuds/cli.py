@@ -28,7 +28,7 @@ from .util import mac_str, parse_hex, parse_mac, random_mac
 
 def _add_radio(p: argparse.ArgumentParser) -> None:
     p.add_argument("--radio", default="esp32",
-                   help="esp32[:PORT] (ESP32-S3, found by USB id) or ldnd[:PIPE] (USB adapter via ldnd.exe 0.0.5)")
+                   help="esp32[:PORT] (an ESP32 board, found by USB id) or ldnd[:PIPE] (USB adapter via ldnd.exe 0.0.5)")
     p.add_argument("--mac", type=parse_mac, help="MAC address to use on the air (default: random, locally administered)")
     p.add_argument("--channel", type=int, default=11, help="starting channel")
 
@@ -351,12 +351,12 @@ def cmd_board(args) -> int:
             print(port.label())
         status.emit("boards", ports=[{"device": p.device, "description": p.description, "native": p.native} for p in found])
         if not found:
-            print("No ESP32-S3 found (Espressif USB 303A:1001, or a CP210x/CH340 UART bridge).")
+            print("No ESP32 found (Espressif USB 303A:1001, or a CP210x/CH340 UART bridge).")
         return 0
     if args.board_command == "check":
         port = args.port or next((p.device for p in board.ports() if p.native), None)
         if not port:
-            print("No ESP32-S3 on its native USB port. Plug in the port marked USB (not UART), or pass --port.")
+            print("No ESP32 on its native USB port. Plug in the port marked USB (not UART), or pass --port.")
             return 1
         print(f"Asking the board on {port} for its firmware (1.8 restarts into its 3DS mode first)")
         try:
@@ -575,7 +575,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--output")
     p.set_defaults(func=cmd_vc_convert)
 
-    bd = sub.add_parser("board", help="ESP32-S3 boards and their esp32-uds-bridge firmware")
+    bd = sub.add_parser("board", help="ESP32 boards and their esp32-uds-bridge firmware")
     bsub = bd.add_subparsers(dest="board_command", required=True)
     bsub.add_parser("list", help="list attached boards").set_defaults(func=cmd_board)
     p = bsub.add_parser("check", help="read a board's firmware version and build")

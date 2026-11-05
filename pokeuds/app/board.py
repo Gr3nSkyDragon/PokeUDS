@@ -61,7 +61,7 @@ def ports() -> list[Port]:
     found = []
     for p in list_ports.comports():
         if (p.vid, p.pid) == (ESPRESSIF_VID, ESPRESSIF_JTAG_PID):
-            found.append(Port(p.device, "ESP32-S3 native USB", True))
+            found.append(Port(p.device, "ESP32 native USB", True))
         elif (p.vid, p.pid) in BRIDGES:
             found.append(Port(p.device, f"{BRIDGES[(p.vid, p.pid)]} USB-UART; flash only", False))
     return sorted(found, key=lambda p: (not p.native, p.device))
@@ -184,7 +184,7 @@ def download(say=print, folder: Path | None = None) -> list[Path]:
         if sums and hashlib.sha256(images[name]).hexdigest() != sums.get(name):
             raise OSError(f"{name} does not match the release's SHA256SUMS; nothing was written")
     if not sums:
-        say("The release has no SHA256SUMS; the images are checked as ESP32-S3 images before flashing.")
+        say("The release has no SHA256SUMS; each image is checked against the board's chip before flashing.")
     folder.mkdir(parents=True, exist_ok=True)
     written = []
     for name, data in images.items():

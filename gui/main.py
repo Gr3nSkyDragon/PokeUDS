@@ -22,8 +22,8 @@ from gui.views.gifts import GiftsView  # noqa: E402
 from gui.views.settings import SettingsView  # noqa: E402
 from gui.views.trade import TradeView  # noqa: E402
 
-PAGES = (TradeView, BankView, GiftsView)          # the rail's top, Debug after them when it is on
-BOTTOM = (BoardView, SettingsView)                  # pinned to the rail's foot, Settings last
+PAGES = (TradeView, BankView, GiftsView)          # the rail's top
+BOTTOM = (BoardView, SettingsView)                  # pinned to the rail's foot, Settings last; Debug between when on
 
 
 class Shell:
@@ -35,19 +35,19 @@ class Shell:
         self.rail = ft.NavigationRail(on_change=self._rail, bgcolor=t.PANEL, min_width=84, expand=True,
                                       label_type=ft.NavigationRailLabelType.ALL,
                                       leading=ft.Container(t.mark(), padding=ft.Padding(0, 18, 0, 18)))
-        self.foot = ft.NavigationRail(on_change=self._foot, bgcolor=t.PANEL, min_width=84, height=170,
-                                      label_type=ft.NavigationRailLabelType.ALL,
-                                      destinations=[self._destination(cls.key) for cls in BOTTOM])
+        self.foot = ft.NavigationRail(on_change=self._foot, bgcolor=t.PANEL, min_width=84,
+                                      label_type=ft.NavigationRailLabelType.ALL)
         app.navigate = self.navigate
         app.rebuild_shell = self.rebuild
         app.views = self.views
         app.listeners.append(self._changed)
 
     def keys(self) -> list[str]:
-        return [cls.key for cls in PAGES] + (["debug"] if self.app.settings.debug else [])
+        return [cls.key for cls in PAGES]
 
     def foot_keys(self) -> list[str]:
-        return [cls.key for cls in BOTTOM]
+        """Board, then Debug when Settings turns it on, then Settings at the very bottom."""
+        return ["board"] + (["debug"] if self.app.settings.debug else []) + ["settings"]
 
     def _destination(self, key: str) -> ft.NavigationRailDestination:
         return ft.NavigationRailDestination(icon=self.views[key].icon, label=self.views[key].label)
@@ -60,6 +60,8 @@ class Shell:
 
     def build(self) -> ft.Control:
         self.rail.destinations = [self._destination(k) for k in self.keys()]
+        self.foot.destinations = [self._destination(k) for k in self.foot_keys()]
+        self.foot.height = 85 * len(self.foot_keys())
         if self.current not in self.keys() + self.foot_keys():
             self.current = "trade"
         self._select()

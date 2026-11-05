@@ -14,8 +14,9 @@ A desktop app (Flet 1.0.5, the toolkit pokeldn uses) over the same code as the c
 
 ## Pages
 
-The rail lists Trade, Bank and Gifts (and Debug when it is on) at the top, and Board then Settings at
-its foot.
+The rail lists Trade, Bank and Gifts at the top, and Board, Debug (when it is on) and Settings at its
+foot, Settings last. The app says "ESP32" for the board: esp32-uds-bridge runs on the ESP32-S3 today, and
+other chips can join the firmware list later without renaming anything.
 
 | page | what it does |
 |---|---|
@@ -23,7 +24,7 @@ its foot.
 | Bank | every Pokemon the app keeps, received ones included: details, PKHeX legality, offer in a trade, Time Capsule copy, import, export, delete |
 | Gifts | Gen 6/7 Mystery Gift cards: PKHeX's official events, a `.wc6`/`.wc7` (or full) file, or a custom card; the card's Pokemon into the bank and a trade, the card saved as a file (docs/mystery_gift.md) |
 | Debug | only with Settings, Debug tools on: the demo radio, a network scan, capture analysis |
-| Board | ESP32-S3 boards: their firmware and build, update, download the released esp32-uds-bridge images, install one or a chosen `.bin`, Use for trades (`board ...` children; docs/hardware.md) |
+| Board | ESP32 boards (the S3 today): their firmware and build, update, download the released esp32-uds-bridge images, install one or a chosen `.bin`, Use for trades (`board ...` children; docs/hardware.md) |
 | Settings | `aes_keys.txt`, the output folder, the trainer name the 3DS sees, Debug tools |
 
 On the Trade page:
@@ -32,7 +33,7 @@ On the Trade page:
   buttons, for the chosen game; PKHeX builds a legal Pokemon from your wishes (species, level, nickname,
   shiny, gender, nature, ability, item, ball, moves) and the trainer, it is kept in the bank and becomes
   the offer (docs/pkhex.md).
-- **The connection**, as pokeldn's Connection choice: the ESP32-S3 board (found by its USB id, or the
+- **The connection**, as pokeldn's Connection choice: the ESP32 board (found by its USB id, or the
   port the Board page set with Use for trades) or a USB Wi-Fi adapter through ldnd.exe 0.0.5 (Windows,
   with its pipe). Check runs `probe` and shows what answered. With the Debug demo radio on, the row says
   so instead.

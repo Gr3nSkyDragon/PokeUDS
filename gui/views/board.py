@@ -1,4 +1,4 @@
-"""The Board page: ESP32-S3 boards, the esp32-uds-bridge firmware they run, and installing it.
+"""The Board page: ESP32 boards (the ESP32-S3 today), the esp32-uds-bridge firmware they run, and installing it.
 
 Modelled on pokeldn's Boards page. Checks and installs are ``python -m pokeuds board ...`` children, like
 every other run, so the page never holds a serial port the radio needs.
@@ -40,7 +40,7 @@ class BoardView(View):
                     t.secondary("Look again", lambda e: self.refresh(), ft.Icons.REFRESH)]),
         ]
         if self.app.settings.radio == "ldnd":
-            controls.append(t.notice("Trades use the USB Wi-Fi adapter (the Trade page's Connection). This page is for ESP32-S3 boards.", t.INFO))
+            controls.append(t.notice("Trades use the USB Wi-Fi adapter (the Trade page's Connection). This page is for ESP32 boards.", t.INFO))
         controls.append(t.card(t.heading("Boards"), *([self._board(p, best) for p in ports] or [self._none()]), spacing=12))
         controls.append(self._firmware(images, best))
         if self.app.run_kind == "board":
@@ -50,7 +50,7 @@ class BoardView(View):
     def _none(self) -> ft.Control:
         return ft.Column([
             t.label("No board found", color=t.TEXT, size=14),
-            t.label("Plug the ESP32-S3 into this computer with a data cable, on the port marked USB (its native USB). "
+            t.label("Plug the ESP32 into this computer with a data cable, on the port marked USB (its native USB). "
                     "It shows up here; press Look again. A board with no firmware may need BOOT held while plugging it in."),
         ], spacing=4, tight=True)
 

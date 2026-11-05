@@ -14,7 +14,7 @@ from .. import theme as t
 from .builder import BuilderPanel
 from .common import View, log_box, open_folder
 
-CONNECTIONS = (("esp32", "ESP32-S3 board"), ("ldnd", "USB Wi-Fi adapter"))
+CONNECTIONS = (("esp32", "ESP32 board"), ("ldnd", "USB Wi-Fi adapter"))
 LDND_PIPE = r"\\.\pipe\ldnd"
 
 
