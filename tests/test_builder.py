@@ -92,10 +92,18 @@ def test_gifts_page_builds_headless(tmp_path, monkeypatch):
     view.control()                                   # with the result panel
     view._keep(None)
     assert view.saved and view.saved.species == "Rayquaza" and view.saved.source == "gift"
-    view.mode = "custom"
-    view.lists["oras"] = {"species": [[25, "Pikachu"]], "items": [[50, "Rare Candy"]]}
+    view._customize(None)                            # the official card into the editor
+    assert view.mode == "custom" and view.editor.f["species"] == 384 and view.editor.f["shiny"] == "always"
+    lists = pkhex.shared().lists("oras")
+    view.editor.lists["oras"], view.editor.texts["oras"] = lists, [(43, 233, ["An example"])]
+    view.editor.more = True
+    view.control()
     for kind in ("pokemon", "item"):
-        view.form["kind"] = kind
+        view.editor._kind(kind)
         view.control()
+    view.editor.f["ot"] = "KUKUI"                    # named OT shows its own fields
+    view.control()
+    gift = view.editor.make()
+    assert gift.card["kind"] == "item" and len(gift.card_data) == 264
     view.mode = "file"
     view.control()

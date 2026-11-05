@@ -38,7 +38,8 @@ One JSON object per line each way. Every reply has `ok`; a refused request has `
 | `{"cmd":"check","game":"xy","data":"<base64>"}` | the same, for a record you have |
 | `{"cmd":"gifts","game":"oras"}` | the official Mystery Gift cards PKHeX.Core embeds for the game (Gen 6/7; `"all":true` for every card with its bytes) |
 | `{"cmd":"gift","game":"oras","key":"0547-384-0"}` or `"data":"<base64>"` | a card (official, or a `.wc6`/`.wc7`/full file) and the Pokemon it gives the trainer |
-| `{"cmd":"card","game":"usum","species":778, ...}` | a custom card and its Pokemon (docs/mystery_gift.md, Custom cards) |
+| `{"cmd":"card","game":"usum","species":778, ...}` | a card from the editor's fields and its Pokemon (docs/wonder_cards.md) |
+| `{"cmd":"card_fields","game":"usum","data":"<base64>"}` | any card as the editor's fields, which `card` turns back into the same bytes |
 
 Wishes, all optional: `level`, `form`, `shiny`, `nature` (0 to 24), `gender` (`male`, `female`),
 `ability` (`1`, `2`, `hidden`), `moves` (up to four move ids), `held_item`, `ball`, `nickname`, and

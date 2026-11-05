@@ -119,7 +119,8 @@ The PKHeX helper reads, makes and checks Gen 6/7 cards (`services/pkhex/Gifts.cs
 |---|---|
 | `gifts` | the official cards PKHeX.Core embeds for a game (one per card, species and form; `all` for every card, items and revisions too, with their bytes) |
 | `gift` | an official card (by key) or a `.wc6`/`.wc7`/full file, made into its Pokemon for the trainer and checked |
-| `card` | a custom card from a form, and the Pokemon it gives |
+| `card` | a card from the editor's fields, and the Pokemon it gives |
+| `card_fields` | any card (official or a file) as the editor's fields, which rebuild it byte for byte |
 
 PKHeX.Core 26.10.18 carries 838 Gen 6 and 937 Gen 7 cards. A card that names its own OT gives a Pokemon
 traded from that trainer; one that leaves it open makes the receiver the OT (in Gen 7 the card marks this
@@ -150,22 +151,26 @@ What a trade cannot give: items, Festival Coins, Poke Beans and BP, and the card
 
 ### Custom cards
 
-**Build your own** (or `pokeuds gift card`) writes a card PokeUDS made: a Pokemon (species, level,
-shiny, nickname, the card's OT or the receiver, moves it knows at that level, Classic Ribbon, met in "a
-lovely place", a fateful encounter as every card gives), an item and quantity, or Gen 7 Battle Points, for the
-versions ticked. The file is a well-formed card that PKHeX opens. Its Pokemon can go by trade today, but
-**PKHeX flags it** ("Unable to match to a Mystery Gift in the database"): no such event existed, and a
-check such as the GTS's, or a future one, would refuse it. A Gen 6 card for "the receiver" names the
-trainer entered, since Gen 6's games copy a card's IDs (no non-egg Gen 6 card leaves the OT open).
+**Build your own** on the Gifts page edits every field a card holds: the title, the card text, the date, the
+games, how often it can be received, and a Pokemon down to its nature, ability, ball, held item (and Gen 7's
+second item), moves and relearn moves, IVs (or a number of perfect ones), EVs, ribbons, OT, met place,
+language, PID and contest stats; or up to six items (Gen 7; one in Gen 6) with their amounts, Battle Points,
+or Poke Beans. Preview shows the Pokemon it gives, with the stats the game will work out. **Customize** opens
+any official card or card file in the editor. A gift is saved as a `.udsgift` (to open and change later) and
+exported as the card itself (`.wc6`/`.wc7`, or the 784-byte full file). The whole format, byte by byte, and
+what a card cannot hold (stats, a message of your own, a background) are in
+[docs/wonder_cards.md](wonder_cards.md).
 
-Whether a game accepts a custom card over local wireless is the signature question above. If it does
-(as Sword/Shield do), these files are what a PokeUDS distributor would send.
+A custom card's Pokemon can go by trade today, but **PKHeX flags it** ("Unable to match to a Mystery Gift in
+the database"): no such event existed, and a check such as the GTS's, or a future one, would refuse it.
+Whether a game accepts a custom card over local wireless is the signature question above. If it does (as
+Sword/Shield do), these files are what a PokeUDS distributor would send.
 
 ### Testing
 
 `tests/test_gifts.py` runs a sample of each game's official cards through every path (card file, full
 file, conversion, legality, the bank) whenever the helper is built. `scripts/check_gifts.py OUT_DIR` runs
-all of them and writes each as a file, about 80 s:
+all of them and writes each as a file, about a minute; it also rebuilds each from the editor's fields:
 
 | game | cards | Pokemon and eggs legal | items | BP |
 |---|---:|---:|---:|---:|

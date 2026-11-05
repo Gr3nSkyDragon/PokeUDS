@@ -121,6 +121,12 @@ class Helper:
         return self._gift(self.request("card", game=game, trainer=trainer or {},
                                        **{k: v for k, v in fields.items() if v is not None}))
 
+    def card_fields(self, game: str, *, key: str | None = None, data: bytes | None = None) -> dict:
+        """Any card (an official key, or a .wc6/.wc7/full file's bytes) as the editor's fields, which ``card`` takes
+        back unchanged: the schema is in services/pkhex/CardEditor.cs and docs/wonder_cards.md."""
+        fields = {"key": key} if key else {"data": base64.b64encode(data or b"").decode()}
+        return self.request("card_fields", game=game, **fields)["fields"]
+
     def _gift(self, reply: dict) -> "Gift":
         pokemon = self._built({**reply["pokemon"]}) if reply.get("pokemon") else None
         return Gift(reply["card"], base64.b64decode(reply.get("card_data", "")), base64.b64decode(reply.get("full_data", "")),

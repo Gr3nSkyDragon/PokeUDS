@@ -19,16 +19,15 @@ from pathlib import Path
 import flet as ft
 
 from pokeuds import pkx
-from pokeuds.app import bank, catalog
+from pokeuds.app import bank, catalog, giftfile
 from pokeuds.app.builder import Trainer
 
 from .. import theme as t
 from .common import View
+from .gift_editor import GiftEditor
 
 GAMES = {"xy": "X / Y", "oras": "Omega Ruby / Alpha Sapphire", "sm": "Sun / Moon", "usum": "Ultra Sun / Ultra Moon"}
 MODES = (("official", "Official events"), ("file", "Open a card"), ("custom", "Build your own"))
-VERSION_BITS = {6: (("X", 1), ("Y", 2), ("Alpha Sapphire", 4), ("Omega Ruby", 8)),
-                7: (("Sun", 1), ("Moon", 2), ("Ultra Sun", 4), ("Ultra Moon", 8))}
 SHOWN = 150
 
 
@@ -47,15 +46,13 @@ class GiftsView(View):
         self.mode = "official"
         self.search = ""
         self.cards: dict[str, list[dict]] = {}
-        self.lists: dict[str, dict] = {}
         self.loading = False
         self.selected = ""
         self.gift = None                    # pkhex.Gift on show
         self.saved: bank.Entry | None = None
         self.working = False
         self.message, self.message_color = "", t.INFO
-        self.form = {"kind": "pokemon", "card_id": 2000, "title": "PokeUDS gift", "species": 25, "level": 10,
-                     "shiny": "random", "nickname": "", "item": 50, "quantity": 1, "versions": 0, "card_ot": ""}
+        self.editor = GiftEditor(app, self.game, self.trainer, self._editor_result)
 
     @property
     def generation(self) -> int:
@@ -130,51 +127,38 @@ class GiftsView(View):
             spacing=12)
 
     def _custom(self) -> ft.Control:
-        f, gen = self.form, self.generation
-        lists = self.lists.get(self.game)
-        if lists is None:
-            self._load_lists(self.game)
-            return t.card(ft.Row([ft.ProgressRing(width=18, height=18), t.label("Asking PKHeX for species and items...")],
-                                 spacing=12))
-        kinds = [("pokemon", "Pokemon"), ("item", "Item")] + ([("bp", "Battle Points")] if gen == 7 else [])
+        self.editor.set_game(self.game)
+        return self.editor.control()
 
-        def field(key: str, label: str, width: int, number: bool = False) -> ft.TextField:
-            return ft.TextField(label=label, value=str(f[key]), width=width, dense=True,
-                                keyboard_type=ft.KeyboardType.NUMBER if number else None,
-                                on_blur=lambda e, k=key, n=number: self._form(k, e.control.value, n))
+    def _editor_result(self, gift) -> None:
+        """The editor previewed or exported a card: show it in the result panel."""
+        self.gift, self.saved = gift, None
+        self.app.ui(self.refresh)
 
-        def dd(key: str, label: str, options, width: int, search: bool = False) -> ft.Dropdown:
-            return ft.Dropdown(label=label, value=str(f[key]), width=width, dense=True, menu_height=360,
-                               enable_filter=search, editable=search,
-                               options=[ft.DropdownOption(key=str(k), text=v) for k, v in options],
-                               on_select=lambda e, k=key: self._form(k, e.control.value, k not in ("kind", "shiny")))
+    def follow_editor(self, game: str) -> None:
+        """A .udsgift for another game was opened in the editor."""
+        self.game, self.mode = game, "custom"
 
-        rows: list[ft.Control] = [
-            t.heading("Build your own card"),
-            t.label("The card is saved as a file, ready for the day PokeUDS can distribute (or for PKHeX). Its "
-                    "Pokemon can be traded today, but PKHeX flags it: it matches no real event."),
-            ft.Row([dd("kind", "Gives", kinds, 180), field("card_id", "Card number", 130, True),
-                    field("title", "Title", 300)], wrap=True, spacing=12),
-        ]
-        if f["kind"] == "pokemon":
-            species = [(v, f"{n} (#{v})") for v, n in sorted(lists["species"], key=lambda x: x[1])]
-            rows += [ft.Row([dd("species", "Species", species, 260, search=True), field("level", "Level", 100, True),
-                             dd("shiny", "Shiny", [("random", "May be"), ("always", "Always"), ("never", "Never")], 140),
-                             field("nickname", "Nickname", 180)], wrap=True, spacing=12),
-                     ft.Row([field("card_ot", "Card's OT (empty: the receiver)", 260)], spacing=12)]
-        elif f["kind"] == "item":
-            rows.append(ft.Row([dd("item", "Item", lists["items"], 260, search=True),
-                                field("quantity", "How many", 110, True)], spacing=12))
-        else:
-            rows.append(ft.Row([field("quantity", "Battle Points", 140, True)], spacing=12))
-        bits = VERSION_BITS[gen]
-        rows.append(t.label("Games it is for (none ticked: all four)", size=12))
-        rows.append(ft.Row([ft.Checkbox(label=name, value=bool(f["versions"] & bit),
-                                        on_change=lambda e, b=bit: self._version(b, e.control.value))
-                            for name, bit in bits], spacing=16))
-        rows.append(ft.Row([t.primary("Make the card", self._make_custom, ft.Icons.AUTO_FIX_HIGH, disabled=self.working),
-                            ft.ProgressRing(width=18, height=18, visible=self.working)], spacing=12))
-        return t.card(*rows, spacing=10)
+    def _customize(self, e) -> None:
+        """Open the card on show in the editor, to change anything on it."""
+        g = self.gift
+        if g is None:
+            return
+        from pokeuds import pkhex
+
+        try:
+            fields = pkhex.shared().card_fields(self.game, data=g.card_data)
+        except ValueError as exc:
+            self._say(str(exc), t.BAD)
+            self.refresh()
+            return
+        if fields.get("kind") not in ("pokemon", "item", "bp", "beans"):
+            self._say("This card's kind cannot be edited here.", t.WARN)
+            self.refresh()
+            return
+        self.editor.load_fields(self.game, giftfile.unreceived(fields), name=g.card.get("title", ""))
+        self.mode = "custom"
+        self.refresh()
 
     def _result(self) -> ft.Control:
         g = self.gift
@@ -199,6 +183,11 @@ class GiftsView(View):
             facts = [("Pokemon", f"{s['species_name']} Lv {s['level']}" + (" (shiny)" if s["shiny"] else "")),
                      ("OT", f"{s['ot_name']} {s.get('shown_id', s['tid'])}" + ("" if c.get("ot") else " (you)")),
                      ("Moves", ", ".join(m for m in s["moves"] if m) or "-")]
+            if s.get("stats"):
+                facts.append(("Stats", " / ".join(str(v) for v in s["stats"])))
+                facts.append(("IVs", " / ".join(str(v) for v in s.get("ivs", []))))
+                if any(s.get("evs") or []):
+                    facts.append(("EVs", " / ".join(str(v) for v in s["evs"])))
             for key, name in (("nature", "Nature"), ("ability", "Ability"), ("held_item", "Item"), ("ball", "Ball")):
                 if s.get(key) and s[key] not in ("None", "(None)"):
                     facts.append((name, s[key]))
@@ -216,7 +205,8 @@ class GiftsView(View):
                 rows.append(t.primary("Keep its Pokemon in the bank", self._keep, ft.Icons.INVENTORY_2_OUTLINED))
         rows.append(ft.Divider(color=t.LINE))
         rows.append(ft.Row([t.secondary(f"Save .{g.extension}", lambda e: self._save(False), ft.Icons.SAVE_ALT),
-                            t.secondary(f"Save .{g.extension}full", lambda e: self._save(True), ft.Icons.SAVE_ALT)],
+                            t.secondary(f"Save .{g.extension}full", lambda e: self._save(True), ft.Icons.SAVE_ALT),
+                            *([t.secondary("Customize", self._customize, ft.Icons.EDIT)] if self.mode != "custom" else [])],
                            wrap=True, spacing=8))
         return t.card(*rows, spacing=8)
 
@@ -249,18 +239,6 @@ class GiftsView(View):
             self.cards[game] = pkhex.shared().gifts(game)
 
         self._thread("pkhex-gifts", work)
-
-    def _load_lists(self, game: str) -> None:
-        if self.loading:
-            return
-        self.loading = True
-
-        def work() -> None:
-            from pokeuds import pkhex
-
-            self.lists[game] = pkhex.shared().lists(game)
-
-        self._thread("pkhex-lists", work)
 
     def _show(self, make) -> None:
         self.working, self.gift, self.saved, self.message = True, None, None, ""
@@ -295,25 +273,11 @@ class GiftsView(View):
 
         self._show(lambda: pkhex.shared().gift(game, data=data, trainer=trainer))
 
-    def _make_custom(self, e) -> None:
-        f, game, trainer = dict(self.form), self.game, self.trainer()
-        fields = {"kind": f["kind"], "card_id": f["card_id"], "title": f["title"], "versions": f["versions"]}
-        if f["kind"] == "pokemon":
-            fields.update(species=f["species"], level=f["level"], shiny=f["shiny"], nickname=f["nickname"] or None,
-                          ot=f["card_ot"] or None)
-        else:
-            fields.update(item=f["item"] if f["kind"] == "item" else None, quantity=f["quantity"])
-        from pokeuds import pkhex
-
-        self._show(lambda: pkhex.shared().card(game, trainer=trainer, **fields))
-
     # -- inputs and results ---------------------------------------------------------------------
 
     def _game(self, e) -> None:
         self.game = e.control.value
         self.selected, self.gift, self.saved, self.message = "", None, None, ""
-        if self.generation == 6 and self.form["kind"] == "bp":
-            self.form["kind"] = "pokemon"
         self.refresh()
 
     def _mode(self, e) -> None:
@@ -326,19 +290,6 @@ class GiftsView(View):
         if value != self.search:
             self.search = value
             self.refresh()
-
-    def _form(self, key: str, value, number: bool) -> None:
-        if number:
-            try:
-                value = int(value)
-            except (TypeError, ValueError):
-                return
-        self.form[key] = value
-        if key == "kind":
-            self.refresh()
-
-    def _version(self, bit: int, on: bool) -> None:
-        self.form["versions"] = (self.form["versions"] | bit) if on else (self.form["versions"] & ~bit)
 
     def _keep(self, e) -> None:
         g = self.gift

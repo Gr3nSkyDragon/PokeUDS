@@ -6,7 +6,8 @@
 //   {"cmd":"check","data":"<base64>","game":"xy"}    -> summary and legality report of a record
 //   {"cmd":"gifts","game":"xy"}                      -> the official Mystery Gift cards PKHeX knows for the game
 //   {"cmd":"gift","game":"xy","key":"..."|"data":..} -> a card (official, or a .wc6/.wc7/full file) made into its Pokemon
-//   {"cmd":"card","game":"xy",...}                   -> a custom card (Gifts.cs), and the Pokemon it gives
+//   {"cmd":"card","game":"xy",...}                   -> a card from the editor's fields (CardEditor.cs), and what it gives
+//   {"cmd":"card_fields","game":"xy","data":...}     -> any card (or an official key) as the editor's fields
 //
 // Every reply has "ok"; a failed request has "error" instead. Games: rby, gsc, xy, oras, sm, usum.
 // Legality is PKHeX.Core's (LegalityAnalysis); the build tries the species' encounters in PKHeX's
@@ -76,6 +77,7 @@ static partial class Program
             "gifts" => GiftList(game, (bool?)request["all"] ?? false),
             "gift" => Gift(game, request),
             "card" => BuildCard(game, request),
+            "card_fields" => CardFieldsReply(game, request),
             _ => throw new ArgumentException($"unknown cmd {cmd}"),
         };
     }
@@ -104,6 +106,9 @@ static partial class Program
             ["balls"] = Combo(source.Balls, b => b.Value > 0),
             ["natures"] = game.Generation >= 3 ? Combo(source.Natures) : new JsonArray(),
             ["languages"] = Combo(source.Languages),
+            // Where a Pokemon was met, and for an egg where it came from (the event places are 40001 on).
+            ["locations"] = game.Generation >= 6 ? Combo(GameInfo.Sources.Met.GetLocationList(game.Versions[0], game.Generation == 6 ? EntityContext.Gen6 : EntityContext.Gen7, false)) : new JsonArray(),
+            ["egg_locations"] = game.Generation >= 6 ? Combo(GameInfo.Sources.Met.GetLocationList(game.Versions[0], game.Generation == 6 ? EntityContext.Gen6 : EntityContext.Gen7, true)) : new JsonArray(),
             ["growth"] = new JsonArray(Enumerable.Range(0, sav.MaxSpeciesID + 1)
                 .Select(i => (JsonNode)sav.Personal[(ushort)i].EXPGrowth).ToArray()),
         };
@@ -285,6 +290,8 @@ static partial class Program
             ["shown_id"] = pk.Format >= 7 ? pk.DisplayTID.ToString("000000") : pk.TID16.ToString("00000"),
             ["moves"] = moves,
             ["ivs"] = ivs,
+            ["evs"] = new JsonArray(pk.EV_HP, pk.EV_ATK, pk.EV_DEF, pk.EV_SPA, pk.EV_SPD, pk.EV_SPE),
+            ["stats"] = new JsonArray(pk.Stat_HPMax, pk.Stat_ATK, pk.Stat_DEF, pk.Stat_SPA, pk.Stat_SPD, pk.Stat_SPE),
             ["held_item"] = pk.Format >= 2 ? Name(Strings.Item, pk.HeldItem) : null,
             ["nature"] = pk.Format >= 3 ? Name(Strings.Natures, (int)pk.Nature) : null,
             ["ability"] = pk.Format >= 3 ? Name(Strings.Ability, pk.Ability) : null,

@@ -473,11 +473,32 @@ def cmd_gift(args) -> int:
             found += 1
         print(f"{found} card(s)")
         return 0
+    if args.gift_command == "edit":
+        from .app import giftfile
+
+        source = Path(args.source)
+        fields = (helper.card_fields(args.game, data=source.read_bytes()) if source.exists()
+                  else helper.card_fields(args.game, key=args.source))
+        out = giftfile.save(args.save, giftfile.GiftProject(args.game, giftfile.unreceived(fields), fields.get("title", "")))
+        print(f"Saved the card's fields as {out}: change them (in the app's Gifts page, or the JSON), then "
+              f"`pokeuds gift card {args.game} --project {out.name} --out card.wc{giftfile.generation(args.game)}`")
+        return 0
     if args.gift_command == "card":
-        gift = helper.card(args.game, trainer=trainer, kind=args.kind, card_id=args.card_id, title=args.title,
-                           species=args.species, level=args.level, shiny=args.shiny, item=args.item,
-                           quantity=args.quantity, versions=args.versions, nickname=args.nickname,
-                           ot="" if args.your_ot else args.card_ot, tid=args.tid, sid=args.sid)
+        if args.project:
+            from .app import giftfile
+
+            project = giftfile.load(args.project)
+            for problem in project.problems:
+                print(f"note: {problem}")
+            if project.game != args.game:
+                print(f"{args.project} is a gift for {project.game}, not {args.game}")
+                return 1
+            gift = helper.card(args.game, trainer=trainer, **project.fields)
+        else:
+            gift = helper.card(args.game, trainer=trainer, kind=args.kind, card_id=args.card_id, title=args.title,
+                               species=args.species, level=args.level, shiny=args.shiny, item=args.item,
+                               quantity=args.quantity, versions=args.versions, nickname=args.nickname,
+                               **({"ot": args.card_ot, "tid": args.tid, "sid": args.sid} if args.card_ot else {}))
     elif args.source.lower().endswith((".wc6", ".wc7", ".wc6full", ".wc7full")) or Path(args.source).exists():
         gift = helper.gift(args.game, data=Path(args.source).read_bytes(), trainer=trainer)
     else:
@@ -630,9 +651,15 @@ def main(argv: list[str] | None = None) -> int:
             p.add_argument("--pokemon-out", help="write the Pokemon to this .pk6/.pk7")
             p.add_argument("--bank", action="store_true", help="also keep it in the bank")
         p.set_defaults(func=cmd_gift)
+    p = gsub.add_parser("edit", help="turn a card (official key or .wc6/.wc7/full file) into a .udsgift to change")
+    p.add_argument("game", choices=GAME_KEYS)
+    p.add_argument("source", help="a key from `gift list`, or a card file")
+    p.add_argument("--save", required=True, help="the .udsgift to write")
+    p.set_defaults(func=cmd_gift)
     p = gsub.add_parser("card", help="build a custom card (its Pokemon matches no real event: PKHeX flags it)")
     p.add_argument("game", choices=GAME_KEYS)
     p.add_argument("--out", required=True, help="the card file: .wc6/.wc7, or .wc6full/.wc7full")
+    p.add_argument("--project", help="a .udsgift (from the app or `gift edit`): every field; the flags below are ignored")
     p.add_argument("--kind", choices=["pokemon", "item", "bp", "beans"], default="pokemon")
     p.add_argument("--card-id", type=int, default=2000)
     p.add_argument("--title", default="PokeUDS gift")
@@ -644,7 +671,6 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--quantity", type=int, default=1)
     p.add_argument("--versions", type=int, default=0, help="RestrictVersion bits: 1 X/Sun, 2 Y/Moon, 4 AS/US, 8 OR/UM; 0 all")
     p.add_argument("--card-ot", default="", help="the card's own OT (default: the receiver is the OT)")
-    p.add_argument("--your-ot", action="store_true", help=argparse.SUPPRESS)
     _gift_trainer(p)
     p.set_defaults(func=cmd_gift)
 

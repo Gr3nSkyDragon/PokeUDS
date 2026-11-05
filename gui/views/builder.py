@@ -17,6 +17,7 @@ from pokeuds.app.builder import ABILITIES, GAMES, GENDERS, Trainer, Wish
 
 from .. import theme as t
 from .common import View
+from .picker import name_field
 
 ANY = "-"
 
@@ -102,9 +103,8 @@ class BuilderPanel(View):
     def _pokemon(self, lists: dict) -> list[ft.Control]:
         w, gen = self.wish, builder.generation(self.wish.game)
         busy = self.building
-        species = [(str(v), f"{n} (#{v})") for v, n in sorted(lists["species"], key=lambda x: x[1])]
         rows: list[ft.Control] = [ft.Row([
-            self._dd("Species", str(w.species), species, self._species, 280, search=True, disabled=busy),
+            name_field("Species", w.species, lists["species"], self._pick_species, 200, disabled=busy),
             ft.TextField(label="Level", value=str(w.level), width=100, dense=True, on_blur=self._level, disabled=busy,
                          keyboard_type=ft.KeyboardType.NUMBER),
             ft.TextField(label="Nickname", value=w.nickname, width=200, dense=True, disabled=busy,
@@ -120,19 +120,17 @@ class BuilderPanel(View):
             wishes.append(self._dd("Ability", w.ability or ANY, [(k or ANY, v) for k, v in ABILITIES.items()],
                                    self._ability, 180, disabled=busy))
         if gen >= 2:
-            wishes.append(self._dd("Held item", str(w.held_item) if w.held_item else ANY,
-                                   [(ANY, "None")] + [(str(v), n) for v, n in lists["items"]], self._item, 220,
-                                   search=True, disabled=busy))
+            wishes.append(name_field("Held item", w.held_item or 0, lists["items"], self._pick_item, 200, empty="none",
+                                     disabled=busy))
         if gen >= 3:
             wishes.append(self._dd("Ball", str(w.ball) if w.ball else ANY,
                                    [(ANY, "Any")] + [(str(v), n) for v, n in lists["balls"]], self._ball, 180,
                                    disabled=busy))
         rows.append(ft.Row(wishes, wrap=True, spacing=12))
-        moves = [(ANY, "-")] + [(str(v), n) for v, n in lists["moves"]]
         current = (w.moves + [0, 0, 0, 0])[:4]
         rows.append(t.label("Moves: leave them empty for the moves it would know at that level."))
-        rows.append(ft.Row([self._dd(f"Move {i + 1}", str(m) if m else ANY, moves,
-                                     lambda e, i=i: self._move(i, e), 200, search=True, disabled=busy)
+        rows.append(ft.Row([name_field(f"Move {i + 1}", m, lists["moves"], lambda v, i=i: self._pick_move(i, v), 190,
+                                       empty="none", disabled=busy)
                             for i, m in enumerate(current)], wrap=True, spacing=12))
         return rows
 
@@ -254,6 +252,20 @@ class BuilderPanel(View):
         self.wish.moves = []                 # move and item ids are the game's own lists
         self.wish.held_item = None
         self.message = ""
+
+    def _pick_species(self, value: int) -> None:
+        if value:
+            self.wish.species = value
+            self.wish.moves = []
+            self._changed()
+
+    def _pick_item(self, value: int) -> None:
+        self.wish.held_item = value or None
+
+    def _pick_move(self, slot: int, value: int) -> None:
+        moves = (self.wish.moves + [0, 0, 0, 0])[:4]
+        moves[slot] = value
+        self.wish.moves = [m for m in moves if m]
 
     def _species(self, e) -> None:
         if e.control.value and e.control.value.isdigit():

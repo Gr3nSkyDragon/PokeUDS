@@ -70,6 +70,7 @@ static partial class Program
         {
             ["key"] = key.Length > 0 ? key : GiftKey(gift),
             ["card_id"] = gift.CardID,
+            ["text"] = gift is DataMysteryGift raw ? raw.Data[0x50] : 0,      // the card text index (CardEditor.cs)
             ["title"] = gift.CardTitle.Trim(),
             ["kind"] = gift.IsEntity ? (gift.IsEgg ? "egg" : "pokemon") : gift.IsItem ? "item" : gift switch
             {
@@ -215,7 +216,8 @@ static partial class Program
             if (la!.Valid)
                 break;
         }
-        reply["pokemon"] = Describe(game, pk!, la!, null);
+        pk!.ResetPartyStats();                  // the stats the game will show, from level, nature, IVs and EVs
+        reply["pokemon"] = Describe(game, pk, la!, null);
         return reply;
     }
 
@@ -234,132 +236,7 @@ static partial class Program
         return full;
     }
 
-    // -- a custom card ------------------------------------------------------------------------
-
-    // Fields (all optional but species for a Pokemon): card_id, title, kind ("pokemon" or "item"; Gen 7 also "bp",
-    // "beans"), species, form, level, shiny ("random", "always", "never"), nature (-1 random), gender (-1 random),
-    // ability ("random12", "random12h", "1", "2", "hidden"), ball, held_item, moves, nickname, ot (empty: the
-    // receiver), tid, sid, ot_gender, language (0: the receiver's), ivs (six values, -1 random), perfect_ivs (0-3),
-    // met_location, ribbon ("classic", "wishing", "premier", "event", "birthday", "special", "souvenir"),
-    // item, quantity, versions (RestrictVersion bits, 0 = all), multi_obtain.
-    static JsonObject BuildCard(Game game, JsonObject r)
-    {
-        if (game.Generation is not (6 or 7))
-            throw new ArgumentException("custom cards are Gen 6 and 7");
-        var six = game.Generation == 6;
-        var data = new byte[CardSize];
-        DataMysteryGift card = six ? new WC6(data) : new WC7(data);
-        var cardId = (int?)r["card_id"] ?? 2000;
-        var title = (string?)r["title"] ?? "PokeUDS gift";
-        var kind = (string?)r["kind"] ?? "pokemon";
-        var versions = (byte)((int?)r["versions"] ?? 0);
-        var multi = (bool?)r["multi_obtain"] ?? false;
-        if (card is WC6 w6)
-        {
-            w6.CardID = cardId; w6.CardTitle = title; w6.RestrictVersion = versions; w6.MultiObtain = multi;
-            w6.Date = DateOnly.FromDateTime(DateTime.Today);
-            w6.CardType = kind switch { "pokemon" => 0, "item" => 1, _ => throw new ArgumentException($"Gen 6 cards give a Pokemon or an item, not {kind}") };
-        }
-        else if (card is WC7 w7)
-        {
-            w7.CardID = cardId; w7.CardTitle = title; w7.RestrictVersion = versions; w7.MultiObtain = multi;
-            w7.Date = DateOnly.FromDateTime(DateTime.Today);
-            w7.CardType = kind switch { "pokemon" => 0, "item" => 1, "bp" => 2, "beans" => 3, _ => throw new ArgumentException($"no card kind {kind}") };
-        }
-        switch (kind)
-        {
-            case "pokemon":
-                FillPokemon(game, card, r);
-                break;
-            case "item":
-                card.ItemID = (int?)r["item"] ?? throw new ArgumentException("an item card needs an item");
-                card.Quantity = Math.Clamp((int?)r["quantity"] ?? 1, 1, 999);
-                break;
-            case "bp":
-                ((WC7)card).BP = Math.Clamp((int?)r["quantity"] ?? 1, 1, 9999);
-                break;
-            case "beans":
-                ((WC7)card).Bean = (int?)r["item"] ?? 0;
-                ((WC7)card).Quantity = Math.Clamp((int?)r["quantity"] ?? 1, 1, 999);
-                break;
-        }
-        return GiftReply(game, card, r, custom: true);
-    }
-
-    static void FillPokemon(Game game, DataMysteryGift card, JsonObject r)
-    {
-        var species = (ushort)((int?)r["species"] ?? throw new ArgumentException("a Pokemon card needs a species"));
-        if (species == 0 || species > game.Save().MaxSpeciesID)
-            throw new ArgumentException($"species {species} is not in this game");
-        dynamic c = card;                      // WC6 and WC7 share these fields under the same names
-        c.Species = species;
-        c.Form = (byte)((int?)r["form"] ?? 0);
-        c.Level = (byte)Math.Clamp((int?)r["level"] ?? 10, 1, 100);
-        if (card is WC7 w7)
-            w7.MetLevel = w7.Level;
-        c.PIDType = ((string?)r["shiny"] ?? "random") switch
-        {
-            "always" => ShinyType6.Always, "never" => ShinyType6.Never, _ => ShinyType6.Random,
-        };
-        c.Nature = (int?)r["nature"] is { } n and >= 0 and < 25 ? (Nature)n : Nature.Random;
-        c.Gender = (byte)((int?)r["gender"] is { } g and >= 0 and <= 2 ? g : 3);
-        c.AbilityType = ((string?)r["ability"] ?? "random12") switch
-        {
-            "1" => 0, "2" => 1, "hidden" => 2, "random12h" => 4, _ => 3,
-        };
-        c.Ball = (byte)((int?)r["ball"] ?? 4);
-        c.HeldItem = (int?)r["held_item"] ?? 0;
-        var moves = (r["moves"]?.AsArray() ?? []).Select(m => (ushort)(int)m!).Where(m => m != 0).Take(4).ToArray();
-        if (moves.Length == 0)
-        {
-            // What the species knows at that level, as a level-up encounter would.
-            moves = GetLevelUpMoves(game, species, (byte)c.Level);
-        }
-        var set = moves.Concat(Enumerable.Repeat((ushort)0, 4)).Take(4).ToArray();
-        (c.Move1, c.Move2, c.Move3, c.Move4) = (set[0], set[1], set[2], set[3]);
-        if ((string?)r["nickname"] is { Length: > 0 } nick)
-            c.Nickname = nick;
-        var ot = (string?)r["ot"] ?? "";
-        if (ot.Length > 0)
-        {
-            c.OriginalTrainerName = ot;
-            c.TID16 = (ushort)((int?)r["tid"] ?? 12345);
-            c.SID16 = (ushort)((int?)r["sid"] ?? 54321);
-            c.OTGender = (byte)((int?)r["ot_gender"] ?? 0);
-        }
-        else if (game.Generation == 7)
-        {
-            c.OTGender = (byte)3;              // the cards' "receiver is the OT": name, IDs and gender come from the save
-        }
-        else
-        {
-            // Gen 6 has no such marker for a Pokemon (every real non-egg card names its OT, and the game copies the
-            // card's IDs), so a card for the trainer names the trainer.
-            var tr = Trainer(game, r);
-            c.OriginalTrainerName = tr.OT;
-            c.TID16 = tr.TID16;
-            c.SID16 = tr.SID16;
-            c.OTGender = tr.Gender;
-        }
-        c.Language = (int?)r["language"] ?? 0;
-        var ivs = (r["ivs"]?.AsArray() ?? []).Select(v => (int)v!).ToArray();
-        var perfect = Math.Clamp((int?)r["perfect_ivs"] ?? 0, 0, 3);
-        var values = Enumerable.Range(0, 6).Select(i => i < ivs.Length && ivs[i] is >= 0 and <= 31 ? ivs[i] : 0xFF).ToArray();
-        if (perfect > 0 && ivs.Length == 0)
-            values = Enumerable.Repeat(0xFC + perfect, 6).ToArray();   // PKHeX's 0xFD..0xFF: that many perfect IVs
-        (c.IV_HP, c.IV_ATK, c.IV_DEF, c.IV_SPE, c.IV_SPA, c.IV_SPD) = (values[0], values[1], values[2], values[3], values[4], values[5]);
-        c.Location = (ushort)((int?)r["met_location"] ?? (game.Generation == 6 ? 30001 : 30001));   // "a lovely place"
-        switch ((string?)r["ribbon"] ?? "classic")
-        {
-            case "classic": c.RibbonClassic = true; break;
-            case "wishing": c.RibbonWishing = true; break;
-            case "premier": c.RibbonPremier = true; break;
-            case "event": c.RibbonEvent = true; break;
-            case "birthday": c.RibbonBirthday = true; break;
-            case "special": c.RibbonSpecial = true; break;
-            case "souvenir": c.RibbonSouvenir = true; break;
-        }
-    }
+    // -- a custom card: CardEditor.cs ------------------------------------------------------------
 
     // What the species knows at that level from levelling up, as a wild one of that level would.
     static ushort[] GetLevelUpMoves(Game game, ushort species, byte level)
