@@ -7,8 +7,10 @@ beside it, as pokeldn's bank keeps them:
     20261104-153012_025_Sparky_1a2b3c4d.json    {"source", "created", "origin", "game", "note", "legal", ...}
     20261104-153012_025_Sparky_1a2b3c4d.mail    a Gen 2 Pokemon's mail, when it holds one
 
-Records are kept once: a file whose content is already banked is not added again. What a trade
-receives lands in the output folder first (pokeuds.received) and is deposited from there.
+Records are kept once: a Pokemon already banked is not added again, even when a trade changed what a
+trade changes (``identity``): the same Abra traded to a 3DS and back carries the 3DS player as its handler,
+their memories and a new checksum, and is still the same Abra. What a trade receives lands in the output
+folder first (pokeuds.received) and is deposited from there.
 """
 
 from __future__ import annotations
@@ -122,6 +124,25 @@ def parse(path: str | Path, raw: bytes | None = None) -> Parsed:
     raise ValueError(f"{path.name}: not a Pokemon file ({', '.join(IMPORTABLE)})")
 
 
+# What a trade writes into a record, blanked when telling whether two records are the same Pokemon.
+# Gen 6/7 (the stored record): the checksum; the handling trainer's name, gender, the current-handler flag,
+# the geolocations, the handler's friendship, affection and memory, Amie fullness and enjoyment
+# (0x78-0xAF); the original trainer's friendship, affection and memory (0xCA-0xD0).
+TRADE_FIELDS_PKX = ((0x06, 0x08), (0x78, 0xB0), (0xCA, 0xD1))
+# Gen 2 (.pk2 file: 01 species FF, then the party struct): friendship, which a trade sets anew.
+TRADE_FIELDS_PK2 = ((3 + 27, 3 + 28),)
+
+
+def identity(parsed: Parsed) -> str:
+    """A digest that is the same for a Pokemon before and after it went through trades: the record without
+    what a trade writes into it (TRADE_FIELDS_*). Anything else, a level, a move, an evolution, still counts."""
+    blank = {"pk6": TRADE_FIELDS_PKX, "pk7": TRADE_FIELDS_PKX, "pk2": TRADE_FIELDS_PK2}.get(parsed.extension, ())
+    data = bytearray(parsed.content)
+    for start, end in blank:
+        data[start:end] = bytes(end - start)
+    return hashlib.sha256(parsed.extension.encode() + bytes(data)).hexdigest()
+
+
 def _gen2_shiny(dvs: bytes) -> bool:
     """pokecrystal CheckShininess: Defense, Speed and Special DVs 10, Attack 2, 3, 6, 7, 10, 11, 14 or 15."""
     atk, dfn, spd, spc = dvs[0] >> 4, dvs[0] & 15, dvs[1] >> 4, dvs[1] & 15
@@ -184,25 +205,42 @@ class Bank:
         tmp.replace(path.with_suffix(".json"))
 
     def _digests(self) -> dict[str, str]:
-        """content digest -> entry id, for everything in the bank."""
-        out = {}
-        if self.folder.is_dir():
-            for p in self.folder.iterdir():
-                if p.suffix in EXTENSIONS:
-                    meta = self._meta(p)
-                    digest = meta.get("digest") or hashlib.sha256(p.read_bytes()).hexdigest()
-                    out[digest] = p.stem
-        return out
+        """identity -> entry id, for everything in the bank (the oldest entry, when there are duplicates)."""
+        return {key: group[0].id for key, group in self._by_identity().items()}
+
+    def _by_identity(self) -> dict[str, list[Entry]]:
+        """identity -> the entries holding that Pokemon, oldest first."""
+        groups: dict[str, list[Entry]] = {}
+        for entry in reversed(self.entries()):
+            try:
+                key = identity(parse(entry.path))
+            except (OSError, ValueError):
+                continue
+            groups.setdefault(key, []).append(entry)
+        return groups
+
+    def duplicates(self) -> list[tuple[Entry, Entry]]:
+        """(duplicate, kept): entries holding a Pokemon an older entry already holds (banked before duplicates
+        were caught), each with that oldest entry."""
+        return [(e, group[0]) for group in self._by_identity().values() for e in group[1:]]
+
+    def remove_duplicates(self) -> list[tuple[Entry, Entry]]:
+        """Remove every duplicate ``duplicates`` lists, keeping the oldest of each Pokemon. -> what it removed."""
+        pairs = self.duplicates()
+        for duplicate, _ in pairs:
+            self.remove(duplicate)
+        return pairs
 
     # adding
 
     def deposit(self, content: bytes, extension: str, *, source: str, origin: str = "", mail: bytes | None = None,
                 note: str = "", extra: dict | None = None, digests: dict | None = None) -> tuple[Entry, bool]:
-        """Keep a record; returns (entry, added). A record already in the bank is not added again."""
+        """Keep a record; returns (entry, added). A Pokemon already in the bank (``identity``) is not added again."""
         parsed = parse(Path(f"x.{extension}"), content)
         digest = hashlib.sha256(parsed.content).hexdigest()
+        key = identity(parsed)
         digests = self._digests() if digests is None else digests
-        if digest in digests and (existing := self.find(digests[digest])):
+        if key in digests and (existing := self.find(digests[key])):
             return existing, False
         self.folder.mkdir(parents=True, exist_ok=True)
         stamp = time.strftime("%Y%m%d-%H%M%S")
@@ -214,7 +252,7 @@ class Bank:
             path.with_suffix(".mail").write_bytes(mail)
         self._write_meta(path, {"source": source, "created": time.time(), "origin": origin, "note": note,
                                 "digest": digest, **(extra or {})})
-        digests[digest] = entry_id
+        digests[key] = entry_id
         return self._entry(path), True
 
     def import_file(self, path: str | Path, source: str = "imported") -> tuple[Entry, bool]:

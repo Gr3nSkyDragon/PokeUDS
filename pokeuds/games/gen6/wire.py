@@ -29,10 +29,11 @@ PSS beacons are the UDS application data of the ``id=2`` networks every console 
 hosting. gflnet's BeaconManager frames them as ``[CRC-16][game][record count][version][02 02]
 [0x41][PSS id 8]`` followed by records ``[length+4][type][sub][0] data``; the PSS sends one record,
 type 4 sub 1, the player (152 bytes, the same as the profile from 0x1A0). Its bytes at beacon
-offsets 0x84-0x99 carry a trade request: the requester puts a token and the target's key and PSS id
-there with 0x94 = 1, the target answers with the same token and the requester's key and id, and the
-requester then hosts the trade network (``id=1``, four nodes, no application data) for the target
-to join. That is read off the two consoles' profiles during captured trades, which copy these bytes;
+offsets 0x84-0x99 carry a trade request: the requester puts a token (its own nonce from 0x18) and
+the target's key and PSS id there with 0x94 = 1 and 0x96 = 02, and its state byte at 0x17 says
+"asking"; the target answers with the same token, the requester's key and id, and state "answering".
+The requester then hosts the trade network (``id=1``, four nodes, no application data) for the
+target to join. That is read off the two consoles' profiles during captured trades, which copy these bytes;
 an idle beacon holds other values there, so only a match on our own PSS id counts as a request.
 """
 
@@ -144,10 +145,21 @@ NAME_BYTES = 26             # 12 characters and a terminator, UTF-16LE.
 
 # Offsets inside the player record (beacon offset = record offset + 0x14).
 R_NAME, R_KEY, R_ID, R_VERSION, R_TOKEN, R_PARTNER_KEY, R_PARTNER_ID, R_REQUEST, R_REQUEST_KIND = (
-    0x08, 0x44, 0x48, 0x5C, 0x70, 0x74, 0x78, 0x80, 0x82)
+    0x08, 0x44, 0x48, 0x5A, 0x70, 0x74, 0x78, 0x80, 0x82)
 RECORD_SIZE = 152
-REQUEST_KIND_TRADE = bytes.fromhex("010400")
+# The player's state and a nonce, at record 0x03-0x07 (beacon 0x17-0x1B). Seen on retail X/Y: idle 0x05; asking
+# 0x96, with a fresh nonce that is also the request's token; and the emulated X's accepted answer carried 0x99. An
+# answer left at 0x05 reads as an idle player and the asking console waits on, then says the trainer is unavailable.
+R_STATE, R_NONCE = 0x03, 0x04
+PSS_IDLE, PSS_ASKING, PSS_ANSWERING = 0x05, 0x96, 0x99
+# Beacon 0x96 on a retail request (0x97-0x98 keep their idle 44 44).
+REQUEST_KIND_TRADE = bytes.fromhex("02")
 IDLE_KIND = bytes.fromhex("444444")
+
+# The NetworkInfo attributes every console's PSS and trade networks carry (bit 15, the 3DS default for a network a
+# game hosts); a PSS network without it was listed with Trade greyed out.
+NETWORK_ATTRIBUTES = 0x8000
+
 
 
 def _name(text: str) -> bytes:
@@ -218,6 +230,7 @@ class PssPlayer:
     partner_id: bytes
     request: int
     request_kind: bytes
+    state: int = PSS_IDLE
 
     def wants(self, pss_id: bytes) -> bool:
         """This player asks ``pss_id`` for a trade."""
@@ -237,12 +250,20 @@ def pss_beacon(trainer: Trainer, *, partner: PssPlayer | None = None, request: b
     base = 0x14
     b[base:base + RECORD_SIZE] = player_record(trainer)
     if partner is not None:
-        b[base + R_TOKEN:base + R_TOKEN + 4] = token if token is not None else partner.token
+        if request:
+            # Our own nonce doubles as the request's token, as on a retail request.
+            nonce = token if token is not None else os.urandom(4)
+            b[base + R_NONCE:base + R_NONCE + 4] = nonce
+            b[base + R_TOKEN:base + R_TOKEN + 4] = nonce
+            b[base + R_STATE] = PSS_ASKING
+            b[base + R_REQUEST] = 1
+            b[base + R_REQUEST_KIND:base + R_REQUEST_KIND + len(REQUEST_KIND_TRADE)] = REQUEST_KIND_TRADE
+        else:
+            b[base + R_TOKEN:base + R_TOKEN + 4] = token if token is not None else partner.token
+            b[base + R_NONCE] = os.urandom(1)[0]
+            b[base + R_STATE] = PSS_ANSWERING
         b[base + R_PARTNER_KEY:base + R_PARTNER_KEY + 4] = partner.key
         b[base + R_PARTNER_ID:base + R_PARTNER_ID + 8] = partner.pss_id
-        if request:
-            b[base + R_REQUEST] = 1
-            b[base + R_REQUEST_KIND:base + R_REQUEST_KIND + 3] = REQUEST_KIND_TRADE
     struct.pack_into("<H", b, 0, crc16(bytes(b[2:])))
     return bytes(b)
 
@@ -256,7 +277,7 @@ def parse_pss_beacon(data: bytes) -> PssPlayer | None:
     name = r[R_NAME:R_NAME + NAME_BYTES].decode("utf-16-le", "replace").split("\0", 1)[0]
     return PssPlayer(bytes(data[8:16]), name, r[R_VERSION], bytes(r[R_KEY:R_KEY + 4]), bytes(r[R_TOKEN:R_TOKEN + 4]),
                      bytes(r[R_PARTNER_KEY:R_PARTNER_KEY + 4]), bytes(r[R_PARTNER_ID:R_PARTNER_ID + 8]), r[R_REQUEST],
-                     bytes(r[R_REQUEST_KIND:R_REQUEST_KIND + 3]))
+                     bytes(r[R_REQUEST_KIND:R_REQUEST_KIND + 3]), r[R_STATE])
 
 
 # -- Net-Z ----------------------------------------------------------------------------------------
@@ -305,6 +326,12 @@ def host_keepalive(counter: int, goodbye: bool = False) -> bytes:
     m = bytearray(template(templates.HOST_GOODBYE if goodbye else templates.HOST_KEEPALIVE))
     struct.pack_into("<H", m, HB_COUNTER, counter & 0xFFFF)
     return bytes(m)
+
+
+def is_host_goodbye(message: bytes) -> bool:
+    """The host's last Net-Z message of a session (``templates.HOST_GOODBYE``, with its own counter)."""
+    goodbye = template(templates.HOST_GOODBYE)
+    return len(message) == len(goodbye) and message[:6] == goodbye[:6] and message[8:] == goodbye[8:]
 
 
 def is_heartbeat(message: bytes) -> bool:

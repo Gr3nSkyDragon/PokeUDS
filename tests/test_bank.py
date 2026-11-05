@@ -97,3 +97,42 @@ def test_notes_and_legality_are_kept(b):
     entry = b.set_legality(entry, True, "Legal!", "Wild")
     again = b.find(entry.id)
     assert again.note == "for Dana" and again.legal is True and again.report == "Legal!"
+
+
+def traded(record: bytes, handler="Refresh", memory=3) -> bytes:
+    """``record`` as a 3DS sends it back after a trade: its player as the handler, with memories."""
+    d = bytearray(record)
+    d[0x78:0x92] = handler.encode("utf-16-le").ljust(26, b"\0")
+    d[0x93], d[0xA2], d[0xA4], d[0xA5], d[0xA6], d[0x95] = 1, 70, 1, 4, memory, 49
+    return pkx.fix_checksum(bytes(d))
+
+
+def test_the_same_pokemon_after_trades_is_kept_once(b, tmp_path):
+    first, added = b.deposit(pk6(), "pk6", source="built")
+    assert added
+    out = tmp_path / "received"
+    for n, memory in enumerate((3, 4, 14), 1):         # traded away and back three times
+        received.save(traded(pk6(), memory=memory), out, game="xy", trade=n, stamp=f"20261105-21000{n}")
+    assert b.sync_received(out) == [] and [e.id for e in b.entries()] == [first.id]
+    again, added = b.deposit(pkx.encrypt(traded(pk6(), handler="Other")), "pk6", source="imported")
+    assert not added and again.id == first.id
+    grown, added = b.deposit(pk6(exp=30000), "pk6", source="received")      # it changed: a new entry
+    assert added and grown.id != first.id
+    gold = sample_mon(2, 155, 10, "CYNDA").to_file()
+    b.deposit(gold, "pk2", source="built")
+    happier = bytearray(gold)
+    happier[3 + 27] = 200                              # a trade sets a Gen 2 Pokemon's friendship anew
+    assert not b.deposit(bytes(happier), "pk2", source="received")[1]
+
+
+def test_duplicates_banked_before_are_removed(b, tmp_path):
+    first, _ = b.deposit(pk6(), "pk6", source="built")
+    for n in range(2):                                 # as an older PokeUDS banked them, by exact content
+        path = b.folder / f"20261105-21000{n}_025_Sparky_{n}.pk6"
+        path.write_bytes(traded(pk6(), memory=n + 3))
+        b._write_meta(path, {"source": "received", "created": first.created + n + 1})
+    assert len(b.entries()) == 3
+    pairs = b.duplicates()
+    assert len(pairs) == 2 and all(kept.id == first.id for _, kept in pairs)
+    assert [d for d, _ in b.remove_duplicates()] and [e.id for e in b.entries()] == [first.id]
+    assert b.duplicates() == []

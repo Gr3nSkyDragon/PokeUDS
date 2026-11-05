@@ -165,7 +165,8 @@ class Station:
     # -- hosting ----------------------------------------------------------------------------------
 
     def host(self, *, wlan_comm_id: int, passphrase: bytes, channel: int, max_nodes: int,
-             application_data: bytes = b"", id_: int = 0, network_id: int | None = None) -> bcn.NetworkInfo:
+             application_data: bytes = b"", id_: int = 0, network_id: int | None = None,
+             attributes: int = 0) -> bcn.NetworkInfo:
         if self.uds_key is None:
             raise UdsError("hosting needs the keyslot 0x2D key (aes_keys.txt)")
         if max_nodes < 2:
@@ -173,6 +174,7 @@ class Station:
         with self._lock:
             self.network = bcn.NetworkInfo(host_mac=self.mac, channel=channel, wlan_comm_id=wlan_comm_id, id=id_,
                                            update_counter=1, network_id=network_id or int.from_bytes(os.urandom(4), "big") or 1,
+                                           attributes=attributes,
                                            total_nodes=1, max_nodes=max_nodes, application_data=application_data)
             self.key = self.network.ccmp_key(self.uds_key, passphrase)
             self.node_id = data.HOST_NODE

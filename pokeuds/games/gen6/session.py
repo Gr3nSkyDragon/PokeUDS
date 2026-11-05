@@ -36,6 +36,17 @@ DATA_CHANNEL = 243
 HEARTBEAT_BURST, HEARTBEAT_BURST_EVERY, HEARTBEAT_EVERY = 16, 0.033, 2.0
 HOST_KEEPALIVE_FIRST, HOST_KEEPALIVE_EVERY = 1.0, 5.0
 CLIENT_NETZ_TAIL_DELAY = 0.25
+# Sync points: PokeUDS answers the console's request at once, and asks first only after SYNC_ASK_AFTER without one,
+# then again every SYNC_RESEND. A console drops a request that arrives before it reaches the point: one sent right
+# after a swap, while the console still played the trade animation (about 27 s), left it at "Communicating".
+SYNC_ASK_AFTER, SYNC_RESEND = 2.0, 8.0
+# The trade screen's block (command 09): sent when the console sends its own, or after this long. A console's
+# client sends it about 4 s after the last sync, once its screen is up; PokeUDS sending it at once, while the console
+# still changed screens, left the console at "Communicating" after a trade.
+SCREEN_AFTER = 4.5
+# After the last sync point the host says goodbye in Net-Z and the session simply ends: no console sends a PRUDP
+# disconnect. The client waits this long for the goodbye.
+GOODBYE_WAIT = 5.0
 YES_BYTE = wire.YES[:1]
 
 
@@ -74,6 +85,7 @@ class Gen6Session:
         self._pairs_sent = 0
         self._client_tail = 0
         self._quit_answered = False
+        self._host_said_goodbye = False
         self._hb_counter = 0x08 if not self.host else 0x03
         self._hb_sent = 0
         self._hb_next: float | None = None
@@ -135,6 +147,9 @@ class Gen6Session:
             self.ep.send_reliable(m)
 
     def _netz_message(self, message: bytes) -> None:
+        if not self.host and self.netz_done and wire.is_host_goodbye(message):
+            self._host_said_goodbye = True
+            return
         self._netz_in += 1
         n = self._netz_in
         if self.host:
@@ -199,6 +214,8 @@ class Gen6Session:
         return wire.counts_word(self._counts[1], self._counts[2])
 
     def _gfl_send(self, body: bytes) -> None:
+        if log.isEnabledFor(logging.DEBUG):
+            log.debug("us: %s", describe(wire.parse_body(body)))
         self._index += 1
         self.ep.send_reliable(wire.gfl_encode(self._index, self._counts_word(), body), game=True)
         self._counts[self.node] = self._index
@@ -220,7 +237,7 @@ class Gen6Session:
         if body.kind == "sync":
             self._peer_sync(body)
         else:
-            log.debug("console: %s module %d id %02X, %d bytes", body.kind, body.module, body.ident, len(body.data))
+            log.debug("console: %s", describe(body))
             self._inbox.append(body)
 
     # -- syncs ------------------------------------------------------------------------------------
@@ -248,6 +265,7 @@ class Gen6Session:
             self._gfl_send(wire.sync(wire.SYNC_DONE, module, ident))
 
     def _peer_sync(self, body: wire.Body) -> None:
+        log.debug("console: %s", describe(body))
         s = self._sync(body.ident, body.module, fresh=not body.done)
         if body.done:
             s["done"] = True
@@ -257,8 +275,22 @@ class Gen6Session:
 
     def sync_point(self, ident: int, module: int = wire.SESSION) -> None:
         s = self._sync(ident, module, fresh=True)
-        self._request_sync(ident, module)
-        self.wait(lambda: s["done"], f"sync {ident:02X}")
+        self._last_progress = start = last_ask = self.clock()
+        while not s["done"]:
+            now = self.clock()
+            if not s["mine"] and now - start >= SYNC_ASK_AFTER:
+                self._request_sync(ident, module)
+                last_ask = now
+            elif s["mine"] and now - last_ask >= SYNC_RESEND:
+                log.debug("sync %02X: asking again", ident)
+                self._gfl_send(wire.sync(wire.SYNC_REQUEST, module, ident))
+                last_ask = now
+            if now - self._last_progress > self.step_timeout:
+                raise TimeoutError(f"the console stopped answering (waiting for sync {ident:02X})")
+            try:
+                self.pump()
+            except TradeEnded as exc:
+                raise TradeEnded(f"{exc} while PokeUDS waited for sync {ident:02X}") from None
         s["passed"] = True
 
     # -- waiting ----------------------------------------------------------------------------------
@@ -272,6 +304,12 @@ class Gen6Session:
                 self.pump()
             except TradeEnded as exc:
                 raise TradeEnded(f"{exc} while PokeUDS waited for {what}") from None
+
+    def wait_or(self, condition: Callable[[], bool], seconds: float) -> None:
+        """Run the session until ``condition`` or for ``seconds``, whichever comes first."""
+        deadline = self.clock() + seconds
+        while not condition() and self.clock() < deadline:
+            self.pump()
 
     def take(self, module: int, cmd: int, what: str, *, also: tuple[int, ...] = ()) -> wire.Body:
         """Wait for the console's next command ``cmd`` (or one of ``also``) in ``module``."""
@@ -313,18 +351,26 @@ class Gen6Session:
         self.sync_point(self._hub)
         self._command(wire.TRADE, wire.CMD_STATE, wire.STATE_IDLE)
         self.take(wire.TRADE, wire.CMD_STATE, "the trade screen")
+        # The trade screen opens before every trade and once more after the last: players leave from it (exit,
+        # then confirm), and PokeUDS does too once it has traded ``trades`` times, or as soon as the console's player
+        # leaves.
         done = 0
-        while done < self.trades:
-            if not self._one_trade():
+        while True:
+            self._open_screen()
+            if done >= self.trades or not self._one_trade():
                 break
             done += 1
         self._leave()
         return self.received
 
-    def _one_trade(self) -> bool:
-        """One offer and swap. False when the console left the trade screen instead."""
+    def _open_screen(self) -> None:
+        """Both sides open the trade screen (command 09). Ours goes when the console's comes, or after SCREEN_AFTER."""
+        self.wait_or(lambda: self._peer_sent(wire.TRADE, wire.CMD_SCREEN), SCREEN_AFTER)
         self._command(wire.TRADE, wire.CMD_SCREEN, wire.screen_block())
         self.take(wire.TRADE, wire.CMD_SCREEN, "the console's trade screen")
+
+    def _one_trade(self) -> bool:
+        """One offer and swap on the open trade screen. False when the console left the trade screen instead."""
         while True:
             record = self._offer_and_confirm()
             if record is None:
@@ -393,15 +439,18 @@ class Gen6Session:
         self.take(wire.TRADE, wire.CMD_LEAVE_DATA, "the console's leave block")
         self.sync_point(wire.SYNC_LEAVE, wire.TRADE)
         self.sync_point(wire.SYNC_END)
+        self._emit("phase", phase="left")
+        # End as a console does: the host says goodbye, the client waits for it, nobody disconnects PRUDP. The
+        # consoles then ask their players about registering friends on their own, with no traffic.
         if self.host:
             self.ep.send_reliable(wire.host_keepalive(self._hb_counter, goodbye=True))
-        deadline = self.clock() + 2.0
+            done = lambda: self.ep.idle
+        else:
+            done = lambda: self._host_said_goodbye
         try:
-            while self.clock() < deadline and not self.ep.idle:
-                self.pump()
+            self.wait_or(done, GOODBYE_WAIT)
         except TradeEnded:
-            return       # The console left first, as it may once the last sync point is done.
-        self.ep.disconnect()
+            pass         # The console took the network down first, as it may once the last sync point is done.
 
 
 def template_init() -> bytes:
@@ -441,3 +490,11 @@ def trainer_from_offer(offer: bytes, version: int, settings: dict | None = None)
                         int(settings.get("sid", s.sid)), pss_id, key, version,
                         settings.get("user_name", "PokeUDS"))
 
+
+def describe(body: wire.Body) -> str:
+    """One gflnet body in a log line."""
+    if body.kind == "sync":
+        return f"sync {'03' if body.done else '02'} module {body.module} id {body.ident:02X}"
+    if body.kind == "command":
+        return f"command module {body.module} id {body.ident:02X}, {len(body.data)} bytes"
+    return f"{body.kind}, {len(body.data)} bytes"

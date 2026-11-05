@@ -307,14 +307,16 @@ def _gen6_trainer(game, offer: bytes, args):
 
     settings = Settings.load()
     trainer = dict(settings.trainer)
-    if not trainer.get("pss_id") or not trainer.get("pss_key"):
-        trainer["pss_id"], trainer["pss_key"] = os.urandom(8).hex(), os.urandom(4).hex()
-        settings.trainer = trainer
+    pss = dict(settings.pss)
+    if not pss.get("id") or not pss.get("key"):
+        # Kept apart from the Builder's trainer, which is saved whole and would drop it.
+        pss = {"id": trainer.get("pss_id") or os.urandom(8).hex(), "key": trainer.get("pss_key") or os.urandom(4).hex()}
+        settings.pss = pss
         try:
             settings.save()
         except OSError as exc:
             log.warning("could not keep the PSS id in the settings: %s", exc)
-    chosen = {"pss_id": trainer["pss_id"], "pss_key": trainer["pss_key"], "user_name": args.name}
+    chosen = {"pss_id": pss["id"], "pss_key": pss["key"], "user_name": args.name}
     name = args.trainer or trainer.get("ot")
     if name:
         chosen["name"] = name

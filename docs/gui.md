@@ -78,7 +78,7 @@ The bank is a folder (`<data folder>/bank`, or Settings' `bank`) holding one fil
 - **Received Pokemon** still land in the output folder first (one file per trade, as before). Each time
   the Bank page opens, files there that it has not seen are deposited; one deleted from the bank is not
   brought back (`received.json` remembers what was seen).
-- **One copy each:** a record whose content is already banked is not added again, whatever its file name.
+- **One copy each:** a Pokemon already banked is not added again, whatever its file name, and also after a trade there and back: what a trade writes into a record (Gen 6/7: the handling trainer, geolocations, memories, friendship and affection, the checksum; Gen 2: friendship) does not count. Anything else does, so a Pokemon that levelled up, learned a move or evolved is a new entry. Copies banked before this check existed show a **Remove duplicates** button, which keeps the oldest copy of each and moves an offer on a removed copy to it.
 - **Import** takes `.pk1`, `.pk2`, `.pk6`, `.pk7`, `.ek6` and `.ek7` (encrypted records are stored decrypted),
   with a `.pk2`'s `.mail` beside it.
 - **Offer in a trade** lists the games that take the record (a `.pk1` or `.pk2` reaches both VC games,

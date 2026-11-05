@@ -53,10 +53,13 @@ class BankView(View):
         entries = b.entries()
         shown = [e for e in entries if self._keep(e)]
         selected = next((e for e in entries if e.id == self.selected), None)
+        duplicates = len(b.duplicates())
 
         header = ft.Row([
             t.title("Bank"), t.label(f"{len(entries)} Pokemon"), ft.Container(expand=True),
             ft.IconButton(ft.Icons.REFRESH, tooltip="Look again", on_click=lambda e: self.refresh()),
+            *([t.secondary(f"Remove {duplicates} duplicate" + ("s" if duplicates > 1 else ""),
+                           lambda e: self._confirm_dedupe(), ft.Icons.CLEANING_SERVICES_OUTLINED)] if duplicates else []),
             t.secondary("Import...", self._import, ft.Icons.FILE_UPLOAD_OUTLINED),
             t.secondary("Open folder", lambda e: open_folder(str(b.folder)), ft.Icons.FOLDER_OUTLINED),
         ], spacing=8)
@@ -259,6 +262,36 @@ class BankView(View):
             content=ft.Text(f"{entry.describe()} leaves the bank for good. A file in the received folder stays there."),
             actions=[ft.TextButton("Cancel", on_click=close),
                      ft.FilledButton("Delete", on_click=delete, style=ft.ButtonStyle(bgcolor=t.BAD, color="#FFFFFF"))]))
+
+    def _confirm_dedupe(self) -> None:
+        page = self.app.page
+        pairs = self.bank.duplicates()
+
+        def close(_=None) -> None:
+            page.pop_dialog()
+
+        def remove(_) -> None:
+            page.pop_dialog()
+            removed = self.bank.remove_duplicates()
+            kept = {str(d.path): str(k.path) for d, k in removed}
+            offers = self.app.settings.offers
+            for game, path in list(offers.items()):      # an offer on a removed copy moves to the one kept
+                if path in kept:
+                    offers[game] = kept[path]
+            self.app.settings.save()
+            if self.selected in {d.id for d, _ in removed}:
+                self.selected = ""
+            self._say(f"Removed {len(removed)} duplicate" + ("s" if len(removed) > 1 else "") + ".", t.WARN)
+            self.refresh()
+
+        names = sorted({k.describe() for _, k in pairs})
+        page.show_dialog(ft.AlertDialog(
+            title=ft.Text("Remove duplicates?"),
+            content=ft.Text(f"{len(pairs)} entries hold a Pokemon the bank already has (the same Pokemon after a "
+                            "trade there and back). The oldest copy of each stays: " + "; ".join(names[:5])
+                            + ("..." if len(names) > 5 else "") + ". Files in the received folder stay there."),
+            actions=[ft.TextButton("Cancel", on_click=close),
+                     ft.FilledButton("Remove", on_click=remove, style=ft.ButtonStyle(bgcolor=t.BAD, color="#FFFFFF"))]))
 
     def _offer(self, entry: bank.Entry, game: str) -> None:
         self.app.settings.offers[game] = str(entry.path)
