@@ -1,8 +1,15 @@
-# Captures needed for Generations 6 and 7
+# Captures
 
-PokeUDS can already bring up the UDS session these games use. What it cannot do yet is talk to the
-game: there is no decompilation of the Generation 6 or 7 games (no pret project covers them), and
-nothing public documents the PSS or Festival Plaza trade messages. The messages have to be recorded from real sessions.
+**Generation 6 is mapped** ([gen6.md](gen6.md)): five azahar_uds logs of Pokemon X trading with retail
+consoles were enough to decode every layer, and PokeUDS replays all of them. What is still unseen for
+Gen 6 is the bytes of a PSS beacon while a console *asks* for a trade (the request fields were read
+off the profiles instead) and any ORAS session; one log of each settles them.
+
+**Generation 7 needs one capture.** Sun/Moon and USUM link the same NEX PRUDP code as X/Y, with the
+same 8-byte checksum key, Pia's local UDS layer, gflnet and the UDS passphrase string, so PokeUDS's
+transport already speaks to them. What is missing is the Festival Plaza part: how a Link Trade
+invitation travels (azahar_uds saw JoinFesta person data in the beacon, command byte 0x17 for an
+invitation), the Net-Z setup the game uses, and the trade's gflnet commands and profile.
 
 ## Why Azahar captures are the easy path
 
@@ -14,32 +21,18 @@ its log holds every game message in plaintext, both directions, with no decrypti
 | `UDS DATA TRACE TX GAME` | each payload the emulated game sent: data channel, nodes, bytes |
 | `UDS DATA TRACE RX GAME` | each payload the emulated game received |
 | `ConnectToNetwork key-derivation input ... inputBytes=` | the game's passphrase (when the emulated game **joins**) |
-| `BeginHostingNetwork #` / `ConnectToNetwork` | comm id, network id, max nodes, channel |
+| `BeginHostingNetwork #` / `ConnectToNetwork` | comm id, network id, max nodes, channel; `applicationData=` (builds from 2026-11-04 on) |
+| `retail beacon payload` | a retail console's decrypted beacon, with `applicationData=` in full (same builds) |
 
 `python -m pokeuds analyze azahar_log.txt` turns such a log into a transcript, prints the passphrase
-and comm id for `profiles/xy.toml`, and finds every Pokemon record in the messages.
+and comm id, checks every PRUDP signature, finds every Pokemon record, and decodes PSS beacons;
+`--flow` lists every Net-Z and gflnet message in order.
 
-## The sessions to record: Generation 6 (PSS)
+## For Generation 6, if a hardware test needs it
 
-Use the default log level (Info includes `Service.NWM`). Before each run, export both Pokemon involved
-with PKHeX or PKSM so the record inside the messages can be matched byte for byte. Keep one log per
-run (Azahar's `log/azahar_log.txt`, copied after closing the game).
-
-1. **Retail requests, Azahar accepts.** Enter the PSS on both, wait about 30 seconds, then on the retail
-   console tap the Azahar player and request a trade. Complete one trade.
-2. **Azahar requests, retail accepts.** The same with the roles swapped. Between runs 1 and 2 we should
-   see both sides of hosting and joining, and at least one of them logs the passphrase.
-3. **A cancelled trade.** Offer a Pokemon, then back out at the final confirmation.
-4. **Two trades in one session**, if the game allows it without leaving the trade screen.
-5. **X with Y**, if you have both, so a version check in the messages would show up.
-
-Then the same for ORAS:
-
-6. **ORAS with ORAS**, runs 1 and 2 above (retail requests, Azahar requests). This tells us ORAS's comm
-   id and passphrase for `profiles/oras.toml`, and whether its messages differ from X/Y's.
-7. **ORAS with X/Y**, once in each direction (an ORAS console requesting an X/Y one, and back). If ORAS
-   and X/Y turn out to use different comm ids, this shows which network the mixed pair uses, and the
-   other id goes into `also_join_comm_ids`.
+1. **Retail asks, Azahar answers.** Both in the PSS; on the retail console tap the Azahar player and
+   ask for a trade. The log then holds a real request beacon.
+2. **ORAS with ORAS** (or ORAS with X/Y), one trade: confirms ORAS's comm id and messages.
 
 ## The sessions to record: Generation 7 (Festival Plaza)
 
@@ -52,9 +45,9 @@ Trading starts in the Festival Plaza: Link Trade, then local communication.
 10. **Sun/Moon with Sun/Moon**, both directions, for `profiles/sm.toml`.
 11. **Sun/Moon with USUM**, once in each direction, for `also_join_comm_ids` if their comm ids differ.
 
-Gen 7 may use Pia's local mode inside UDS. If `analyze` finds no Pokemon in a Gen 7 log where one was
-clearly traded, the payloads are probably encrypted by Pia; keep those logs, they are what the Pia
-layer gets built from.
+Run the logs through `python -m pokeuds analyze --flow`: if Gen 7 really shares Gen 6's transport, every
+PRUDP signature checks out and the gflnet commands, the Pokemon records and the Festival Plaza beacons are
+listed in order, which is all the Gen 7 trade needs.
 
 ## Every run
 

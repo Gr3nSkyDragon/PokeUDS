@@ -1,8 +1,9 @@
 """Game protocols on top of UDS.
 
-Implemented as alpha (UDS session in both roles, trade messages pending captures): Pokemon X/Y and
-ORAS (``gen6``), Sun/Moon and Ultra Sun/Ultra Moon (``gen7``). The Virtual Console Game Boy titles
-(``vc``, with the trade itself in ``pokeuds.vc``) implement the whole trade, tested in simulation.
+Pokemon X/Y and ORAS (``gen6``) implement the whole trade from the PSS, decoded from captures and
+replayed against them. Sun/Moon and Ultra Sun/Ultra Moon (``gen7``) have the UDS session in both
+roles; their trade messages wait for a capture. The Virtual Console Game Boy titles (``vc``, with the
+trade itself in ``pokeuds.vc``) implement the whole trade, tested in simulation.
 """
 
 from __future__ import annotations

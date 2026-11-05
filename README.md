@@ -6,8 +6,10 @@ USB Wi-Fi adapter stands in for a second console. Nothing is installed on the 3D
 
 Status: **alpha**. The radio backends and the UDS layer (scanning, hosting, joining, CCMP,
 SecureData) work and are tested against each other in simulation; nothing has run on hardware yet.
-The Generation 6 trade messages that ride inside UDS are not mapped yet; they need captures
-([docs/captures.md](docs/captures.md)).
+Generation 6 trades are implemented end to end ([docs/gen6.md](docs/gen6.md)): decoded from azahar_uds
+logs of Pokemon X trading with retail consoles, and replayed against those consoles' real messages.
+Generation 7 runs the same transport (NEX PRUDP with the same key, gflnet) but its Festival Plaza
+messages still need one capture ([docs/captures.md](docs/captures.md)).
 
 | | X/Y | ORAS | Sun/Moon | USUM | VC Gen 1 | VC Gen 2 |
 |---|:---:|:---:|:---:|:---:|:---:|:---:|
@@ -16,9 +18,9 @@ The Generation 6 trade messages that ride inside UDS are not mapped yet; they ne
 | Trades with | ORAS | X/Y | USUM | Sun/Moon | Gen 2 through the Time Capsule | Gen 1 through the Time Capsule |
 | UDS session, join | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | UDS session, host | ✓ | ✓ | ✓ | ✓ | ✓ experimental | ✓ experimental |
-| Trade messages | needs captures | needs captures | needs captures | needs captures | ✓ | ✓ |
+| Trade messages | ✓ | ✓ (X/Y's values, assumed) | needs a capture | needs a capture | ✓ | ✓ |
 
-✓ works in simulation, untested on hardware. All four 3DS generations' games share one trade
+✓ works in simulation, untested on hardware; Gen 6 also replays the five captured X sessions to the end. All four 3DS generations' games share one trade
 session (`games/trade.py`); `games/gen6` and `games/gen7` declare the games, and each game reads its
 constants from `profiles/<game>.toml`. Local trades never cross a generation.
 
@@ -92,6 +94,10 @@ python -m pokeuds trade xy --radio esp32 --keys aes_keys.txt --offer my.pk6 --ou
 python -m pokeuds trade oras --role host --radio esp32 --keys aes_keys.txt --offer my.pk6
 ```
 
+For X/Y and ORAS, `--role join` (default) puts PokeUDS in the console's PSS list: ask it for a trade
+from the 3DS. `--role host` has PokeUDS ask the first trainer it hears (`--partner NAME` to choose).
+`--radio demo:x` trades with a simulated console. See [docs/gen6.md](docs/gen6.md).
+
 ```bash
 python -m pokeuds trade usum --radio esp32 --keys aes_keys.txt --offer my.pk7
 ```
@@ -103,11 +109,12 @@ python -m pokeuds vc trade --radio esp32 --keys aes_keys.txt --offer my.pk1
 `vc trade` joins a 3DS that chose Host in the VC link menu and trades through the Trade Center or the
 Time Capsule; see [docs/vc.md](docs/vc.md) for the modes and hosting.
 
-`trade` loads and checks the offer (a Gen 7 species is refused for a Gen 6 game), then either finds the console and joins its network
-(`--role join`, the default) or opens a network and waits for the console to join (`--role host`,
-advertising the profile's application data or `--application-data HEX`). Once connected it records
-what the console sends for `--listen` seconds and saves any Pokemon found in it, then stops with an
-explanation, since the trade messages are not mapped yet. Received Pokemon go to `--output` as
+`trade` loads and checks the offer (a Gen 7 species is refused for a Gen 6 game). For Sun/Moon and
+USUM it then either finds the console and joins its network (`--role join`, the default) or opens a
+network and waits for the console to join (`--role host`, advertising the profile's application data
+or `--application-data HEX`); once connected it records what the console sends for `--listen` seconds
+and saves any Pokemon found in it, then stops with an explanation, since Gen 7's trade messages are
+not mapped yet. Received Pokemon go to `--output` as
 `<time>_<game>_trade<N>_<species>_<nickname>_<PID>.pk6` (`.pk7` for Sun/Moon and USUM).
 
 Each game reads its constants from `profiles/<game>.toml` (or an untracked `<game>.local.toml`),
@@ -121,12 +128,13 @@ filled in from captures.
 | `pokeuds/uds/` | 802.11 frames, beacons, CCMP and key derivation, SecureData, EAPoL, the station (host/client), the sniffer |
 | `pokeuds/pkx.py`, `received.py` | Generation 6/7 records (crypto, checksum, summary, PK6/PK7 formats) and the output folder |
 | `pokeuds/capture/` | Azahar-log and sniff transcripts, Pokemon finder |
-| `pokeuds/games/` | Game registry, profile loader, the trade session (join and host); `gen6/` X/Y and ORAS, `gen7/` Sun/Moon and USUM, `vc.py` the VC titles |
+| `pokeuds/nex/` | NEX's PRUDP V1 as Gen 6/7 run it over Pia's local UDS layer (signature, both connections, reliability) |
+| `pokeuds/games/` | Game registry, profile loader, the trade session (join and host); `gen6/` X/Y and ORAS (PSS, Net-Z, gflnet, the trade), `gen7/` Sun/Moon and USUM, `vc.py` the VC titles |
 | `pokeuds/vc/` | Virtual Console: Pia frames and session, the Game Boy trade engine, the end-to-end trade |
 | `pokeuds/gbpk.py` | .pk1/.pk2 records and the Time Capsule conversions |
 | `profiles/` | Per-game constants filled in from captures |
 | `gui/`, `pokeuds/app/` | The app (Flet) and what it shares with the command line: settings, catalog, child runs, progress |
-| `docs/` | [The app](docs/gui.md), [architecture](docs/architecture.md), [UDS protocol](docs/uds.md), [Virtual Console](docs/vc.md), [hardware](docs/hardware.md), [captures](docs/captures.md), [PKHeX helper](docs/pkhex.md), [Mystery Gift feasibility](docs/mystery_gift.md) |
+| `docs/` | [The app](docs/gui.md), [architecture](docs/architecture.md), [UDS protocol](docs/uds.md), [Generation 6](docs/gen6.md), [Virtual Console](docs/vc.md), [hardware](docs/hardware.md), [captures](docs/captures.md), [PKHeX helper](docs/pkhex.md), [Mystery Gift feasibility](docs/mystery_gift.md) |
 
 ```bash
 python -m pytest -q

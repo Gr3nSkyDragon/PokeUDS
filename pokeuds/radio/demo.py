@@ -2,8 +2,13 @@
 
 ``--radio demo:red`` (or blue, yellow, gold, silver, crystal; ``gold-tc`` etc. for a Gen 2 console in
 the Time Capsule) puts a modelled console hosting from the VC link menu next to PokeUDS. It runs the
-same UDS, Pia and Game Boy code a real trade does, against ``pokeuds.vc.model``. It is a development
-and demonstration aid: it proves nothing about a real 3DS.
+same UDS, Pia and Game Boy code a real trade does, against ``pokeuds.vc.model``.
+
+``--radio demo:x`` (or y, or, as) puts a Generation 6 console in the PSS next to PokeUDS: PokeUDS's own
+Gen 6 engine playing the console's part. It waits a few seconds to be asked for a trade, then asks
+PokeUDS itself, and offers a Pikachu.
+
+Both are development and demonstration aids: they prove nothing about a real 3DS.
 """
 
 from __future__ import annotations
@@ -117,6 +122,66 @@ class SimulatedVcHost:
         self.station.close()
 
 
+class SimulatedGen6Console:
+    """A Generation 6 console in the PSS on channel 6, played by PokeUDS's own engine."""
+
+    VERSIONS = {"x": "X", "y": "Y", "or": "Omega Ruby", "as": "Alpha Sapphire"}
+
+    def __init__(self, air: Air, key: bytes, version: str) -> None:
+        import tempfile
+        from pathlib import Path
+
+        from ..games import get, profile
+        from ..games.gen6 import trade, wire
+        from ..uds import Station
+
+        self.name = self.VERSIONS[version]
+        game = get("xy" if version in ("x", "y") else "oras")
+        self.station = Station(SimRadio(air), bytes.fromhex("02000000AA06"), key, name="DEMO")
+        self.station.start(6)
+        self.folder = Path(tempfile.mkdtemp(prefix="pokeuds-demo-"))
+        me = wire.Trainer.new("DEMO", 4242, 2424, wire.VERSION_CODES[self.name], "DEMO")
+        self.trade = trade.Gen6Trade(self.station, game, profile.load(game.key), demo_pk6(), self.folder, me,
+                                     channels=(6,), announce=False)
+        self.thread = threading.Thread(target=self._run, daemon=True, name="demo-gen6-console")
+        self.thread.start()
+
+    def _run(self) -> None:
+        try:
+            try:
+                self.trade.wait_to_be_asked(4.0)
+            except TimeoutError:
+                self.trade.ask(120.0)
+        except Exception as exc:
+            log.info("demo console stopped: %s", exc)
+
+    def close(self) -> None:
+        self.station.close()
+        self.thread.join(timeout=2)
+
+
+def demo_pk6() -> bytes:
+    """The Pikachu the demo Gen 6 console offers, party stats filled in by hand (no PKHeX needed)."""
+    from .. import pkx
+
+    d = bytearray(pkx.PARTY_SIZE)
+    struct.pack_into("<I", d, 0x00, 0x1DEC0DE5)           # encryption constant
+    struct.pack_into("<HH", d, 0x08, 25, 0)               # species, held item
+    struct.pack_into("<HH", d, 0x0C, 4242, 2424)          # TID, SID
+    struct.pack_into("<I", d, 0x10, 1000)                 # experience
+    d[0x14] = 9                                           # ability: Static
+    struct.pack_into("<I", d, 0x18, 0x12345678)           # PID
+    d[0x40:0x5A] = "Pikachu".encode("utf-16-le").ljust(26, b"\0")
+    struct.pack_into("<4H", d, 0x5A, 84, 39, 98, 0)       # moves: Thunder Shock, Tail Whip, Quick Attack
+    d[0xB0:0xCA] = "DEMO".encode("utf-16-le").ljust(26, b"\0")
+    d[0xDE] = 10                                          # met level
+    d[0xDF] = 24                                          # origin: X
+    d[0xE3] = 2                                           # language: English
+    d[0xEC] = 10                                          # level
+    struct.pack_into("<7H", d, 0xF0, 30, 30, 18, 17, 19, 20, 26)   # current HP, then HP, Atk, Def, Spe, SpA, SpD
+    return pkx.fix_checksum(bytes(d))
+
+
 class DemoRadio(SimRadio):
     def __init__(self, spec: str) -> None:
         from ..games import vc as titles
@@ -124,10 +189,16 @@ class DemoRadio(SimRadio):
         from ..vc.model import Model3DS
 
         key = (spec or "red").lower()
+        if key in SimulatedGen6Console.VERSIONS:
+            self.air = Air()
+            super().__init__(self.air)
+            self.console = SimulatedGen6Console(self.air, DEMO_KEY, key)
+            self.title = self.console
+            return
         time_capsule = key.endswith("-tc")
         key = key.removesuffix("-tc")
         if key not in titles.TITLES:
-            raise ValueError(f"demo radio: unknown title {key!r}; use red, blue, yellow, gold, silver, crystal")
+            raise ValueError(f"demo radio: unknown title {key!r}; use red, blue, yellow, gold, silver, crystal, x, y, or, as")
         self.title = titles.TITLES[key]
         gen = self.title.generation
         mode = link.TIME_CAPSULE if time_capsule or gen == 1 else link.GEN2

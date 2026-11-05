@@ -193,6 +193,24 @@ class Station:
             self.network.application_data = application_data
             self._update_beacon()
 
+    def retune(self, channel: int) -> None:
+        """Move the radio, and a hosted network's beacon with it (a Gen 6 PSS hops while it advertises)."""
+        with self._lock:
+            self.radio.set_channel(channel)
+            if self.network is not None and self.role is Role.HOST:
+                self.network.channel = channel
+            self._update_beacon()
+
+    def stop_hosting(self) -> None:
+        """Take a hosted network down without a word to its nodes (the PSS re-hosts constantly)."""
+        with self._lock:
+            if self.role is Role.HOST:
+                self.radio.set_beacon(None)
+                self.role = Role.IDLE
+                self.network = None
+                self.peers.clear()
+                self.node_id = 0
+
     def _update_beacon(self) -> None:
         if self.role is Role.HOST and self.network:
             self.network.channel = self.radio.channel or self.network.channel

@@ -8,15 +8,16 @@
 # UDS communication id the game passes to the NWM service (BeginHostingNetwork / beacon tag).
 # Azahar logs it as wlanCommId=0x........ on BeginHostingNetwork and ConnectToNetwork;
 # `pokeuds scan` shows it as "comm" for a console idling in the PSS.
-wlan_comm_id = ""
+# Measured from Pokemon X (azahar_uds logs, 2026-09/10, both roles).
+wlan_comm_id = "0x00055D10"
 
 # The passphrase the game passes to ConnectToNetwork, as hex bytes, including any trailing NUL.
 # Azahar logs it as "ConnectToNetwork key-derivation input ... inputBytes=..". It is only an input
 # to the CCMP key derivation; the derivation also needs the console's keyslot 0x2D key.
-passphrase_hex = ""
+passphrase_hex = "474e6742774d63566f74597300"   # "GNgBwMcVotYs" and a NUL
 
-# NetworkInfo.id (a sub-id inside the comm id); 0 unless a capture shows otherwise.
-id = 0
+# NetworkInfo.id: 2 for the PSS presence networks, 1 for the trade network (games/gen6/trade.py).
+id = 2
 
 # Nodes per network as the game creates it (a trade is 2).
 max_nodes = 2
@@ -35,4 +36,4 @@ also_join_comm_ids = []
 [trade]
 # SecureData channel(s) the game binds for trade traffic. From the "channel=" field of the
 # UDS DATA TRACE lines.
-data_channels = []
+data_channels = [243]

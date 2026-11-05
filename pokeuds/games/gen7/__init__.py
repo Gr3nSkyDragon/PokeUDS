@@ -4,9 +4,9 @@ Local trades start in the Festival Plaza (Link Trade) and carry ``.pk7`` records
 Ultra Sun/Ultra Moon trade with each other; neither trades with Generation 6 (Pokemon Bank moves
 Pokemon forward instead). azahar_uds verified a trade between Ultra Sun and Ultra Moon.
 
-Generation 7 games run their online play on Nintendo's Pia library, which also has a local mode
-over UDS. If the local trade uses it, the game messages inside SecureData are Pia packets, which
-may add their own encryption; the captures will show (docs/captures.md).
+Their code links the same local transport as Generation 6 (NEX PRUDP V1 behind Pia's local UDS
+header, the same checksum key, gflnet), so ``pokeuds.nex`` already speaks it; the Festival Plaza
+invitation and the trade's own messages wait for a capture (docs/captures.md).
 """
 
 from ...pkx import PK7

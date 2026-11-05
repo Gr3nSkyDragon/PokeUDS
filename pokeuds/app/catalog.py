@@ -32,11 +32,13 @@ ENTRIES = (
           'On the 3DS, choose Join in the VC link menu once PokeUDS is waiting, then go to the Trade Center (or the Time Capsule for a .pk1) and sit at the table.',
           True, ("gold", "silver", "crystal")),
     Entry("xy", "X / Y", "Generation 6", "Pokemon X or Y", ("pk6",),
-          "On the 3DS, open the PSS with local wireless on. PokeUDS finds the console and joins its network.",
-          "PokeUDS opens a network; on the 3DS, open the PSS with local wireless on.", False),
+          "On the 3DS, open the PSS with local wireless on. Your trainer appears there: tap it and ask for a trade. PokeUDS answers and joins.",
+          "On the 3DS, open the PSS with local wireless on. PokeUDS asks the first trainer it hears for a trade: accept it on the 3DS.",
+          True),
     Entry("oras", "Omega Ruby / Alpha Sapphire", "Generation 6", "Omega Ruby or Alpha Sapphire", ("pk6",),
-          "On the 3DS, open the PSS with local wireless on. PokeUDS finds the console and joins its network.",
-          "PokeUDS opens a network; on the 3DS, open the PSS with local wireless on.", False),
+          "On the 3DS, open the PSS with local wireless on. Your trainer appears there: tap it and ask for a trade. PokeUDS answers and joins.",
+          "On the 3DS, open the PSS with local wireless on. PokeUDS asks the first trainer it hears for a trade: accept it on the 3DS.",
+          True),
     Entry("sm", "Sun / Moon", "Generation 7", "Sun or Moon", ("pk7",),
           "On the 3DS, open the Festival Plaza and start a local Link Trade. PokeUDS joins its network.",
           "PokeUDS opens a network; on the 3DS, open the Festival Plaza and start a local Link Trade.", False),
@@ -90,6 +92,8 @@ def trade_mode(entry: Entry, offer: Offer) -> str:
         return "Gen 1 trade" if offer.generation == 1 else "Time Capsule: PokeUDS plays a Gen 2 game"
     if entry.key == "gsc":
         return "Gen 2 Trade Center, with mail" if offer.generation == 2 else "Time Capsule: PokeUDS plays a Gen 1 game"
+    if entry.group == "Generation 6":
+        return "PSS trade: PokeUDS offers right away and confirms as soon as the console does"
     return "Joins or hosts the session and records the console (the trade messages are not mapped yet)"
 
 
@@ -114,6 +118,8 @@ def command(entry: Entry, settings: Settings, *, offer: str, role: str, host_tit
         if role == "host":
             args += ["--as", host_title or entry.host_titles[0]]
         return args
+    if entry.group == "Generation 6":
+        common += ["--trades", str(trades)]
     return args + ["trade", entry.key, *common]
 
 

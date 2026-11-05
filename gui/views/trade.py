@@ -96,8 +96,10 @@ class TradeView(View):
 
     def setup(self) -> ft.Control:
         entry, busy = self.entry, self.app.busy()
+        # In the PSS (Gen 6) whoever asks for the trade hosts it, so the roles are named by who asks.
+        names = ("3DS asks", "PokeUDS asks") if entry.group == "Generation 6" else ("3DS hosts", "PokeUDS hosts")
         role = ft.SegmentedButton(
-            segments=[ft.Segment("join", label=ft.Text("3DS hosts")), ft.Segment("host", label=ft.Text("PokeUDS hosts"))],
+            segments=[ft.Segment("join", label=ft.Text(names[0])), ft.Segment("host", label=ft.Text(names[1]))],
             selected=[self.role], on_change=self._role_changed, disabled=busy)
         how = entry.join_steps if self.role == "join" else entry.host_steps
         controls: list[ft.Control] = [

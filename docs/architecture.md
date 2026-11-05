@@ -75,12 +75,13 @@ per-generation message layer; the UDS part stays shared.
 | join | scan for the profile's comm ids, pick the strongest host, join it as a client |
 | host | open a network with the profile's comm id and application data, wait for an EAPoL join |
 
-### Gen 7 and Pia
+### Generation 6, and what Gen 7 shares
 
-Sun/Moon and USUM run their online play on Nintendo's Pia library, which also has a local mode over
-UDS. If the Festival Plaza's local trade uses it, the SecureData payloads are Pia packets, which can
-carry their own encryption on top of UDS's. The record finder would then see nothing in an Azahar
-log; that alone would tell us Pia is in play, and the decoding layer comes next.
+X/Y and ORAS trade over NEX: PRUDP V1 (`pokeuds/nex/prudp.py`) behind Pia's local UDS header, Net-Z's
+object setup, and GameFreak's gflnet messages; `games/gen6` runs the PSS, the trade network and the
+trade itself ([gen6.md](gen6.md)). Sun/Moon and USUM link the same NEX transport with the same
+checksum key (found in both games' code), so Gen 7 reuses `nex/prudp.py` and gflnet's framing and
+needs only its own Festival Plaza signalling and trade commands, from one capture.
 
 ## Virtual Console
 

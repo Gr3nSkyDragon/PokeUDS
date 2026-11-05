@@ -134,10 +134,15 @@ def test_host_times_out_without_a_console(air, key, tmp_path):
         ours.close()
 
 
-def test_profiles_ship_empty_and_load(tmp_path):
-    for key in GAMES:
+def test_profiles_ship_and_load(tmp_path):
+    for key in ("sm", "usum"):          # Generation 7 waits for captures.
         shipped = profile.load(key, profile.PROFILE_DIR / f"{key}.toml")
         assert shipped.missing() == ["network.wlan_comm_id", "network.passphrase_hex", "trade.data_channels"]
+    for key in ("xy", "oras"):          # Generation 6, measured from Pokemon X.
+        shipped = profile.load(key, profile.PROFILE_DIR / f"{key}.toml")
+        assert shipped.missing() == []
+        assert (shipped.wlan_comm_id, shipped.passphrase, shipped.id, shipped.data_channels) == (
+            0x00055D10, b"GNgBwMcVotYs\0", 2, [243])
     filled = tmp_path / "sm.toml"
     filled.write_text('[network]\nwlan_comm_id = "0x00164800"\npassphrase_hex = "41:42:00"\n'
                       'application_data_hex = "0a0b"\nalso_join_comm_ids = ["0x001B5000"]\n'

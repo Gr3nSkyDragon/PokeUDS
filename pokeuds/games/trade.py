@@ -1,4 +1,7 @@
-"""A local wireless trade with a 3DS Pokemon game, in either role (Generations 6 and 7).
+"""A local wireless trade with a 3DS Pokemon game, in either role (the Generation 7 session).
+
+Generation 6 trades run in ``games/gen6`` (the CLI dispatches there); this module is what Sun/Moon and
+USUM use until their trade messages are mapped.
 
 Status: the UDS session is complete in both roles.
 

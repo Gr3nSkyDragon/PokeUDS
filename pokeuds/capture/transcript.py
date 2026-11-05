@@ -57,6 +57,9 @@ class SessionFacts:
     wlan_comm_ids: set[int] = field(default_factory=set)
     network_ids: set[int] = field(default_factory=set)
     hosting: list[dict] = field(default_factory=list)
+    # Beacon application data the log holds in full (azahar_uds builds from 2026-11 log it):
+    # (time, "ours" for the emulated game's own, "retail" for one it decrypted, the bytes).
+    beacons: list[tuple[float | None, str, bytes]] = field(default_factory=list)
 
 
 def _fields(line: str) -> dict[str, str]:
@@ -98,6 +101,12 @@ def parse_azahar_log(path: str | Path) -> tuple[list[Message], SessionFacts]:
             facts.hosting.append(f)
             if "wlanCommId" in f:
                 facts.wlan_comm_ids.add(_int(f["wlanCommId"]))
+            if f.get("applicationData", "").strip(";"):
+                facts.beacons.append((stamp, "ours", parse_hex(f["applicationData"].split(";")[0])))
+        elif "retail beacon payload" in raw and "applicationData=" in raw:
+            value = raw.split("applicationData=", 1)[1].split(",")[0].strip()
+            if value:
+                facts.beacons.append((stamp, "retail", parse_hex(value)))
     return messages, facts
 
 

@@ -25,6 +25,8 @@ from pathlib import Path
 from . import pkx, status
 from .util import mac_str, parse_hex, parse_mac, random_mac
 
+log = logging.getLogger(__name__)
+
 
 def _add_radio(p: argparse.ArgumentParser) -> None:
     p.add_argument("--radio", default="esp32",
@@ -178,6 +180,26 @@ def cmd_analyze(args) -> int:
     for hosted in facts.hosting:
         print("hosted network: " + ", ".join(f"{k}={v}" for k, v in hosted.items()
                                              if k in ("wlanCommId", "id", "channel", "maxNodes", "applicationDataSize")))
+    from .capture import nex as nexcap
+    from .games.gen6 import wire as gen6wire
+
+    decoded = nexcap.decode(messages)
+    if decoded.packets:
+        for line in nexcap.summarize(decoded, flow=args.flow):
+            print(line)
+    shown = set()
+    for stamp, who, data in facts.beacons:
+        player = gen6wire.parse_pss_beacon(data)
+        key = (who, data)
+        if key in shown:
+            continue
+        shown.add(key)
+        if player is not None:
+            # Idle beacons keep other values where a request names its partner, so only a request says who.
+            state = f"asks {player.partner_id.hex()} for a trade" if player.request else f"partner field {player.partner_id.hex()}"
+            print(f"PSS beacon ({who}, t={stamp}): {player.name}, PSS id {player.pss_id.hex()}, {state}")
+        elif args.flow:
+            print(f"beacon application data ({who}, t={stamp}): {data.hex()}")
     for record in transcript.find_pokemon(messages):
         s = record.summary
         m = messages[record.message]
@@ -231,9 +253,11 @@ def cmd_trade(args) -> int:
     if missing := prof.missing():
         raise SystemExit(f"{prof.source} is missing {', '.join(missing)}; these come from captures "
                          "(docs/captures.md)")
-    station = Station(open_radio(args.radio), args.mac or random_mac(), _uds_key(args.keys), name=args.name)
+    station = Station(open_radio(args.radio), args.mac or random_mac(), _uds_key(args.keys, args.radio), name=args.name)
     station.start(args.channel)
     status.emit("radio", description=station.radio.describe())
+    if game.generation == 6:
+        return _trade_gen6(args, station, game, prof, offer)
     trade = LocalTrade(station, game, prof, offer, Path(args.output))
     try:
         if args.role == "host":
@@ -264,6 +288,56 @@ def cmd_trade(args) -> int:
         return 130
     finally:
         station.close()
+    return 0
+
+
+def _gen6_trainer(game, offer: bytes, args):
+    """The trainer PokeUDS shows in the PSS: --trainer/--tid/--sid, else the app's trainer, else the offer's OT.
+    The PSS id and key are made once and kept in the app settings, so a console sees the same player each time."""
+    from .app.settings import Settings
+    from .games.gen6 import session, wire
+
+    settings = Settings.load()
+    trainer = dict(settings.trainer)
+    if not trainer.get("pss_id") or not trainer.get("pss_key"):
+        trainer["pss_id"], trainer["pss_key"] = os.urandom(8).hex(), os.urandom(4).hex()
+        settings.trainer = trainer
+        try:
+            settings.save()
+        except OSError as exc:
+            log.warning("could not keep the PSS id in the settings: %s", exc)
+    chosen = {"pss_id": trainer["pss_id"], "pss_key": trainer["pss_key"], "user_name": args.name}
+    name = args.trainer or trainer.get("ot")
+    if name:
+        chosen["name"] = name
+    for key in ("tid", "sid"):
+        value = getattr(args, key, None)
+        if value is None and trainer.get(key) is not None and (args.trainer is None or args.trainer == trainer.get("ot")):
+            value = trainer[key]
+        if value is not None:
+            chosen[key] = value
+    version = wire.VERSION_CODES["X" if game.key == "xy" else "Omega Ruby"]
+    return session.trainer_from_offer(pkx.decrypt(offer) if not pkx.checksum_valid(offer) else offer, version, chosen)
+
+
+def _trade_gen6(args, station, game, prof, offer: bytes) -> int:
+    from .games.gen6.trade import Gen6Trade
+    from .games.gen6.session import TradeEnded
+
+    trainer = _gen6_trainer(game, offer, args)
+    trade = Gen6Trade(station, game, prof, offer, Path(args.output), trainer, trades=args.trades, partner=args.partner)
+    try:
+        trade.run(args.role, args.seconds)
+    except (TimeoutError, TradeEnded) as exc:
+        print(f"stopped: {exc}", file=sys.stderr)
+        status.emit("stopped", reason="timeout" if isinstance(exc, TimeoutError) else "ended", message=str(exc))
+        return 1 if not trade.saved else 0
+    except KeyboardInterrupt:
+        status.emit("stopped", reason="user")
+        return 130
+    finally:
+        station.close()
+    status.emit("stopped", reason="done")
     return 0
 
 
@@ -543,6 +617,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("capture", help="an Azahar log (azahar_uds) or a `pokeuds sniff --out` file")
     p.add_argument("--out", help="write the parsed transcript as JSON lines")
     p.add_argument("--extract", help="write every Pokemon found as .pk6/.pk7 into this folder")
+    p.add_argument("--flow", action="store_true",
+                   help="Gen 6/7: list every Net-Z and gflnet message, and every beacon's application data")
     p.set_defaults(func=cmd_analyze)
 
     p = sub.add_parser("pkx", aliases=["pk6", "pk7"], help="show a .pk6/.pk7 (or .ek6/.ek7) file")
@@ -662,7 +738,12 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--profile", help="profile file (default profiles/<game>[.local].toml)")
     p.add_argument("--seconds", type=float, default=60.0,
                    help="how long to look for the console (join) or wait for it to join (host)")
-    p.add_argument("--listen", type=float, default=20.0, help="how long to record the console once connected")
+    p.add_argument("--listen", type=float, default=20.0, help="Gen 7: how long to record the console once connected")
+    p.add_argument("--trades", type=int, default=1, help="Gen 6: trades before PokeUDS leaves the trade screen")
+    p.add_argument("--partner", help="Gen 6, --role host: the trainer to ask in the PSS (default: the first heard)")
+    p.add_argument("--trainer", help="Gen 6: the trainer name shown in the PSS (default: the app's trainer, else the offer's OT)")
+    p.add_argument("--tid", type=int, help="Gen 6: trainer ID shown on the trade screen")
+    p.add_argument("--sid", type=int, help="Gen 6: secret ID")
     p.set_defaults(func=cmd_trade)
 
     args = parser.parse_args(argv)
