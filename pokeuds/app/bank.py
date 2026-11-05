@@ -29,7 +29,7 @@ from .settings import data_dir
 EXTENSIONS = (".pk1", ".pk2", ".pk6", ".pk7")
 IMPORTABLE = EXTENSIONS + (".ek6", ".ek7")
 SOURCES = {"received": "Received", "imported": "Imported", "built": "Built", "converted": "Converted",
-           "gift": "Mystery Gift"}
+           "gift": "Mystery Gift", "migrated": "Migrated"}
 _UNSAFE = re.compile(r"[^\w\-]+", re.UNICODE)
 
 
@@ -390,3 +390,93 @@ def check(bank: Bank, entry: Entry) -> Entry:
 
     result = pkhex.shared().check(pkhex_game(entry), entry.data())
     return bank.set_legality(entry, result.legal, result.report, result.encounter)
+
+
+@dataclass
+class Checked:
+    legal: list[Entry] = field(default_factory=list)
+    illegal: list[Entry] = field(default_factory=list)
+    failed: list[tuple[Entry, str]] = field(default_factory=list)
+
+
+def check_all(bank: Bank, entries: list[Entry] | None = None, *, progress=None, stop=None) -> Checked:
+    """``check`` every record (or ``entries``), one after another. ``progress(done, total, entry)`` follows it;
+    ``stop()`` returning true ends it early. A record PKHeX cannot check is kept in ``failed`` with the reason."""
+    todo = bank.entries() if entries is None else entries
+    out = Checked()
+    for n, entry in enumerate(todo):
+        if stop and stop():
+            break
+        if progress:
+            progress(n, len(todo), entry)
+        try:
+            checked = check(bank, entry)
+        except (OSError, ValueError, RuntimeError) as exc:      # a record it refuses, or the helper gone
+            out.failed.append((entry, str(exc)))
+            if not isinstance(exc, ValueError):
+                break
+            continue
+        (out.legal if checked.legal else out.illegal).append(checked)
+    if progress:
+        progress(len(todo), len(todo), None)
+    return out
+
+
+# -- migrating to a later generation ----------------------------------------------------------------
+
+# Format -> the generation Nintendo's apps move it to, one way: Poke Transporter takes Gen 1/2 Virtual Console
+# Pokemon to Gen 7, Pokemon Bank takes Gen 6 to Gen 7 (services/pkhex/Migrate.cs). Nothing official reaches Gen 6
+# from the Game Boy, and nothing comes back.
+MIGRATIONS = {"pk1": 7, "pk2": 7, "pk6": 7}
+MIGRATION_APPS = {"pk1": "Poke Transporter", "pk2": "Poke Transporter", "pk6": "Pokemon Bank"}
+VC_GAMES = {1: (("red", "Red"), ("blue", "Blue"), ("yellow", "Yellow")),
+            2: (("gold", "Gold"), ("silver", "Silver"), ("crystal", "Crystal"))}
+
+
+def migration_target(entry: Entry) -> int | None:
+    """The generation the record can be migrated to, or None."""
+    return MIGRATIONS.get(entry.extension)
+
+
+def migrates_to(entry: Entry) -> list[str]:
+    """The catalog keys the record reaches once migrated (not those it already reaches as it is)."""
+    from .catalog import ENTRIES
+
+    target = migration_target(entry)
+    if target is None:
+        return []
+    return [g.key for g in ENTRIES if f"pk{target}" in g.extensions and g.key not in games_for(entry)]
+
+
+def migrated_copy(bank: Bank, entry: Entry) -> Entry | None:
+    """The migrated copy made of this record before, while it is still in the bank."""
+    copy_id = (entry.meta.get("migrated") or {}).get(str(migration_target(entry)))
+    return bank.find(copy_id) if copy_id else None
+
+
+def migrate(bank: Bank, entry: Entry, *, vc_game: str | None = None, trainer: dict | None = None,
+            helper=None) -> tuple[Entry, bool]:
+    """Move a copy of the record to Gen 7 as Transporter (Gen 1/2) or Bank (Gen 6) would, and keep it in the bank
+    beside the original, which stays as it was. A record migrated before gives the copy made then: the apps move
+    a Pokemon once, and a second copy would have other IVs and another PID. -> (copy, made now)"""
+    if (copy := migrated_copy(bank, entry)) is not None:
+        return copy, False
+    target = migration_target(entry)
+    if target is None:
+        raise ValueError(f"a .{entry.extension} does not migrate anywhere")
+    if entry.extension in ("pk1", "pk2") and vc_game and vc_game not in dict(VC_GAMES[entry.generation]):
+        raise ValueError(f"{vc_game} is not a Generation {entry.generation} game")
+    if helper is None:
+        from .. import pkhex
+
+        helper = pkhex.shared()
+    built = helper.migrate("sm", entry.data(), pkhex_game(entry), vc_game=vc_game, trainer=trainer)
+    app = MIGRATION_APPS[entry.extension]
+    copy, _ = bank.deposit(built.data, f"pk{target}", source="migrated", origin=entry.id,
+                           note=f"{app} copy of {entry.describe()}",
+                           extra={"legal": built.legal, "report": built.report, "encounter": built.encounter,
+                                  "migrated_from": entry.id, "vc_game": vc_game or ""})
+    meta = bank._meta(entry.path)
+    meta.setdefault("migrated", {})[str(target)] = copy.id
+    bank._write_meta(entry.path, meta)
+    return copy, True

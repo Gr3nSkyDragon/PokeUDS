@@ -1,10 +1,11 @@
 """The bank: deposits, de-duplication, the received folder, Time Capsule copies, export, games."""
 
 import struct
+from dataclasses import replace
 
 import pytest
 
-from pokeuds import gbpk, pkx, received
+from pokeuds import gbpk, pkhex, pkx, received
 from pokeuds.app import bank
 from pokeuds.radio.demo import sample_mon
 from tests.test_pkx import make_record
@@ -136,3 +137,51 @@ def test_duplicates_banked_before_are_removed(b, tmp_path):
     assert len(pairs) == 2 and all(kept.id == first.id for _, kept in pairs)
     assert [d for d, _ in b.remove_duplicates()] and [e.id for e in b.entries()] == [first.id]
     assert b.duplicates() == []
+
+
+class FakeHelper:
+    """Stands in for the PKHeX helper: checks by species, migrates to a fixed .pk7."""
+
+    def __init__(self):
+        self.migrated = []
+
+    def check(self, game, data):
+        legal = bank.parse(f"x.{ {'rby': 'pk1', 'gsc': 'pk2'}.get(game, 'pk6' if game in ('xy', 'oras') else 'pk7') }",
+                           data).dex != 150
+        return pkhex.Built(legal, "Legal!" if legal else "Invalid: no.", "Wild", "pk6", data, {})
+
+    def migrate(self, game, data, source, vc_game=None, trainer=None):
+        self.migrated.append((game, source, vc_game, trainer))
+        return pkhex.Built(True, "Legal!", "Virtual Console Transfer", "pk7", pk6(species=6, ec=len(self.migrated)), {})
+
+
+def test_the_whole_bank_is_checked(b, monkeypatch):
+    monkeypatch.setattr(pkhex, "shared", lambda: FakeHelper())
+    b.deposit(pk6(), "pk6", source="imported")
+    b.deposit(sample_mon(1, 150, 70, "MEWTWO").to_file(), "pk1", source="imported")
+    seen = []
+    result = bank.check_all(b, progress=lambda done, total, e: seen.append((done, total)))
+    assert len(result.legal) == 1 and [e.species for e in result.illegal] == ["Mewtwo"] and not result.failed
+    assert seen[-1] == (2, 2) and all(e.legal is not None for e in b.entries())
+    assert bank.check_all(b, stop=lambda: True).legal == []
+
+
+def test_migrating_keeps_the_original_and_makes_one_copy(b):
+    helper = FakeHelper()
+    gen1, _ = b.deposit(sample_mon(1, 4, 12, "CHARMY").to_file(), "pk1", source="imported")
+    xy, _ = b.deposit(pk6(), "pk6", source="imported")
+    assert bank.migration_target(gen1) == 7 and bank.migration_target(xy) == 7
+    assert bank.migrates_to(gen1) == ["sm", "usum"] and bank.migrates_to(xy) == ["sm", "usum"]
+    copy, made = bank.migrate(b, gen1, vc_game="blue", trainer={"ot": "ME"}, helper=helper)
+    assert made and copy.extension == "pk7" and copy.source == "migrated" and copy.legal is True
+    assert copy.meta["migrated_from"] == gen1.id and helper.migrated == [("sm", "rby", "blue", {"ot": "ME"})]
+    assert b.find(gen1.id) is not None and bank.games_for(b.find(gen1.id)) == ["rby", "gsc"]   # the original stays
+    assert bank.games_for(copy) == ["sm", "usum"] and bank.migration_target(copy) is None   # and the copy stays in Gen 7
+    again, made = bank.migrate(b, b.find(gen1.id), helper=helper)
+    assert not made and again.id == copy.id and len(helper.migrated) == 1
+    with pytest.raises(ValueError):
+        bank.migrate(b, copy, helper=helper)                       # a .pk7 goes nowhere
+    with pytest.raises(ValueError):
+        bank.migrate(b, replace(gen1, meta={}), vc_game="gold", helper=helper)   # Gold is not a Gen 1 game
+    xy_copy, made = bank.migrate(b, xy, helper=helper)
+    assert made and helper.migrated[-1][1] == "xy" and xy_copy.note.startswith("Pokemon Bank copy")

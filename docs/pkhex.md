@@ -60,6 +60,7 @@ One JSON object per line each way. Every reply has `ok`; a refused request has `
 | `{"cmd":"gift","game":"oras","key":"0547-384-0"}` or `"data":"<base64>"` | a card (official, or a `.wc6`/`.wc7`/full file) and the Pokemon it gives the trainer |
 | `{"cmd":"card","game":"usum","species":778, ...}` | a card from the editor's fields and its Pokemon (docs/wonder_cards.md) |
 | `{"cmd":"card_fields","game":"usum","data":"<base64>"}` | any card as the editor's fields, which `card` turns back into the same bytes |
+| `{"cmd":"migrate","game":"sm","from":"rby","source":"red","data":"<base64>","trainer":{...}}` | a Gen 1/2/6 record moved to Gen 7 (below), described as `check` describes one |
 
 Wishes, all optional: `level`, `form`, `shiny`, `nature` (0 to 24), `gender` (`male`, `female`),
 `ability` (`1`, `2`, `hidden`), `moves` (up to four move ids), `held_item`, `ball`, `nickname`, and
@@ -69,6 +70,23 @@ not have (natures and balls before Gen 3, items in Gen 1) are ignored.
 A built or checked record comes back as `legal`, `report` (PKHeX's legality report), `encounter` (the
 encounter it came from), `extension`, `data` (base64, decrypted) and `summary` (species, nickname, level,
 shiny, gender, OT, TID, move names, IVs, item, nature, ability, ball, origin).
+
+## Migrating to Gen 7
+
+`migrate` uses PKHeX.Core's converters, which copy what Nintendo's apps do (`services/pkhex/Migrate.cs`):
+
+- **Gen 1/2 (`from` rby/gsc) -> Gen 7: Poke Transporter.** Met in "Kanto"/"Johto" at its current level on
+  today's date, in a Poke Ball; three perfect IVs (five for Mew and Celebi), the others random; the nature its
+  EXP mod 25 gives; its Hidden Ability, except the species Transporter leaves on their first ability; EXP reset
+  to its level's minimum; its moves (not Dizzy Punch) and nickname kept, its held item and mail left behind; a
+  new PID that keeps it shiny or not. `source` is the Virtual Console game it comes from (red, blue, yellow,
+  gold, silver, crystal; one with Crystal's met data is always Crystal's).
+- **Gen 6 (`from` xy/oras) -> Gen 7: Pokemon Bank.** Markings, Super Training and geolocations reset, and the
+  trainer who withdraws it becomes its current handler, even its own OT, as PKHeX's legality check expects. A
+  Cosplay Pikachu is refused, as Bank refuses it.
+
+`trainer` is who runs the app: the handling trainer, and their 3DS region. An Egg is refused, and `game` must be
+Gen 7: nothing official reaches Gen 6 from the Game Boy.
 
 ## How a build works
 

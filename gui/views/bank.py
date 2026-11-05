@@ -1,13 +1,15 @@
 """The Bank page: every Pokemon the app keeps, what the trades received included.
 
 Received Pokemon are deposited from the output folder each time the page opens. A record can be
-offered in a trade, checked by PKHeX, copied through the Time Capsule (Gen 1 <-> Gen 2), exported or
-deleted; Import adds files from anywhere.
+offered in a trade, checked by PKHeX (or the whole bank at once), copied through the Time Capsule
+(Gen 1 <-> Gen 2), migrated to Gen 7 as Poke Transporter or Pokemon Bank would (a copy; the original stays),
+exported or deleted; Import adds files from anywhere.
 """
 
 from __future__ import annotations
 
 import threading
+import time
 
 import flet as ft
 
@@ -17,7 +19,7 @@ from .. import theme as t
 from .common import View, open_folder
 from .sprite import sprite
 
-FILTERS = (("all", "All"), ("gb", "Game Boy"), ("6", "Gen 6"), ("7", "Gen 7"))
+FILTERS = (("all", "All"), ("gb", "Game Boy"), ("6", "Gen 6"), ("7", "Gen 7"), ("illegal", "Not legal"))
 SOURCE_COLORS = {"received": t.GOOD, "imported": t.MUTED, "built": t.INFO, "converted": t.WARN, "gift": t.ACCENT}
 
 
@@ -37,6 +39,9 @@ class BankView(View):
         self.message = ""
         self.message_color = t.INFO
         self.checking = False
+        self.check_progress = ""         # "12 of 80" while the whole bank is checked
+        self.stop_check = False
+        self.migrating = False
 
     @property
     def bank(self) -> bank.Bank:
@@ -59,6 +64,7 @@ class BankView(View):
         header = ft.Row([
             t.title("Bank"), t.label(f"{len(entries)} Pokemon"), ft.Container(expand=True),
             ft.IconButton(ft.Icons.REFRESH, tooltip="Look again", on_click=lambda e: self.refresh()),
+            *self._check_all_controls(entries),
             *([t.secondary(f"Remove {duplicates} duplicate" + ("s" if duplicates > 1 else ""),
                            lambda e: self._confirm_dedupe(), ft.Icons.CLEANING_SERVICES_OUTLINED)] if duplicates else []),
             t.secondary("Import...", self._import, ft.Icons.FILE_UPLOAD_OUTLINED),
@@ -68,9 +74,11 @@ class BankView(View):
         choosing = self.app.bank_for
         if choosing:
             entry = catalog.BY_KEY[choosing]
+            takes = f"Choosing a Pokemon to offer in {entry.name}: showing what it takes "                     f"({', '.join('.' + x for x in entry.extensions)})"
+            if "pk7" in entry.extensions:
+                takes += ", and the Gen 1, 2 and 6 Pokemon PokeUDS can migrate to .pk7 first"
             controls.append(ft.Row([
-                t.notice(f"Choosing a Pokemon to offer in {entry.name}: showing what it takes "
-                         f"({', '.join('.' + x for x in entry.extensions)}).", t.INFO),
+                t.notice(takes + ".", t.INFO),
                 t.secondary("Show everything", self._stop_choosing, ft.Icons.CLOSE)], spacing=8))
         else:
             controls.append(ft.SegmentedButton(
@@ -94,9 +102,9 @@ class BankView(View):
 
     def _keep(self, e: bank.Entry) -> bool:
         if self.app.bank_for:
-            return self.app.bank_for in bank.games_for(e)
+            return self.app.bank_for in bank.games_for(e) or self.app.bank_for in bank.migrates_to(e)
         return (self.filter == "all" or (self.filter == "gb" and e.generation <= 2)
-                or self.filter == str(e.generation))
+                or (self.filter == "illegal" and e.legal is False) or self.filter == str(e.generation))
 
     def _row(self, e: bank.Entry) -> ft.Control:
         chosen = e.id == self.selected
@@ -124,7 +132,9 @@ class BankView(View):
         ]
         if e.has_mail:
             facts.append(("Mail", "holds mail (sent with it in Gen 2 trades)"))
-        if e.origin:
+        if e.source == "migrated" and (original := self.bank.find(e.meta.get("migrated_from", ""))):
+            facts.append(("Migrated from", f"{original.describe()} (.{original.extension})"))
+        elif e.origin:
             facts.append(("Origin", e.origin))
         rows: list[ft.Control] = [ft.Row([sprite(self.app, e.dex, form=e.form, shiny=e.shiny, size=96, on_ready=self.refresh),
                                           t.heading(e.species), ft.Container(expand=True),
@@ -154,9 +164,16 @@ class BankView(View):
         rows.append(ft.Divider(color=t.LINE))
         games = bank.games_for(e)
         rows.append(t.label("Offer in a trade", color=t.TEXT))
-        rows.append(ft.Column([t.primary(f"Offer in {catalog.BY_KEY[g].name}", lambda _, x=e, k=g: self._offer(x, k),
-                                         ft.Icons.SWAP_HORIZ, disabled=busy) for g in games] or
-                              [t.label("No game here takes this record.", size=12)], spacing=6, tight=True))
+        target = bank.migration_target(e)
+        offers = [t.primary(f"Offer in {catalog.BY_KEY[g].name}", lambda _, x=e, k=g: self._offer(x, k),
+                            ft.Icons.SWAP_HORIZ, disabled=busy) for g in games]
+        offers += [t.secondary(f"Offer in {catalog.BY_KEY[g].name} (migrates to .pk{target})",
+                               lambda _, x=e, k=g: self._offer_migrated(x, k), ft.Icons.MOVE_UP,
+                               disabled=busy or self.migrating or not pkhex_ok)
+                   for g in bank.migrates_to(e)]
+        rows.append(ft.Column(offers or [t.label("No game here takes this record.", size=12)], spacing=6, tight=True))
+        if target:
+            rows += [ft.Divider(color=t.LINE), *self._migration(e, target, pkhex_ok)]
         actions = [t.secondary("Export...", lambda _, x=e: self._export(x), ft.Icons.FILE_DOWNLOAD_OUTLINED)]
         if e.generation <= 2:
             actions.insert(0, t.secondary(f"Time Capsule copy (.pk{3 - e.generation})", lambda _, x=e: self._convert(x),
@@ -301,3 +318,140 @@ class BankView(View):
         self.app.bank_for = ""
         self.app.views["trade"].pick_game(game)      # loads the offer from the settings and saves them
         self.app.navigate("trade")
+
+    # -- the whole bank's legality --------------------------------------------------------------
+
+    def _check_all_controls(self, entries: list[bank.Entry]) -> list[ft.Control]:
+        if not entries:
+            return []
+        if self.check_progress:
+            return [ft.ProgressRing(width=16, height=16), t.label(f"Checking {self.check_progress}", size=12),
+                    t.secondary("Stop", lambda e: self._stop_checking(), ft.Icons.STOP_ROUNDED)]
+        return [t.secondary("Check all", lambda e: self._check_all(), ft.Icons.FACT_CHECK_OUTLINED,
+                            disabled=self.checking or not _pkhex_ready())]
+
+    def _stop_checking(self) -> None:
+        self.stop_check = True
+
+    def _check_all(self) -> None:
+        self.checking, self.stop_check = True, False
+        self.check_progress = "..."
+        self.refresh()
+        last = [0.0]
+
+        def progress(done: int, total: int, entry) -> None:
+            self.check_progress = f"{done} of {total}"
+            now = time.monotonic()
+            if now - last[0] > 0.5:           # the page redrawn twice a second, not once per Pokemon
+                last[0] = now
+                self.app.ui(self.refresh)
+
+        def work() -> None:
+            try:
+                result = bank.check_all(self.bank, progress=progress, stop=lambda: self.stop_check)
+                done = len(result.legal) + len(result.illegal)
+                parts = [f"PKHeX checked {done}: {len(result.legal)} legal, {len(result.illegal)} not legal."]
+                if result.failed:
+                    entry, why = result.failed[0]
+                    parts.append(f"{len(result.failed)} could not be checked ({entry.describe()}: {why}).")
+                if self.stop_check:
+                    parts.append("Stopped before the end.")
+                self._say(" ".join(parts), t.BAD if result.illegal or result.failed else t.GOOD)
+                if result.illegal and not self.app.bank_for:
+                    self.filter = "illegal"
+            except Exception as exc:        # the helper missing or refusing to start
+                self._say(f"PKHeX could not check the bank: {exc}", t.BAD)
+            self.checking, self.check_progress = False, ""
+            self.app.ui(self.refresh)
+
+        threading.Thread(target=work, daemon=True, name="pkhex-check-all").start()
+
+    # -- migrating to Gen 7 ---------------------------------------------------------------------
+
+    def _migration(self, e: bank.Entry, target: int, pkhex_ok: bool) -> list[ft.Control]:
+        app = bank.MIGRATION_APPS[e.extension]
+        rows: list[ft.Control] = [t.label(f"Migrate to Generation {target} ({app})", color=t.TEXT)]
+        copy = bank.migrated_copy(self.bank, e)
+        if copy:
+            rows.append(t.label(f"Migrated already: {copy.describe()} (.{copy.extension}). The copy is kept beside "
+                                "this one; migrating again gives the same copy.", size=12))
+            rows.append(ft.Row([t.secondary("Show the copy", lambda _, i=copy.id: self._select(i), ft.Icons.ARROW_FORWARD)]))
+        else:
+            rows.append(t.label(f"A .pk{target} copy made as {app} makes it. This .{e.extension} stays in the bank as "
+                                f"it is; the copy can never come back to Generation {e.generation}.", size=12))
+            rows.append(ft.Row([t.secondary(f"Migrate to .pk{target}...", lambda _, x=e: self._confirm_migrate(x),
+                                            ft.Icons.MOVE_UP, disabled=self.migrating or not pkhex_ok),
+                                ft.ProgressRing(width=16, height=16, visible=self.migrating)], spacing=8))
+        return rows
+
+    def _offer_migrated(self, entry: bank.Entry, game: str) -> None:
+        copy = bank.migrated_copy(self.bank, entry)
+        if copy:
+            self._offer(copy, game)
+        else:
+            self._confirm_migrate(entry, offer_in=game)
+
+    def _confirm_migrate(self, entry: bank.Entry, offer_in: str = "") -> None:
+        page = self.app.page
+        target = bank.migration_target(entry)
+        app = bank.MIGRATION_APPS[entry.extension]
+        choice = {"vc": bank.VC_GAMES[entry.generation][0][0] if entry.generation <= 2 else None}
+        what = (f"{entry.describe()} is a .{entry.extension}. "
+                + (f"To trade it in {catalog.BY_KEY[offer_in].name}, " if offer_in else "")
+                + f"PokeUDS migrates it to Generation {target} the way {app} does. The original .{entry.extension} "
+                f"stays in the bank; the .pk{target} copy can no longer go to Generation {entry.generation}.")
+        if entry.generation <= 2:
+            changes = ("As Transporter does it: met in the " + ("Kanto" if entry.generation == 1 else "Johto")
+                       + " region today at its current level, in a Poke Ball; three perfect IVs (five for Mew and "
+                       "Celebi) and the rest random; the nature its EXP gives; its Hidden Ability for most species; "
+                       "EXP set to the start of its level. Its moves and nickname come along; a held item and mail "
+                       "stay behind. You (the Builder's trainer) become its handling trainer.")
+        else:
+            changes = ("As Bank does it: little changes. Markings, Super Training and geolocation data are reset, and "
+                       "you (the Builder's trainer) become its handling trainer. A Cosplay Pikachu cannot move.")
+        controls: list[ft.Control] = [ft.Text(what), ft.Text(changes, size=13, color=t.MUTED)]
+        if entry.generation <= 2:
+            controls.append(ft.Dropdown(
+                label="Transferred from", value=choice["vc"], width=220, dense=True,
+                options=[ft.DropdownOption(key=k, text=v) for k, v in bank.VC_GAMES[entry.generation]],
+                tooltip="The Virtual Console game Transporter reads it from; its record names that game as its origin",
+                on_select=lambda ev: choice.__setitem__("vc", ev.control.value)))
+
+        def close(_=None) -> None:
+            page.pop_dialog()
+
+        def go(_) -> None:
+            page.pop_dialog()
+            self._migrate(entry, choice["vc"], offer_in)
+
+        page.show_dialog(ft.AlertDialog(
+            title=ft.Text(f"Migrate {entry.species} to Generation {target}?"),
+            content=ft.Column(controls, tight=True, spacing=12, width=460),
+            actions=[ft.TextButton("Cancel", on_click=close),
+                     ft.FilledButton("Migrate and offer" if offer_in else "Migrate", on_click=go)]))
+
+    def _migrate(self, entry: bank.Entry, vc_game: str | None, offer_in: str) -> None:
+        from pokeuds.app.builder import Trainer
+
+        s = self.app.settings
+        trainer = Trainer.from_dict(s.trainer, s.trainer_name or "POKEUDS").request(bank.migration_target(entry))
+        self.migrating = True
+        self.refresh()
+
+        def work() -> None:
+            copy = None
+            try:
+                copy, new = bank.migrate(self.bank, entry, vc_game=vc_game, trainer=trainer)
+                legal = "legal" if copy.legal else "NOT legal"
+                self._say(f"Migrated: {copy.describe()} (.{copy.extension}), {legal} by PKHeX." if new else
+                          f"Already migrated: {copy.describe()}.", t.GOOD if copy.legal else t.WARN)
+                self.selected = copy.id
+            except Exception as exc:        # what PKHeX refuses (an Egg, a Cosplay Pikachu), or the helper gone
+                self._say(f"Could not migrate {entry.species}: {exc}", t.BAD)
+            self.migrating = False
+            if copy is not None and offer_in:
+                self.app.ui(lambda: self._offer(copy, offer_in))
+            else:
+                self.app.ui(self.refresh)
+
+        threading.Thread(target=work, daemon=True, name="pkhex-migrate").start()

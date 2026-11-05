@@ -71,7 +71,7 @@ The bank is a folder (`<data folder>/bank`, or Settings' `bank`) holding one fil
 
 ```
 20261104-153012_025_Sparky_1a2b3c4d.pk6     the record: .pk1/.pk2 as PokeUDS writes them, .pk6/.pk7 decrypted and stored, as PKHeX opens them
-20261104-153012_025_Sparky_1a2b3c4d.json    source (received, imported, built, converted), when, the file it came from, a note, PKHeX's verdict
+20261104-153012_025_Sparky_1a2b3c4d.json    source (received, imported, built, converted, gift, migrated), when, the file it came from, a note, PKHeX's verdict
 20261104-153012_025_Sparky_1a2b3c4d.mail    a Gen 2 Pokemon's mail, when it holds one
 ```
 
@@ -88,6 +88,17 @@ The bank is a folder (`<data folder>/bank`, or Settings' `bank`) holding one fil
 - **Time Capsule copy** banks the `.pk2` a Gen 1 Pokemon becomes in Gen 2, or the `.pk1` a Gen 2 one
   becomes in Gen 1 (a Gen 1 species with Gen 1 moves only; its item and mail stay behind).
 - **Check** asks the PKHeX helper (docs/pkhex.md), when it is built, and keeps the answer with the record.
+- **Check all** (the header) checks every record in turn, with a Stop button; the illegal ones are then shown
+  through the **Not legal** filter.
+- **Migrate to .pk7** makes the copy Poke Transporter (a `.pk1`/`.pk2`) or Pokemon Bank (a `.pk6`) would bring
+  into Sun/Moon and Ultra Sun/Ultra Moon, through PKHeX.Core's own versions of those apps (docs/pkhex.md). The
+  original stays in the bank as it was; the copy is a `.pk7` from then on and goes to Gen 7 games only. A record is
+  migrated once: asking again shows the copy made the first time (a second one would have other IVs and PID).
+  A Gen 1/2 Pokemon asks which Virtual Console game it is transferred from, as Transporter reads one game's save.
+  The Gen 7 offer buttons on a Gen 1/2/6 record (**Offer in Sun / Moon (migrates to .pk7)**) and choosing
+  **From the bank** for a Gen 7 game do the same: the Gen 1, 2 and 6 Pokemon are listed, and picking one asks
+  first, migrates it, and offers the copy. Nothing official goes from the Game Boy to Gen 6, or back from Gen 7,
+  so PokeUDS does not either.
 
 Levels of stored Gen 6/7 records (which carry no level byte) come from their experience and the species'
 growth rate (`pokeuds/species.py`, taken from PKHeX.Core).

@@ -8,6 +8,7 @@
 //   {"cmd":"gift","game":"xy","key":"..."|"data":..} -> a card (official, or a .wc6/.wc7/full file) made into its Pokemon
 //   {"cmd":"card","game":"xy",...}                   -> a card from the editor's fields (CardEditor.cs), and what it gives
 //   {"cmd":"card_fields","game":"xy","data":...}     -> any card (or an official key) as the editor's fields
+//   {"cmd":"migrate","game":"sm","from":"rby",...}   -> a Gen 1/2/6 record moved to Gen 7 as Transporter/Bank do (Migrate.cs)
 //
 // Every reply has "ok"; a failed request has "error" instead. Games: rby, gsc, xy, oras, sm, usum.
 // Legality is PKHeX.Core's (LegalityAnalysis); the build tries the species' encounters in PKHeX's
@@ -78,6 +79,7 @@ static partial class Program
             "gift" => Gift(game, request),
             "card" => BuildCard(game, request),
             "card_fields" => CardFieldsReply(game, request),
+            "migrate" => Migrate(game, request),
             _ => throw new ArgumentException($"unknown cmd {cmd}"),
         };
     }

@@ -225,6 +225,16 @@ class Helper:
     def check(self, game: str, data: bytes) -> Built:
         return self._built(self.request("check", game=game, data=base64.b64encode(data).decode()))
 
+    def migrate(self, game: str, data: bytes, source: str, *, vc_game: str | None = None,
+                trainer: dict | None = None) -> Built:
+        """A Gen 1/2/6 record (``source``: its helper game, rby/gsc/xy/oras) moved to Gen 7 (``game``: sm/usum) as
+        Poke Transporter or Pokemon Bank does it (services/pkhex/Migrate.cs). ``vc_game`` is the Virtual Console game
+        a Gen 1/2 Pokemon is transferred from (red, blue, yellow, gold, silver, crystal); ``trainer`` runs the app."""
+        fields = {"from": source, "data": base64.b64encode(data).decode(), "trainer": trainer or {}}
+        if vc_game:
+            fields["source"] = vc_game
+        return self._built(self.request("migrate", game=game, **fields))
+
     # Mystery Gift cards, Gen 6 and 7 (docs/mystery_gift.md).
 
     def gifts(self, game: str, all: bool = False) -> list[dict]:
