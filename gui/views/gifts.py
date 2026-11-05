@@ -75,7 +75,7 @@ class GiftsView(View):
         ]
         if not _helper_ready():
             controls.append(t.notice("Gifts need the PKHeX helper: dotnet build -c Release services/pkhex "
-                                     "(or Build it now on the Builder page).", t.WARN))
+                                     "(or Build it now under Build one on the Trade page).", t.WARN))
             return ft.Column(controls, spacing=t.GAP, scroll=ft.ScrollMode.AUTO)
         controls.append(ft.Row([
             ft.Dropdown(label="Game", value=self.game, width=280, dense=True, on_select=self._game,

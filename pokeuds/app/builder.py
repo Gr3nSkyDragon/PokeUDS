@@ -1,7 +1,7 @@
 """Building a Pokemon to send: the wishes the app collects, checked, and turned into a PKHeX request.
 
 The PKHeX helper (pokeuds.pkhex, docs/pkhex.md) does the building and the legality check; this module
-holds what the Builder page and ``pokeuds build`` share: the games, the trainer as each generation
+holds what the Trade page's builder and ``pokeuds build`` share: the games, the trainer as each generation
 shows it, the limits on names, and keeping the result in the bank.
 """
 

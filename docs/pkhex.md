@@ -61,14 +61,15 @@ shiny, gender, OT, TID, move names, IVs, item, nature, ability, ball, origin).
    with PKHeX's reason, or "the encounter could not meet every request". (A species the game does not
    have, Rowlet in X/Y, is refused by PokeUDS before PKHeX is asked.)
 
-## The Builder page and `pokeuds build`
+## Build one (the Trade page) and `pokeuds build`
 
-The app's **Builder** page collects the wishes (game, species, level, nickname, shiny, gender, nature,
-ability, held item, ball, up to four moves) and the original trainer, which it keeps for the next build.
+On the Trade page, **Build one** opens the builder for the chosen game. It collects the wishes (species,
+level, nickname, shiny, gender, nature, ability, held item, ball, up to four moves) and the original
+trainer, which it keeps for the next build.
 The trainer is entered as each generation shows it: a five-digit ID (and SID from Gen 3 on), or from Gen
-7 the six-digit ID and four-digit SID. Build puts the result in the bank (source "built", with PKHeX's
-verdict) and offers it in the games that take it. Without the helper the page says how to build it,
-with a button that runs `dotnet build` when the .NET SDK is installed.
+7 the six-digit ID and four-digit SID. Build and offer it puts the result in the bank (source "built", with
+PKHeX's verdict) and makes it the trade's offer. Without the helper the panel says how to build it, with
+a button that runs `dotnet build` when the .NET SDK is installed.
 
 The same from the command line; names or numbers are accepted, `--out` takes a file or a folder, and
 without `--out` the result goes to the bank:

@@ -40,7 +40,7 @@ class BoardView(View):
                     t.secondary("Look again", lambda e: self.refresh(), ft.Icons.REFRESH)]),
         ]
         if self.app.settings.radio == "ldnd":
-            controls.append(t.notice("Trades use the USB Wi-Fi adapter (Radio page). This page is for ESP32-S3 boards.", t.INFO))
+            controls.append(t.notice("Trades use the USB Wi-Fi adapter (the Trade page's Connection). This page is for ESP32-S3 boards.", t.INFO))
         controls.append(t.card(t.heading("Boards"), *([self._board(p, best) for p in ports] or [self._none()]), spacing=12))
         controls.append(self._firmware(images, best))
         if self.app.run_kind == "board":

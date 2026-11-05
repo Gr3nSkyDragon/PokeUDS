@@ -57,10 +57,10 @@ pip install -r requirements-gui.txt
 python -m gui
 ```
 
-Pick a game, the Pokemon to offer and who hosts, then Start ([docs/gui.md](docs/gui.md)). The Bank keeps
-every Pokemon received, imported or built; the Builder makes a legal one with PKHeX when you have no file
-([docs/pkhex.md](docs/pkhex.md); build the helper once with `dotnet build -c Release services/pkhex`); the
-Board page installs the ESP32 firmware. Settings, Debug tools adds a demo radio that trades with a
+Pick a game, the Pokemon to offer, who hosts and the connection, then Start ([docs/gui.md](docs/gui.md)).
+No file to offer? Build one makes a legal Pokemon with PKHeX right there ([docs/pkhex.md](docs/pkhex.md);
+build the helper once with `dotnet build -c Release services/pkhex`). The Bank keeps every Pokemon
+received, imported or built; the Board page installs the ESP32 firmware. Settings, Debug tools adds a demo radio that trades with a
 simulated 3DS, a network scan and capture analysis.
 
 ### The command line

@@ -128,8 +128,8 @@ mask: 1 X / Sun, 2 Y / Moon, 4 Alpha Sapphire / Ultra Sun, 8 Omega Ruby / Ultra 
 
 ### The gift Pokemon by trade (simulated gifts)
 
-As pokeldn does for the Switch games without local gifts: the card's Pokemon, made as the Builder's
-trainer would receive it, goes into the bank and from there into a trade. The Gifts page has three ways
+As pokeldn does for the Switch games without local gifts: the card's Pokemon, made as the builder's
+trainer (Trade page, Build one) would receive it, goes into the bank and from there into a trade. The Gifts page has three ways
 in: **Official events** (searchable), **Open a card** (`.wc6`/`.wc7`/`.wc6full`/`.wc7full`) and **Build your
 own**; each shows what the card gives, PKHeX's verdict, Keep its Pokemon in the bank, Offer in a trade,
 and Save the card (264 bytes) or the full file (784 bytes). From the command line:
@@ -185,6 +185,6 @@ found and PokeUDS now handles:
 - PKHeX's "Simulated Pokemon Bank" entries (card 0000) are its own stand-ins for Pokemon Bank gifts, not
   distributions; they are listed last.
 
-In Gen 1 and 2 the event Pokemon come from the Builder, which falls back to PKHeX's event encounters
+In Gen 1 and 2 the event Pokemon come from the builder (Build one), which falls back to PKHeX's event encounters
 (`pokeuds build rby mew --level 5`: "Event Gift (Mew)", legal; Crystal's Celebi is the GS Ball's, in
 Ilex Forest), and go by trade.

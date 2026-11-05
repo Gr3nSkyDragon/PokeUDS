@@ -22,15 +22,7 @@ class Entry:
     notes: tuple[str, ...] = field(default_factory=tuple)
 
 
-ENTRIES = (
-    Entry("rby", "Red / Blue / Yellow", "Game Boy (Virtual Console)", "a Gen 1 VC game", ("pk1", "pk2"),
-          "On the 3DS, choose Host in the VC link menu, then go to the Pokemon Center's Trade Center and sit at the table. PokeUDS joins.",
-          'On the 3DS, choose Join in the VC link menu once PokeUDS is waiting, then go to the Trade Center and sit at the table.',
-          True, ("red", "blue", "yellow")),
-    Entry("gsc", "Gold / Silver / Crystal", "Game Boy (Virtual Console)", "a Gen 2 VC game", ("pk2", "pk1"),
-          "On the 3DS, choose Host in the VC link menu, then go to the Pokemon Center's Trade Center (or the Time Capsule for a .pk1) and sit at the table. PokeUDS joins.",
-          'On the 3DS, choose Join in the VC link menu once PokeUDS is waiting, then go to the Trade Center (or the Time Capsule for a .pk1) and sit at the table.',
-          True, ("gold", "silver", "crystal")),
+ENTRIES = (                    # the Trade page's order: Gen 6, Gen 7, then the Virtual Console
     Entry("xy", "X / Y", "Generation 6", "Pokemon X or Y", ("pk6",),
           "On the 3DS, open the PSS with local wireless on. PokeUDS finds the console and joins its network.",
           "PokeUDS opens a network; on the 3DS, open the PSS with local wireless on.", False),
@@ -43,6 +35,14 @@ ENTRIES = (
     Entry("usum", "Ultra Sun / Ultra Moon", "Generation 7", "Ultra Sun or Ultra Moon", ("pk7",),
           "On the 3DS, open the Festival Plaza and start a local Link Trade. PokeUDS joins its network.",
           "PokeUDS opens a network; on the 3DS, open the Festival Plaza and start a local Link Trade.", False),
+    Entry("rby", "Red / Blue / Yellow", "Game Boy (Virtual Console)", "a Gen 1 VC game", ("pk1", "pk2"),
+          "On the 3DS, choose Host in the VC link menu, then go to the Pokemon Center's Trade Center and sit at the table. PokeUDS joins.",
+          'On the 3DS, choose Join in the VC link menu once PokeUDS is waiting, then go to the Trade Center and sit at the table.',
+          True, ("red", "blue", "yellow")),
+    Entry("gsc", "Gold / Silver / Crystal", "Game Boy (Virtual Console)", "a Gen 2 VC game", ("pk2", "pk1"),
+          "On the 3DS, choose Host in the VC link menu, then go to the Pokemon Center's Trade Center (or the Time Capsule for a .pk1) and sit at the table. PokeUDS joins.",
+          'On the 3DS, choose Join in the VC link menu once PokeUDS is waiting, then go to the Trade Center (or the Time Capsule for a .pk1) and sit at the table.',
+          True, ("gold", "silver", "crystal")),
 )
 BY_KEY = {e.key: e for e in ENTRIES}
 
@@ -73,7 +73,9 @@ def describe_offer(entry: Entry, path: str) -> Offer:
 
         record = pkx.load(path)
         s = pkx.summary(record)
-        offer = Offer(path, f"species {s.species} '{s.nickname}', OT {s.ot_name}, PID {s.pid:08X}",
+        from .. import species as names
+
+        offer = Offer(path, f"{names.name(s.species)} '{s.nickname}', OT {s.ot_name}, PID {s.pid:08X}",
                       generation=get(entry.key).generation)
         try:
             pkx.check_format(record, get(entry.key).record)
@@ -123,7 +125,7 @@ def missing_for_start(entry: Entry, settings: Settings, offer: Offer | None) -> 
     if not settings.radio_spec().startswith("demo") and (keys := settings.keys_problem()):
         problems.append(f"Console keys: {keys} (Settings)")
     if offer is None:
-        problems.append("Choose a Pokemon file to offer")
+        problems.append("Choose a Pokemon to offer: from the bank, Build one, or a file")
     elif offer.problem:
         problems.append(offer.problem)
     for gap in profile_gaps(entry):

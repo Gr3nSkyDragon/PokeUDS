@@ -16,42 +16,57 @@ import flet as ft  # noqa: E402
 from gui import theme as t  # noqa: E402
 from gui.app import App  # noqa: E402
 from gui.views.board import BoardView  # noqa: E402
-from gui.views.builder import BuilderView  # noqa: E402
 from gui.views.bank import BankView  # noqa: E402
 from gui.views.debug import DebugView  # noqa: E402
 from gui.views.gifts import GiftsView  # noqa: E402
-from gui.views.radio import RadioView  # noqa: E402
 from gui.views.settings import SettingsView  # noqa: E402
 from gui.views.trade import TradeView  # noqa: E402
 
-PAGES = (TradeView, BankView, BuilderView, GiftsView, RadioView, BoardView, SettingsView)
+PAGES = (TradeView, BankView, GiftsView)          # the rail's top, Debug after them when it is on
+BOTTOM = (BoardView, SettingsView)                  # pinned to the rail's foot, Settings last
 
 
 class Shell:
     def __init__(self, page: ft.Page, app: App) -> None:
         self.page, self.app = page, app
-        self.views = {cls.key: cls(app) for cls in (*PAGES, DebugView)}
+        self.views = {cls.key: cls(app) for cls in (*PAGES, *BOTTOM, DebugView)}
         self.current = "trade"
         self.content = ft.Container(expand=True, padding=ft.Padding(0, t.GAP, t.GAP, t.GAP))
-        self.rail = ft.NavigationRail(on_change=self._rail, bgcolor=t.PANEL, min_width=84,
+        self.rail = ft.NavigationRail(on_change=self._rail, bgcolor=t.PANEL, min_width=84, expand=True,
                                       label_type=ft.NavigationRailLabelType.ALL,
                                       leading=ft.Container(t.mark(), padding=ft.Padding(0, 18, 0, 18)))
+        self.foot = ft.NavigationRail(on_change=self._foot, bgcolor=t.PANEL, min_width=84, height=170,
+                                      label_type=ft.NavigationRailLabelType.ALL,
+                                      destinations=[self._destination(cls.key) for cls in BOTTOM])
         app.navigate = self.navigate
-        app.views = self.views
         app.rebuild_shell = self.rebuild
+        app.views = self.views
         app.listeners.append(self._changed)
 
     def keys(self) -> list[str]:
         return [cls.key for cls in PAGES] + (["debug"] if self.app.settings.debug else [])
 
+    def foot_keys(self) -> list[str]:
+        return [cls.key for cls in BOTTOM]
+
+    def _destination(self, key: str) -> ft.NavigationRailDestination:
+        return ft.NavigationRailDestination(icon=self.views[key].icon, label=self.views[key].label)
+
+    def _select(self) -> None:
+        """Mark the current page on whichever rail holds it; the other shows nothing chosen."""
+        top, foot = self.keys(), self.foot_keys()
+        self.rail.selected_index = top.index(self.current) if self.current in top else None
+        self.foot.selected_index = foot.index(self.current) if self.current in foot else None
+
     def build(self) -> ft.Control:
-        self.rail.destinations = [ft.NavigationRailDestination(icon=self.views[k].icon, label=self.views[k].label)
-                                  for k in self.keys()]
-        if self.current not in self.keys():
+        self.rail.destinations = [self._destination(k) for k in self.keys()]
+        if self.current not in self.keys() + self.foot_keys():
             self.current = "trade"
-        self.rail.selected_index = self.keys().index(self.current)
+        self._select()
         self.content.content = self.views[self.current].control()
-        return ft.Row([ft.Container(self.rail, bgcolor=t.PANEL), self.content], spacing=t.GAP, expand=True,
+        rails = ft.Container(ft.Column([self.rail, self.foot], spacing=0), bgcolor=t.PANEL,
+                             padding=ft.Padding(0, 0, 0, 12))
+        return ft.Row([rails, self.content], spacing=t.GAP, expand=True,
                       vertical_alignment=ft.CrossAxisAlignment.STRETCH)
 
     def rebuild(self) -> None:
@@ -60,12 +75,15 @@ class Shell:
 
     def navigate(self, key: str) -> None:
         self.current = key
-        self.rail.selected_index = self.keys().index(key)
+        self._select()
         self.content.content = self.views[key].control()
         self.page.update()
 
     def _rail(self, e) -> None:
         self.navigate(self.keys()[e.control.selected_index])
+
+    def _foot(self, e) -> None:
+        self.navigate(self.foot_keys()[e.control.selected_index])
 
     def _changed(self) -> None:
         self.views[self.current].refresh()

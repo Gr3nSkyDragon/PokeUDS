@@ -14,16 +14,28 @@ A desktop app (Flet 1.0.5, the toolkit pokeldn uses) over the same code as the c
 
 ## Pages
 
+The rail lists Trade, Bank and Gifts (and Debug when it is on) at the top, and Board then Settings at
+its foot.
+
 | page | what it does |
 |---|---|
-| Trade | pick the game, who hosts, the Pokemon to offer (from the bank or a file), Start; the session panel follows the run: radio, 3DS connected, link up, Pokemon received, what happened, the log |
-| Radio | ESP32-S3 (port found by its USB id, or chosen) or a USB Wi-Fi adapter through ldnd.exe 0.0.5 (Windows); "Check the radio" runs `probe` |
-| Board | ESP32-S3 boards: their firmware and build, update, download the released esp32-uds-bridge images, install one or a chosen `.bin` (`board ...` children; docs/hardware.md) |
-| Builder | a legal Pokemon built by PKHeX (game, species, level and wishes, the trainer), kept in the bank and offered in a trade (docs/pkhex.md) |
-| Gifts | Gen 6/7 Mystery Gift cards: PKHeX's official events, a `.wc6`/`.wc7` (or full) file, or a custom card; the card's Pokemon into the bank and a trade, the card saved as a file (docs/mystery_gift.md) |
+| Trade | pick the game, who hosts, the Pokemon to offer, the connection, Start; the session panel follows the run: radio, 3DS connected, link up, Pokemon received, what happened, the log |
 | Bank | every Pokemon the app keeps, received ones included: details, PKHeX legality, offer in a trade, Time Capsule copy, import, export, delete |
-| Settings | `aes_keys.txt`, the output folder, the trainer name the 3DS sees, Debug tools |
+| Gifts | Gen 6/7 Mystery Gift cards: PKHeX's official events, a `.wc6`/`.wc7` (or full) file, or a custom card; the card's Pokemon into the bank and a trade, the card saved as a file (docs/mystery_gift.md) |
 | Debug | only with Settings, Debug tools on: the demo radio, a network scan, capture analysis |
+| Board | ESP32-S3 boards: their firmware and build, update, download the released esp32-uds-bridge images, install one or a chosen `.bin`, Use for trades (`board ...` children; docs/hardware.md) |
+| Settings | `aes_keys.txt`, the output folder, the trainer name the 3DS sees, Debug tools |
+
+On the Trade page:
+
+- **The offer** comes from the bank, from a file, or from **Build one**: the builder opens under the
+  buttons, for the chosen game; PKHeX builds a legal Pokemon from your wishes (species, level, nickname,
+  shiny, gender, nature, ability, item, ball, moves) and the trainer, it is kept in the bank and becomes
+  the offer (docs/pkhex.md).
+- **The connection**, as pokeldn's Connection choice: the ESP32-S3 board (found by its USB id, or the
+  port the Board page set with Use for trades) or a USB Wi-Fi adapter through ldnd.exe 0.0.5 (Windows,
+  with its pipe). Check runs `probe` and shows what answered. With the Debug demo radio on, the row says
+  so instead.
 
 The Game Boy titles trade completely. X/Y, ORAS, Sun/Moon and Ultra Sun/Ultra Moon are marked alpha: a
 run joins or hosts and records what the 3DS sends, and Start stays off until the game's profile has
@@ -46,7 +58,7 @@ at a time, since one radio serves one process.
 | `pokeuds/app/progress.py` | events to headline, steps and notes |
 | `pokeuds/app/board.py` | boards, firmware images, download and flashing |
 | `pokeuds/app/bank.py` | the bank folder |
-| `pokeuds/app/builder.py` | the Builder's wishes and trainer |
+| `pokeuds/app/builder.py` | the builder's wishes and trainer (Trade page, Build one) |
 | `gui/` | the Flet pages |
 
 ## The bank

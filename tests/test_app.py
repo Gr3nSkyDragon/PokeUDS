@@ -53,7 +53,7 @@ def test_what_stops_a_start(data, offers, tmp_path):
     rby = catalog.BY_KEY["rby"]
     demo = Settings(radio="demo", port="red")
     assert catalog.missing_for_start(rby, demo, catalog.describe_offer(rby, str(pk1))) == []
-    assert catalog.missing_for_start(rby, demo, None) == ["Choose a Pokemon file to offer"]
+    assert catalog.missing_for_start(rby, demo, None) == ["Choose a Pokemon to offer: from the bank, Build one, or a file"]
     assert any("Console keys" in p for p in catalog.missing_for_start(rby, Settings(), catalog.describe_offer(rby, str(pk1))))
     totodile = tmp_path / "toto.pk2"
     totodile.write_bytes(sample_mon(2, 158, 5, "TOTO").to_file())
@@ -106,7 +106,6 @@ def test_gui_pages_build(data, offers):
     pytest.importorskip("flet")
     from gui.app import App
     from gui.views.debug import DebugView
-    from gui.views.radio import RadioView
     from gui.views.bank import BankView
     from gui.views.board import BoardView
     from gui.views.settings import SettingsView, name_problem
@@ -117,7 +116,7 @@ def test_gui_pages_build(data, offers):
     app = App(None, settings)
     trade = TradeView(app)
     assert trade.offer and "Charmander" in trade.offer.summary and trade.problems() == []
-    for cls in (TradeView, BankView, RadioView, BoardView, SettingsView, DebugView):
+    for cls in (TradeView, BankView, BoardView, SettingsView, DebugView):
         cls(app).control()
     app.views = {"trade": trade}
     bank_view = BankView(app)
