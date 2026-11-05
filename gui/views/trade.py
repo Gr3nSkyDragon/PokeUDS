@@ -10,7 +10,7 @@ import flet as ft
 import time
 
 from pokeuds import plugins
-from pokeuds.app import catalog
+from pokeuds.app import catalog, i18n
 from pokeuds.app.builder import Trainer
 from pokeuds.app.progress import STEP_LABELS, STEPS
 
@@ -121,7 +121,7 @@ class TradeView(View):
         for entry in catalog.ENTRIES:
             if entry.group != group:
                 group = entry.group
-                rows.append(ft.Container(t.label(group.upper(), size=11, weight=ft.FontWeight.W_600),
+                rows.append(ft.Container(t.label(i18n.tr(group).upper(), size=11, weight=ft.FontWeight.W_600),
                                          padding=ft.Padding(8, 14 if rows else 2, 8, 4)))
             chosen = entry is self.entry
             rows.append(ft.Container(

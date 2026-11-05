@@ -26,7 +26,7 @@ other chips can join the firmware list later without renaming anything.
 | Debug | only with Settings, Debug tools on: the demo radio, a network scan, capture analysis |
 | Plugins | installed plugins: on and off, update, remove, add from a file or a followed source, the install screen (docs/plugins.md) |
 | Board | ESP32 boards (the S3 today): their firmware and build, update, download the released esp32-uds-bridge images, install one or a chosen `.bin`, Use for trades (`board ...` children; docs/hardware.md) |
-| Settings | `aes_keys.txt`, the output folder, the trainer name the 3DS sees, Debug tools |
+| Settings | `aes_keys.txt`, the output folder, the trainer name the 3DS sees, the app language (English or an installed language pack), Debug tools |
 
 On the Trade page:
 

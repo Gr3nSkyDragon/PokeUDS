@@ -25,7 +25,7 @@ from typing import Callable
 from . import plugin_guard
 from .app.settings import data_dir
 
-API_MAJOR, API_LEVEL = 1, 0
+API_MAJOR, API_LEVEL = 1, 1                  # 1.1: language packs
 VERSION = f"{API_MAJOR}.{API_LEVEL}"
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
 KEY_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
@@ -94,6 +94,7 @@ class Plugin:
     api: str = "1.0"
     module: str = "plugin"
     icon: str = ""
+    locale: str = ""                 # a language pack's language; it has no code
     development: bool = False        # from POKEUDS_PLUGINS: on, and trusted, for this process
     enabled: bool = False
     consented: bool = False
@@ -108,6 +109,8 @@ class Plugin:
         return data_folder(self.id)
 
     def adds(self) -> list[str]:
+        if self.locale:
+            return [f"the language {self.name} ({self.locale}) to Settings, App language"]
         out = [f"{t.name} ({g})" for g, t in self.tools] + [f"the game {g.name}" for g in self.games]
         out += [f"the radio {label or scheme}" for scheme, label in self.radios]
         out += [f"an offer edit for {g}" + (f" ({label})" if label else "") for g, label in self.offer_edits]
@@ -253,6 +256,17 @@ def read_manifest(raw: bytes, where: str = "plugin.toml") -> dict:
     module = str(manifest.get("module", "plugin"))
     if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", module):
         raise ValueError(f"{where}: module {module!r} is not a module name")
+    if "locale" in manifest:                     # a language pack (1.1): data only
+        locale = manifest["locale"]
+        if not isinstance(locale, str) or not re.fullmatch(r"[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*", locale):
+            raise ValueError(f"{where}: locale {locale!r} is not a language tag like es or zh-Hans")
+        strings = str(manifest.get("strings", "strings.toml"))
+        if ".." in Path(strings).parts or Path(strings).is_absolute():
+            raise ValueError(f"{where}: strings must stay inside the pack")
+        if len(str(manifest.get("font_family", ""))) > 100:
+            raise ValueError(f"{where}: font_family is at most 100 characters")
+        if parse_api(manifest["api"]) < (1, 1):
+            raise ValueError(f"{where}: a language pack needs api = \"1.1\"")
     return manifest
 
 
@@ -260,7 +274,8 @@ def _plugin_from(folder: Path, development: bool = False) -> Plugin:
     manifest = read_manifest((folder / "plugin.toml").read_bytes(), str(folder / "plugin.toml"))
     return Plugin(manifest["id"], manifest["name"], manifest["version"], folder, str(manifest.get("author", "")),
                   str(manifest.get("description", "")), str(manifest.get("homepage", "")), str(manifest["api"]),
-                  str(manifest.get("module", "plugin")), str(manifest.get("icon", "")), development)
+                  str(manifest.get("module", "plugin")), str(manifest.get("icon", "")), str(manifest.get("locale", "")),
+                  development)
 
 
 def discover() -> list[Plugin]:
@@ -317,6 +332,8 @@ def load() -> Registry:
         if plugin not in runnable:
             if plugin.enabled and not plugin.consented and not plugin.error:
                 plugin.error = "not accepted yet: turn it on from the Plugins page to see what it does"
+            continue
+        if plugin.locale:                         # a language pack runs nothing; Settings, App language uses it
             continue
         api = Api(plugin, registry)
         try:

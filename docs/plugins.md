@@ -5,8 +5,9 @@ A plugin adds tools, games, radios and offer edits to PokeUDS. It is a folder of
 on PokeUDS's own API. Third-party plugins are not distributed, reviewed or supported by PokeUDS.
 
 Code: `pokeuds/plugins.py` (loader and API), `pokeuds/app/plugin_store.py` (packages, signatures, sources),
-`pokeuds/plugin_guard.py` (guardrails), `gui/views/plugins.py` (the page). Examples: `examples/plugins/hello`
-(a tool) and `examples/plugins/gb-renamer` (an offer edit).
+`pokeuds/plugin_guard.py` (guardrails), `pokeuds/app/i18n.py` and `gui/translate.py` (language packs),
+`gui/views/plugins.py` (the page). Examples: `examples/plugins/hello` (a tool), `examples/plugins/gb-renamer`
+(an offer edit) and `examples/plugins/pseudo` (a language pack).
 
 ## Installing a plugin
 
@@ -208,6 +209,52 @@ escaping path and no link. `POKEUDS_PLUGINS` (folders, separated as PATH is) tur
 and its runs, without the install screen. A plugin that raises in `register`, needs another API or reuses a
 key adds nothing, and its card shows why.
 
+## Language packs (1.1)
+
+A language pack is a data-only plugin: no code, a `locale`, and the translations. Its `name` shows in Settings,
+**App language**; choosing it redraws every page at once.
+
+```toml
+id = "community-es"
+name = "Español"
+version = "1.0.0"
+api = "1.1"
+locale = "es"                  # a language tag: es, pt-BR, zh-Hans...
+strings = "strings.toml"       # optional, the default
+font_family = "Noto Sans"      # optional, at most 100 characters
+```
+
+`strings.toml` maps the app's English text to its translation, a quoted key each:
+
+```toml
+"Choose a Pokemon to offer: from the bank, Build one, or a file" = "Elige un Pokemon para ofrecer: del banco, Crear uno o un archivo"
+"Built {value0} ({value1}), kept it in the bank and made it the offer." = "Se creó {value0} ({value1}), se guardó en el banco y es la oferta."
+```
+
+A key with `{value0}`-style fields is a template: it matches text whose literal parts are the same, the
+fields standing for whatever the app filled in (a species, a count, a path), and the translation keeps the
+same fields, in any order. A field whose text is itself one of the strings is translated too. Bad TOML,
+non-text values and a translation whose fields differ from its key are refused at install; text a pack does
+not cover stays English.
+
+The app's pages are written in English and translated as they are drawn (`gui/translate.py`): every control's
+text, label, hint, helper and tooltip, the side menu and dialogs; never what the player types. Logs, file
+names, PKHeX's legality reports and the command line stay English.
+
+```bash
+python scripts/extract_strings.py
+```
+
+```bash
+python scripts/check_language_pack.py PACK_FOLDER
+```
+
+`extract_strings.py` writes the template, `pokeuds/app/data/strings.en.toml`: every string the app shows,
+English = English (the tests check it is up to date). A pack starts as a translated copy of it.
+`check_language_pack.py` lists what a pack does not translate and the keys the app no longer has, and exits 1
+on a field difference. `examples/plugins/pseudo` is a pseudo-locale covering every string (accented, in
+`[! !]`), made by `extract_strings.py --pseudo`: turn it on to see what a pack reaches.
+
 ## Versions
 
 The API is `major.level`; a plugin's `api` is the lowest it needs. An addition raises the level (a higher need
@@ -216,6 +263,7 @@ is refused with "update PokeUDS"); a removal or change of meaning raises the maj
 | API | added |
 |---|---|
 | 1.0 | `add_tool`, `add_game`, `add_radio`, `add_offer_edit`, `folder`, `data`, `version`, `level`; `Tool`, `Field`, `Game` |
+| 1.1 | language packs: `locale`, `strings`, `font_family` ([Language packs](#language-packs-11)) |
 
 ## The API, version 1
 
@@ -226,9 +274,10 @@ is refused with "update PokeUDS"); a removal or change of meaning raises the maj
 | `api.add_radio(scheme, factory, label="")` | a radio |
 | `api.add_offer_edit(game, edit, label="")` | an edit to every offer of a trade, before PKHeX's check |
 | `api.folder`, `api.data` | the plugin's folder; its kept data folder |
-| `api.version`, `api.level` | the app's plugin API, `"1.0"` and `0` |
+| `api.version`, `api.level` | the app's plugin API, `"1.1"` and `1` |
 | `pokeuds.plugins.Tool`, `Field`, `Game` | the types |
 | `pokeuds.status.emit(event, **fields)` | session panel events from a tool's script |
 
-Compared with pokeldn: no language packs, pop-ups, status cards, libraries, battle servers or update checks
-from a plugin's own `updates` address yet (sources update what they list).
+Compared with pokeldn: no pop-ups, status cards, libraries, battle servers or update checks from a plugin's
+own `updates` address yet (sources update what they list); language packs translate by English text rather
+than by keys, and have no messages, terms, help or documents resources.

@@ -14,6 +14,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import flet as ft  # noqa: E402
 
 from gui import theme as t  # noqa: E402
+from gui.translate import translate  # noqa: E402
+from pokeuds.app import i18n  # noqa: E402
 from gui.app import App  # noqa: E402
 from gui.views.board import BoardView  # noqa: E402
 from gui.views.bank import BankView  # noqa: E402
@@ -51,7 +53,7 @@ class Shell:
         return ["plugins", "board"] + (["debug"] if self.app.settings.debug else []) + ["settings"]
 
     def _destination(self, key: str) -> ft.NavigationRailDestination:
-        return ft.NavigationRailDestination(icon=self.views[key].icon, label=self.views[key].label)
+        return ft.NavigationRailDestination(icon=self.views[key].icon, label=i18n.tr(self.views[key].label))
 
     def _select(self) -> None:
         """Mark the current page on whichever rail holds it; the other shows nothing chosen."""
@@ -102,6 +104,9 @@ def main(page: ft.Page) -> None:
         page.window.min_width, page.window.min_height = 900, 600
         page.window.width, page.window.height = 1280, 820
     app = App(page)
+    i18n.select(app.settings.language)          # a language pack, or English
+    if i18n.current().font_family:
+        page.theme.font_family = page.dark_theme.font_family = i18n.current().font_family
     shell = Shell(page, app)
     page.add(shell.build())
 

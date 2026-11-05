@@ -48,12 +48,24 @@ class SettingsView(View):
             t.heading("Trainer"),
             ft.TextField(label="Name the 3DS sees", value=s.trainer_name, width=260, max_length=7,
                          on_blur=self._name, error=problem or None))
+        from pokeuds.app import i18n
+
+        packs = i18n.packs()
+        chosen = s.language if any(p.id == s.language for p in packs) else ""
+        language = t.card(
+            t.heading("App language"),
+            t.label("English, or a language pack installed from the Plugins page. Logs, file names and the command "
+                    "line stay English."),
+            ft.Dropdown(value=chosen, width=320, dense=True, on_select=self._language,
+                        options=[ft.DropdownOption(key="", text="English")]
+                        + [ft.DropdownOption(key=p.id, text=f"{p.name} ({p.locale})") for p in packs]),
+            *([t.label("No language pack installed.", size=12)] if not packs else []))
         debug = t.card(
             ft.Row([ft.Column([t.heading("Debug tools"),
                                t.label("Adds a Debug page: the demo radio, a network scan and capture analysis.")],
                               spacing=4, expand=True),
                     ft.Switch(value=s.debug, on_change=self._debug)]))
-        return ft.Column([t.title("Settings"), keys, output, trainer, debug, t.label(f"PokeUDS {__version__}", size=12)],
+        return ft.Column([t.title("Settings"), keys, output, trainer, language, debug, t.label(f"PokeUDS {__version__}", size=12)],
                          spacing=t.GAP, scroll=ft.ScrollMode.AUTO)
 
     async def _pick_keys(self, e) -> None:
@@ -73,6 +85,14 @@ class SettingsView(View):
     def _name(self, e) -> None:
         self.app.settings.trainer_name = (e.control.value or "").strip()
         self.save()
+
+    def _language(self, e) -> None:
+        from pokeuds.app import i18n
+
+        self.app.settings.language = e.control.value or ""
+        self.app.save()
+        i18n.select(self.app.settings.language)
+        self.app.rebuild_shell()                 # every page again, in the new language
 
     def _debug(self, e) -> None:
         self.app.settings.debug = bool(e.control.value)

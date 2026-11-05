@@ -95,7 +95,14 @@ def _prefix(names: list[str]) -> str:
 def _package(files: dict, where: str) -> Package:
     manifest = plugins.read_manifest(files["plugin.toml"], f"{where}: plugin.toml")
     module = str(manifest.get("module", "plugin"))
-    if f"{module}.py" not in files:
+    if manifest.get("locale"):
+        from . import i18n
+
+        strings = str(manifest.get("strings", "strings.toml"))
+        if strings not in files:
+            raise ValueError(f"{where}: no {strings} (the pack's translations)")
+        i18n.parse(files[strings], f"{where}: {strings}")          # bad TOML, non-text values, wrong fields
+    elif f"{module}.py" not in files:
         raise ValueError(f"{where}: no {module}.py (the module holding register(api))")
     sig = files.pop(SIGNATURE, None)
     package = Package(manifest["id"], manifest["name"], manifest["version"], str(manifest["api"]),
