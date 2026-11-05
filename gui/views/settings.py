@@ -60,12 +60,15 @@ class SettingsView(View):
                         options=[ft.DropdownOption(key="", text="English")]
                         + [ft.DropdownOption(key=p.id, text=f"{p.name} ({p.locale})") for p in packs]),
             *([t.label("No language pack installed.", size=12)] if not packs else []))
+        from . import pkhex_setup
+
+        helper = t.card(t.heading("PKHeX helper"), pkhex_setup.card(self.app, compact=True))
         debug = t.card(
             ft.Row([ft.Column([t.heading("Debug tools"),
                                t.label("Adds a Debug page: the demo radio, a network scan and capture analysis.")],
                               spacing=4, expand=True),
                     ft.Switch(value=s.debug, on_change=self._debug)]))
-        return ft.Column([t.title("Settings"), keys, output, trainer, language, debug, t.label(f"PokeUDS {__version__}", size=12)],
+        return ft.Column([t.title("Settings"), keys, output, trainer, language, helper, debug, t.label(f"PokeUDS {__version__}", size=12)],
                          spacing=t.GAP, scroll=ft.ScrollMode.AUTO)
 
     async def _pick_keys(self, e) -> None:

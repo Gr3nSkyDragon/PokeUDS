@@ -1,6 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- PokeUDS's PKHeX helper: JSON requests on stdin, one reply per line on stdout (docs/pkhex.md). -->
+  <!-- PokeUDS's PKHeX helper: JSON requests on stdin, one reply per line on stdout (docs/pkhex.md).
+       `dotnet build -c Release` makes a framework-dependent build for a machine with the .NET 10 SDK.
+       `dotnet publish -c Release -r RID` (scripts/publish_pkhex.py) makes one self-contained executable that needs
+       nothing installed: the .NET runtime is inside, as pokeldn ships its helper. -->
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
@@ -10,8 +13,31 @@
     <InvariantGlobalization>true</InvariantGlobalization>
   </PropertyGroup>
 
+  <PropertyGroup Condition="'$(RuntimeIdentifier)' != ''">
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <!-- Trimming drops framework code the helper never reaches. PKHeX.Core, the C# runtime binder and the helper
+         itself stay whole: the card editor (CardEditor.cs) reaches card fields and its own methods through `dynamic`
+         and reflection, which full trimming would cut out from under it. -->
+    <PublishTrimmed>true</PublishTrimmed>
+    <TrimMode>full</TrimMode>
+    <EventSourceSupport>false</EventSourceSupport>
+    <MetadataUpdaterSupport>false</MetadataUpdaterSupport>
+    <DebuggerSupport>false</DebuggerSupport>
+    <JsonSerializerIsReflectionEnabledByDefault>true</JsonSerializerIsReflectionEnabledByDefault>
+    <SuppressTrimAnalysisWarnings>true</SuppressTrimAnalysisWarnings>
+  </PropertyGroup>
+
   <ItemGroup>
     <PackageReference Include="PKHeX.Core" Version="26.10.18" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(RuntimeIdentifier)' != ''">
+    <TrimmerRootAssembly Include="PKHeX.Core" />
+    <TrimmerRootAssembly Include="Microsoft.CSharp" />
+    <TrimmerRootAssembly Include="pokeuds-pkhex" />      <!-- its own methods, called through `dynamic` -->
   </ItemGroup>
 
 </Project>

@@ -71,8 +71,9 @@ class GiftsView(View):
                     "a game yet (how local distribution works is still unknown), but a card's Pokemon can go by trade."),
         ]
         if not _helper_ready():
-            controls.append(t.notice("Gifts need the PKHeX helper: dotnet build -c Release services/pkhex "
-                                     "(or Build it now under Build one on the Trade page).", t.WARN))
+            from . import pkhex_setup
+
+            controls.append(pkhex_setup.card(self.app, [t.heading("Gifts need the PKHeX helper")]))
             return ft.Column(controls, spacing=t.GAP, scroll=ft.ScrollMode.AUTO)
         controls.append(ft.Row([
             ft.Dropdown(label="Game", value=self.game, width=280, dense=True, on_select=self._game,

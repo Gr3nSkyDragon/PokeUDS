@@ -23,9 +23,9 @@ ANY = "-"
 
 
 def _helper_ready() -> bool:
-    from pokeuds import pkhex
+    from . import pkhex_setup
 
-    return pkhex.helper_path() is not None
+    return pkhex_setup.ready()
 
 
 class BuilderPanel(View):
@@ -77,21 +77,9 @@ class BuilderPanel(View):
         return t.card(*rows, spacing=12)
 
     def _no_helper(self, head: list[ft.Control]) -> ft.Control:
-        import shutil
+        from . import pkhex_setup
 
-        has_dotnet = shutil.which("dotnet") is not None
-        rows = head + [t.label("The PKHeX helper is not built.", color=t.TEXT),
-                t.label("Building uses PKHeX.Core through a small .NET program in services/pkhex. It is built once, "
-                        "with the .NET 10 SDK:"),
-                ft.Text("dotnet build -c Release services/pkhex", font_family="monospace", color=t.TEXT, selectable=True)]
-        if has_dotnet:
-            rows.append(ft.Row([t.primary("Build it now", self._compile, ft.Icons.BUILD, disabled=self.compiling),
-                                ft.ProgressRing(width=18, height=18, visible=self.compiling)], spacing=12))
-        else:
-            rows.append(t.label("dotnet was not found: install the .NET 10 SDK from Microsoft, then come back here."))
-        if self.message:
-            rows.append(t.notice(self.message, self.message_color))
-        return t.card(*rows, spacing=12)
+        return pkhex_setup.card(self.app, head)
 
     @staticmethod
     def _dd(label: str, value, options: list[tuple[str, str]], on_select, width: int = 220, search: bool = False,
@@ -181,28 +169,6 @@ class BuilderPanel(View):
             self.app.ui(self.refresh)
 
         threading.Thread(target=work, daemon=True, name="pkhex-lists").start()
-
-    def _compile(self, e) -> None:
-        self.compiling = True
-        self.message = ""
-        self.refresh()
-
-        def work() -> None:
-            from pokeuds import pkhex
-
-            try:
-                done = pkhex.build_helper()
-                if done.returncode == 0 and pkhex.helper_path():
-                    self.message, self.message_color = "The PKHeX helper is built.", t.GOOD
-                else:
-                    tail = "\n".join((done.stdout or done.stderr or "").strip().splitlines()[-4:])
-                    self.message, self.message_color = f"dotnet build failed:\n{tail}", t.BAD
-            except Exception as exc:
-                self.message, self.message_color = str(exc), t.BAD
-            self.compiling = False
-            self.app.ui(self.refresh)
-
-        threading.Thread(target=work, daemon=True, name="pkhex-compile").start()
 
     def _build(self, e) -> None:
         wish, trainer = self.wish, self.trainer

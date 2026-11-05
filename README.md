@@ -58,8 +58,9 @@ python -m gui
 ```
 
 Pick a game, the Pokemon to offer, who hosts and the connection, then Start ([docs/gui.md](docs/gui.md)).
-No file to offer? Build one makes a legal Pokemon with PKHeX right there ([docs/pkhex.md](docs/pkhex.md);
-build the helper once with `dotnet build -c Release services/pkhex`). The Bank keeps every Pokemon
+No file to offer? Build one makes a legal Pokemon with PKHeX right there ([docs/pkhex.md](docs/pkhex.md)):
+the app offers to get the PKHeX helper the first time, a download with nothing to install (or build it with the
+.NET 10 SDK). The Bank keeps every Pokemon
 received, imported or built; the Board page installs the ESP32 firmware. Settings, Debug tools adds a demo radio that trades with a
 simulated 3DS, a network scan and capture analysis.
 

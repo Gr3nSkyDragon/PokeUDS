@@ -1,0 +1,21 @@
+# The tests on every push and pull request, with the PKHeX helper built, so the PKHeX tests run too.
+name: check
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install -r requirements-gui.txt pytest
+      - run: dotnet build -c Release -nologo services/pkhex
+      - run: python -m pytest -q

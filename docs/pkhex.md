@@ -5,15 +5,35 @@ so a trade does not need a `.pk*` file made elsewhere: pick a species, a level a
 helper returns a record PKHeX's legality checker accepts.
 
 PKHeX.Core is a .NET library, so the helper is a small .NET program (`services/pkhex`) that Python runs
-as one long-lived child process. Build it once (the .NET 10 SDK):
+as one long-lived child process. Without it, everything else in PokeUDS works; building Pokemon, legality
+checks and Mystery Gift cards are what need it.
 
-```bash
-dotnet build -c Release services/pkhex
-```
+## Getting the helper
 
-`pokeuds/pkhex.py` finds it in `services/pkhex/bin/Release/net10.0/` (or `services/pkhex/publish/`);
-`POKEUDS_PKHEX` points at one elsewhere. Without it, everything else in PokeUDS works; only building
-and legality checks are missing.
+| way | needs | where it goes |
+|---|---|---|
+| **Get the PKHeX helper** (the app: Settings, or any page that needs it), or `python -m pokeuds pkhex get` | nothing: the self-contained executable for this computer, from PokeUDS's GitHub releases, checked against the release's `SHA256SUMS` and started once before it is kept | `<data>/pkhex/` |
+| `python scripts/publish_pkhex.py` | the .NET 10 SDK, once | `services/pkhex/dist/` (self-contained, as the release's) |
+| `dotnet build -c Release services/pkhex`, the app's **Build it with .NET**, or `python -m pokeuds pkhex build` | the .NET 10 SDK, to build and to run | `services/pkhex/bin/Release/net10.0/` |
+
+The newest one found is used; `POKEUDS_PKHEX` points at one elsewhere and wins. `python -m pokeuds pkhex status`
+says which one, or what is missing: no .NET SDK, or one older than .NET 10 (an older SDK fails with
+`NETSDK1045: The current .NET SDK does not support targeting .NET 10.0`; the app says so before trying).
+
+The self-contained helper is one file of 16 to 19 MB with the .NET runtime inside, as pokeldn ships its own:
+published single-file, compressed and trimmed. PKHeX.Core, the C# runtime binder and the helper itself are kept
+whole, since the card editor reaches card fields through `dynamic` and reflection that full trimming would cut
+(`services/pkhex/pokeuds-pkhex.csproj`). The published file passes the whole test suite and every official card
+(`scripts/check_gifts.py`) with no .NET installed.
+
+### Releases
+
+`.github/workflows/release.yml` publishes the helper for Windows (x64, arm64), Linux (x64, arm64) and macOS
+(Apple Silicon, Intel) and attaches them, with `SHA256SUMS`, to a GitHub release: push a tag like `v0.2.0`, or
+run the workflow from the Actions tab with a tag name. The macOS files are published on a Mac runner, where the
+SDK signs them (Apple Silicon refuses unsigned programs). The app's Get finds the newest release carrying an
+asset for this computer (`pokeuds-pkhex-<rid>`, e.g. `pokeuds-pkhex-win-x64.exe`). `.github/workflows/check.yml`
+runs the tests, the PKHeX ones included, on every push.
 
 ## Games
 

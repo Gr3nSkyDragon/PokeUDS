@@ -141,7 +141,9 @@ class BankView(View):
                                      ft.Icons.FACT_CHECK_OUTLINED, disabled=self.checking or not pkhex_ok),
                          ft.ProgressRing(width=16, height=16, visible=self.checking)], spacing=8)]
         if not pkhex_ok:
-            rows.append(t.label("Build the PKHeX helper to check: dotnet build -c Release services/pkhex", size=12))
+            from . import pkhex_setup
+
+            rows.append(pkhex_setup.card(self.app, compact=True))
 
         rows.append(ft.Divider(color=t.LINE))
         games = bank.games_for(e)

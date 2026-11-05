@@ -9,6 +9,7 @@
     trade    trade with a retail console (xy, oras, sm, usum), joining or hosting
     board    ESP32-S3 boards: list, check, download or flash esp32-uds-bridge
     build    build a legal Pokemon with the PKHeX helper (docs/pkhex.md)
+    pkhex    the PKHeX helper: status, get (download, nothing to install), build
     plugins  installed plugins: list, install, remove, enable, disable; plugin run TOOL -- ARGS
     gift     Gen 6/7 Mystery Gift cards: list PKHeX's, show a .wc6/.wc7, make its Pokemon, build a custom card
 """
@@ -585,6 +586,35 @@ def cmd_plugins(args) -> int:
     return 2
 
 
+def cmd_pkhex(args) -> int:
+    from . import pkhex
+
+    if args.pkhex_command == "status":
+        print(pkhex.status())
+        sdks = pkhex.dotnet_sdks()
+        print(f".NET SDKs: {', '.join(sdks) or 'none'}; this computer is {pkhex.runtime_id()}")
+        return 0 if pkhex.helper_path() else 1
+    if args.pkhex_command == "get":
+        try:
+            pkhex.download_helper()
+        except OSError as exc:
+            print(f"Could not get the helper: {exc}")
+            return 1
+        return 0
+    if args.pkhex_command == "build":
+        try:
+            done = pkhex.build_helper()
+        except pkhex.HelperMissing as exc:
+            print(exc)
+            return 1
+        if done.returncode != 0:
+            print("dotnet build failed:\n" + pkhex.build_problem(done))
+            return 1
+        print(pkhex.status())
+        return 0
+    return 2
+
+
 def cmd_plugin_run(args) -> int:
     from . import plugins
 
@@ -738,6 +768,13 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--card-ot", default="", help="the card's own OT (default: the receiver is the OT)")
     _gift_trainer(p)
     p.set_defaults(func=cmd_gift)
+
+    ph = sub.add_parser("pkhex", help="the PKHeX helper: whether it is here, get it (download) or build it")
+    phsub = ph.add_subparsers(dest="pkhex_command", required=True)
+    phsub.add_parser("status", help="where the helper is, or what is missing").set_defaults(func=cmd_pkhex)
+    phsub.add_parser("get", help="download the self-contained helper for this computer from PokeUDS's releases"
+                     ).set_defaults(func=cmd_pkhex)
+    phsub.add_parser("build", help="dotnet build it (needs the .NET 10 SDK)").set_defaults(func=cmd_pkhex)
 
     pl = sub.add_parser("plugins", help="installed plugins (docs/plugins.md)")
     psub = pl.add_subparsers(dest="plugins_command", required=True)
