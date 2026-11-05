@@ -59,6 +59,15 @@ def resolve(text: str, options: list) -> tuple[int | None, str]:
     return None, "nothing matches"
 
 
+def _show(field: ft.TextField) -> None:
+    # Redraw the field if it is still on the page; a field the page has already replaced (it rebuilt while the
+    # field had focus, and the blur came after) has nothing to redraw.
+    try:
+        field.update()
+    except RuntimeError:
+        pass
+
+
 def name_field(label: str, value: int, options: list, on_pick: Callable[[int], None], width: int = 220,
                empty: str = "", disabled: bool = False) -> ft.TextField:
     """A field showing the name for ``value`` (``empty`` for 0); a new name calls ``on_pick`` with its id."""
@@ -69,12 +78,15 @@ def name_field(label: str, value: int, options: list, on_pick: Callable[[int], N
         number, text = resolve(e.control.value, options)
         if number is None:
             e.control.error, e.control.helper = text, None
-        else:
-            e.control.error = None
-            e.control.value = text if number else ""
-            e.control.helper = f"#{number}" if number else (empty or None)
-            on_pick(number)
-        e.control.update()
+            _show(e.control)
+            return
+        e.control.error = None
+        e.control.value = text if number else ""
+        e.control.helper = f"#{number}" if number else (empty or None)
+        # Show the match before handing it on: a pick may rebuild the page (the builder does for a new species),
+        # and then this field is no longer on it.
+        _show(e.control)
+        on_pick(number)
 
     return ft.TextField(label=label, value=shown, width=width, dense=True, disabled=disabled, on_blur=commit,
                         on_submit=commit, hint_text=empty or "type a name", helper=f"#{value}" if value else None,

@@ -64,6 +64,50 @@ def test_trade_page_builder_headless(tmp_path, monkeypatch):
     trade.control()
 
 
+def test_species_field_survives_the_rebuild_its_pick_causes(tmp_path, monkeypatch):
+    """Picking a species rebuilds the builder, so the field whose blur picked it is gone by then; its blur used to
+    fail with "Control must be added to the page first"."""
+    flet = pytest.importorskip("flet")
+    import dataclasses
+    from types import SimpleNamespace
+
+    monkeypatch.setenv("POKEUDS_DATA", str(tmp_path))
+    from gui.app import App
+    from gui.views import builder as panel
+    from gui.views.trade import TradeView
+    from pokeuds.app.settings import Settings
+
+    app = App(None, Settings(output=str(tmp_path / "received"), last_game="xy"))
+    trade = TradeView(app)
+    trade.toggle_builder()
+    monkeypatch.setattr(panel, "_helper_ready", lambda: True)
+    trade.builder.lists["xy"] = {"species": [[25, "Pikachu"], [658, "Greninja"]], "moves": [[84, "Thunder Shock"]],
+                                 "items": [[1, "Master Ball"]], "balls": [[4, "Poke Ball"]], "natures": [[3, "Adamant"]]}
+
+    def species_field(control, seen=None):
+        seen = seen if seen is not None else set()
+        if id(control) in seen or not dataclasses.is_dataclass(control) or isinstance(control, type):
+            return None
+        seen.add(id(control))
+        if isinstance(control, flet.TextField) and control.label == "Species":
+            return control
+        for f in dataclasses.fields(control):
+            value = getattr(control, f.name, None)
+            for child in value if isinstance(value, (list, tuple)) else [value]:
+                if (found := species_field(child, seen)) is not None:
+                    return found
+        return None
+
+    field = species_field(trade.control())
+    assert field is not None
+    field.value = "gren"
+    field.on_blur(SimpleNamespace(control=field))       # not on a page, as after the rebuild
+    assert trade.builder.wish.species == 658 and field.value == "Greninja" and field.error is None
+    field.value = "zzz"
+    field.on_blur(SimpleNamespace(control=field))
+    assert field.error == "nothing matches" and trade.builder.wish.species == 658
+
+
 @pytest.mark.skipif(pkhex.helper_path() is None, reason="the PKHeX helper is not built")
 def test_build_and_keep(tmp_path):
     from pokeuds.app import bank
