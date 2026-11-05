@@ -9,6 +9,7 @@
     trade    trade with a retail console (xy, oras, sm, usum), joining or hosting
     board    ESP32-S3 boards: list, check, download or flash esp32-uds-bridge
     build    build a legal Pokemon with the PKHeX helper (docs/pkhex.md)
+    plugins  installed plugins: list, install, remove, enable, disable; plugin run TOOL -- ARGS
     gift     Gen 6/7 Mystery Gift cards: list PKHeX's, show a .wc6/.wc7, make its Pokemon, build a custom card
 """
 
@@ -223,6 +224,12 @@ def cmd_trade(args) -> int:
 
     game = get(args.game)
     offer = pkx.load(args.offer)
+    from . import plugins
+
+    try:
+        offer = plugins.edit_offer(game.key, offer, game.key, game.record.extension)
+    except ValueError as exc:
+        raise SystemExit(str(exc))
     try:
         pkx.check_format(offer, game.record)
     except ValueError as exc:
@@ -297,6 +304,14 @@ def cmd_vc_trade(args) -> int:
     from .vc.trade import VcTrade
 
     offer = gbpk.load(args.offer)
+    from . import plugins
+
+    edit_game = {"gen1": "rby", "gen2": "gsc"}.get(args.partner or "", "rby" if offer.generation == 1 else "gsc")
+    try:
+        raw = plugins.edit_offer(edit_game, offer.to_file(), "rby" if offer.generation == 1 else "gsc", offer.extension)
+    except ValueError as exc:
+        raise SystemExit(str(exc))
+    offer = gbpk.Record.from_file(raw)
     mail_file = Path(args.offer).with_suffix(".mail")
     mail = mail_file.read_bytes()[:47] if offer.generation == 2 and mail_file.exists() else b""
     if args.role == "host" and not args.as_title:
@@ -530,6 +545,55 @@ def cmd_gift(args) -> int:
     return 0
 
 
+def cmd_plugins(args) -> int:
+    from . import plugins
+    from .app import plugin_store as store
+
+    if args.plugins_command == "list":
+        found = plugins.registry().plugins
+        for p in found:
+            state = "error" if p.error else ("on" if p.enabled else "off")
+            print(f"{p.id} {p.version} [{state}]{' (POKEUDS_PLUGINS)' if p.development else ''}: {p.name}")
+            for line in p.adds():
+                print(f"    adds {line}")
+            if p.error:
+                print(f"    {p.error}")
+        if not found:
+            print(f"No plugins in {plugins.plugins_dir()}")
+        return 0
+    if args.plugins_command == "install":
+        package = store.read(args.file)
+        print(f"{package.name} {package.version} by {package.author or 'unknown'} ({store.size_text(package.size)})")
+        print(f"  {store.TRUST_TEXT[store.trust(package)]}" + (f" (key {store.fingerprint(package.key)})" if package.key else ""))
+        for finding in package.findings or ["Nothing the scan flags (it is a hint, not a review)"]:
+            print(f"  - {finding}")
+        print("A plugin runs as Python inside PokeUDS with full access to your files, console keys, the network and "
+              "the radio.")
+        if not args.yes:
+            print("Run again with --yes to install it.")
+            return 1
+        print(f"Installed in {store.install(package, origin=str(args.file))}")
+        return 0
+    if args.plugins_command == "remove":
+        store.remove(args.id, data=args.data)
+        print(f"Removed {args.id}" + (" and its saved data" if args.data else ""))
+        return 0
+    if args.plugins_command in ("enable", "disable"):
+        plugins.set_enabled(args.id, args.plugins_command == "enable")
+        print(f"{args.id} is {'on' if args.plugins_command == 'enable' else 'off'}")
+        return 0
+    return 2
+
+
+def cmd_plugin_run(args) -> int:
+    from . import plugins
+
+    argv = list(args.args)
+    if argv[:1] == ["--"]:
+        argv = argv[1:]
+    return plugins.run_tool(args.tool, argv)
+
+
 GAME_KEYS = ["xy", "oras", "sm", "usum"]
 
 
@@ -674,6 +738,28 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--card-ot", default="", help="the card's own OT (default: the receiver is the OT)")
     _gift_trainer(p)
     p.set_defaults(func=cmd_gift)
+
+    pl = sub.add_parser("plugins", help="installed plugins (docs/plugins.md)")
+    psub = pl.add_subparsers(dest="plugins_command", required=True)
+    psub.add_parser("list", help="plugins, what they add and why one failed").set_defaults(func=cmd_plugins)
+    p = psub.add_parser("install", help="install a .udsplugin after showing what it does")
+    p.add_argument("file")
+    p.add_argument("--yes", action="store_true", help="accept: it runs with full access")
+    p.set_defaults(func=cmd_plugins)
+    p = psub.add_parser("remove", help="remove a plugin")
+    p.add_argument("id")
+    p.add_argument("--data", action="store_true", help="also delete its saved data")
+    p.set_defaults(func=cmd_plugins)
+    for name in ("enable", "disable"):
+        p = psub.add_parser(name, help=f"turn a plugin {'on' if name == 'enable' else 'off'}")
+        p.add_argument("id")
+        p.set_defaults(func=cmd_plugins)
+    p = sub.add_parser("plugin", help="run a plugin's tool: pokeuds plugin run TOOL -- ARGS")
+    pr = p.add_subparsers(dest="plugin_command", required=True)
+    p = pr.add_parser("run", help="run a plugin tool's script")
+    p.add_argument("tool")
+    p.add_argument("args", nargs=argparse.REMAINDER)
+    p.set_defaults(func=cmd_plugin_run)
 
     p = sub.add_parser("trade", help="trade with a retail console")
     p.add_argument("game", choices=GAME_KEYS)

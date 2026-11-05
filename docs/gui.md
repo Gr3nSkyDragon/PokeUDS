@@ -14,8 +14,8 @@ A desktop app (Flet 1.0.5, the toolkit pokeldn uses) over the same code as the c
 
 ## Pages
 
-The rail lists Trade, Bank and Gifts at the top, and Board, Debug (when it is on) and Settings at its
-foot, Settings last. The app says "ESP32" for the board: esp32-uds-bridge runs on the ESP32-S3 today, and
+The rail lists Trade, Bank and Gifts at the top, and Plugins, Board, Debug (when it is on) and Settings at
+its foot, Settings last. Plugin tools appear on the Trade page under their game. The app says "ESP32" for the board: esp32-uds-bridge runs on the ESP32-S3 today, and
 other chips can join the firmware list later without renaming anything.
 
 | page | what it does |
@@ -24,6 +24,7 @@ other chips can join the firmware list later without renaming anything.
 | Bank | every Pokemon the app keeps, received ones included: details, PKHeX legality, offer in a trade, Time Capsule copy, import, export, delete |
 | Gifts | Gen 6/7 Mystery Gift cards: PKHeX's official events, a `.wc6`/`.wc7` (or full) file, or a custom card from the editor (every field, Customize any card, save as `.udsgift`, export `.wc6`/`.wc7`); the card's Pokemon into the bank and a trade (docs/mystery_gift.md, docs/wonder_cards.md) |
 | Debug | only with Settings, Debug tools on: the demo radio, a network scan, capture analysis |
+| Plugins | installed plugins: on and off, update, remove, add from a file or a followed source, the install screen (docs/plugins.md) |
 | Board | ESP32 boards (the S3 today): their firmware and build, update, download the released esp32-uds-bridge images, install one or a chosen `.bin`, Use for trades (`board ...` children; docs/hardware.md) |
 | Settings | `aes_keys.txt`, the output folder, the trainer name the 3DS sees, Debug tools |
 

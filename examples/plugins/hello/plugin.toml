@@ -1,0 +1,6 @@
+id = "hello"
+name = "Hello"
+version = "1.0.0"
+author = "PokeUDS"
+description = "The smallest plugin: one tool under Red/Blue/Yellow that greets your trainer. Copy this folder to start your own."
+api = "1.0"

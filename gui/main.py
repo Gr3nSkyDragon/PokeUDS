@@ -19,11 +19,12 @@ from gui.views.board import BoardView  # noqa: E402
 from gui.views.bank import BankView  # noqa: E402
 from gui.views.debug import DebugView  # noqa: E402
 from gui.views.gifts import GiftsView  # noqa: E402
+from gui.views.plugins import PluginsView  # noqa: E402
 from gui.views.settings import SettingsView  # noqa: E402
 from gui.views.trade import TradeView  # noqa: E402
 
 PAGES = (TradeView, BankView, GiftsView)          # the rail's top
-BOTTOM = (BoardView, SettingsView)                  # pinned to the rail's foot, Settings last; Debug between when on
+BOTTOM = (PluginsView, BoardView, SettingsView)     # pinned to the rail's foot, Settings last; Debug before it when on
 
 
 class Shell:
@@ -46,8 +47,8 @@ class Shell:
         return [cls.key for cls in PAGES]
 
     def foot_keys(self) -> list[str]:
-        """Board, then Debug when Settings turns it on, then Settings at the very bottom."""
-        return ["board"] + (["debug"] if self.app.settings.debug else []) + ["settings"]
+        """Plugins, Board, then Debug when Settings turns it on, then Settings at the very bottom."""
+        return ["plugins", "board"] + (["debug"] if self.app.settings.debug else []) + ["settings"]
 
     def _destination(self, key: str) -> ft.NavigationRailDestination:
         return ft.NavigationRailDestination(icon=self.views[key].icon, label=self.views[key].label)

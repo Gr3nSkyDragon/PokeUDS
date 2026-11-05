@@ -27,7 +27,11 @@ def open_radio(spec: str) -> Radio:
         from .demo import DemoRadio
 
         return DemoRadio(arg)
-    raise ValueError(f"unknown radio {spec!r}: use esp32[:PORT], ldnd[:PIPE] or demo:TITLE")
+    from .. import plugins
+
+    if (radio := plugins.open_radio(kind, arg)) is not None:      # a plugin's radio (docs/plugins.md)
+        return radio
+    raise ValueError(f"unknown radio {spec!r}: use esp32[:PORT], ldnd[:PIPE], demo:TITLE or a plugin's radio")
 
 
 __all__ = ["DISCOVERY_CHANNELS", "Radio", "RxFrame", "open_radio"]

@@ -7,7 +7,11 @@ from pathlib import Path
 
 import flet as ft
 
+import time
+
+from pokeuds import plugins
 from pokeuds.app import catalog
+from pokeuds.app.builder import Trainer
 from pokeuds.app.progress import STEP_LABELS, STEPS
 
 from .. import theme as t
@@ -33,6 +37,8 @@ class TradeView(View):
         self.building = False                # the "Build one" panel is open
         self.note, self.note_color = "", t.GOOD
         self.builder = BuilderPanel(app, key, self._built)
+        self.tool = ""                       # a plugin tool on show instead of the game's trade
+        self.tool_values: dict[str, dict] = {}
         self._load_offer()
 
     # -- state ----------------------------------------------------------------------------------
@@ -45,6 +51,7 @@ class TradeView(View):
         if self.app.busy():
             return
         self.entry = catalog.BY_KEY[key]
+        self.tool = ""
         self.app.settings.last_game = key
         self.role = "join"
         self.host_title = ""
@@ -92,8 +99,19 @@ class TradeView(View):
 
     # -- layout ---------------------------------------------------------------------------------
 
+    def pick_tool(self, key: str) -> None:
+        if self.app.busy() or key not in plugins.registry().tools:
+            return
+        self.tool = key
+        _, game, _ = plugins.registry().tools[key]
+        if game in catalog.BY_KEY:
+            self.entry = catalog.BY_KEY[game]
+        self.refresh()
+
     def build(self) -> ft.Control:
-        column = [self.setup(), self.session()]
+        if self.tool and self.tool not in plugins.registry().tools:
+            self.tool = ""                   # its plugin was turned off or removed
+        column = [self.tool_setup() if self.tool else self.setup(), self.session()]
         return ft.Row([self.games(), ft.Column(column, spacing=t.GAP, expand=True, scroll=ft.ScrollMode.AUTO)],
                       spacing=t.GAP, expand=True, vertical_alignment=ft.CrossAxisAlignment.START)
 
@@ -113,8 +131,87 @@ class TradeView(View):
                 bgcolor=t.ACCENT_SOFT if chosen else None, border_radius=10, padding=ft.Padding(12, 10, 12, 10),
                 on_click=lambda e, k=entry.key: self.pick_game(k), ink=True,
                 disabled=self.app.busy() and not chosen))
+            rows += self._tool_rows(entry.key)
+        reg = plugins.registry()
+        for plugin, game in reg.games.values():           # a plugin's own games, after the built-in ones
+            rows.append(ft.Container(t.label(f"{game.group.upper()} · {game.name.upper()}", size=11, weight=ft.FontWeight.W_600),
+                                     padding=ft.Padding(8, 14, 8, 4)))
+            rows += self._tool_rows(game.key) or [ft.Container(t.label("(no tools)", size=12), padding=ft.Padding(12, 4, 12, 4))]
         return ft.Container(ft.Column(rows, spacing=2, scroll=ft.ScrollMode.AUTO), width=270, bgcolor=t.PANEL,
                             border_radius=t.RADIUS, padding=8, border=ft.Border.all(1, t.LINE))
+
+    def _tool_rows(self, game: str) -> list[ft.Control]:
+        """A game's plugin tools, under it in the list (pokeldn marks them "Plugin: ...")."""
+        rows = []
+        for plugin, tool in plugins.registry().tools_for(game):
+            chosen = tool.key == self.tool
+            rows.append(ft.Container(
+                ft.Row([ft.Icon(ft.Icons.EXTENSION, size=14, color=t.ACCENT if chosen else t.MUTED),
+                        ft.Text(tool.name, size=13, color=t.TEXT, weight=ft.FontWeight.W_600 if chosen else None, expand=True),
+                        t.pill("plugin", t.MUTED)], spacing=6),
+                bgcolor=t.ACCENT_SOFT if chosen else None, border_radius=10, padding=ft.Padding(26, 6, 12, 6),
+                on_click=lambda e, k=tool.key: self.pick_tool(k), ink=True, disabled=self.app.busy() and not chosen,
+                tooltip=f"Plugin: {plugin.name}"))
+        return rows
+
+    def tool_tokens(self) -> dict:
+        s = self.app.settings
+        tr = Trainer.from_dict(s.trainer, s.trainer_name or "POKEUDS")
+        _, game, _ = plugins.registry().tools[self.tool]
+        return {"ot": s.trainer_name, "tid": tr.tid, "sid": tr.sid, "radio": s.radio_spec(), "keys": s.keys,
+                "output": s.output, "game": game, "stamp": time.strftime("%Y%m%d-%H%M%S")}
+
+    def tool_setup(self) -> ft.Control:
+        plugin, game, tool = plugins.registry().tools[self.tool]
+        busy = self.app.busy()
+        values = self.tool_values.setdefault(tool.key, {})
+        controls: list[ft.Control] = [
+            ft.Row([t.title(tool.name), t.pill(f"Plugin: {plugin.name}", t.INFO)], spacing=12,
+                   vertical_alignment=ft.CrossAxisAlignment.CENTER),
+            t.label(tool.summary, color=t.TEXT),
+        ]
+        controls += [t.label(f"{i}. {step}") for i, step in enumerate(tool.steps, 1)]
+        fields = []
+        for f in tool.fields:
+            value = values.get(f.flag, f.default)
+            if f.kind == "switch":
+                fields.append(ft.Switch(label=f.label, value=bool(value), tooltip=f.help or None, disabled=busy,
+                                        on_change=lambda e, k=f.flag: values.__setitem__(k, bool(e.control.value))))
+            elif f.kind == "choice":
+                fields.append(ft.Dropdown(label=f.label, value=str(value), width=220, dense=True, disabled=busy,
+                                          options=[ft.DropdownOption(key=str(k), text=str(v)) for k, v in f.choices],
+                                          on_select=lambda e, k=f.flag: values.__setitem__(k, e.control.value)))
+            elif f.kind == "file":
+                fields.append(ft.Row([ft.TextField(label=f.label, value=str(value or ""), width=320, dense=True, read_only=True),
+                                      t.secondary("Choose...", lambda e, x=f: self._tool_file(x), ft.Icons.FOLDER_OPEN,
+                                                  disabled=busy)], spacing=8))
+            else:
+                fields.append(ft.TextField(label=f.label, value=str(value), width=220 if f.kind == "text" else 140,
+                                           dense=True, disabled=busy, tooltip=f.help or None,
+                                           keyboard_type=ft.KeyboardType.NUMBER if f.kind == "number" else None,
+                                           on_blur=lambda e, k=f.flag: values.__setitem__(k, (e.control.value or "").strip())))
+        if fields:
+            controls.append(ft.Row(fields, wrap=True, spacing=12, vertical_alignment=ft.CrossAxisAlignment.CENTER))
+        if any("{radio}" in str(x) for x in tool.fixed):
+            controls.append(self.connection())
+        button = (t.secondary("Stop", lambda e: self.app.stop(), ft.Icons.STOP_ROUNDED) if busy and self.app.run_kind == "trade"
+                  else t.primary("Start", self._start_tool, ft.Icons.PLAY_ARROW_ROUNDED, disabled=busy))
+        controls.append(ft.Row([button, t.label(f"Runs {tool.script} from {plugin.name} {plugin.version}", size=12)], spacing=16))
+        return t.card(*controls, spacing=12)
+
+    async def _tool_file(self, f) -> None:
+        files = await self.app.picker.pick_files(dialog_title=f.label, file_type=ft.FilePickerFileType.CUSTOM if f.exts else
+                                                 ft.FilePickerFileType.ANY, allowed_extensions=list(f.exts) or None)
+        if files and files[0].path:
+            self.tool_values.setdefault(self.tool, {})[f.flag] = files[0].path
+            self.refresh()
+
+    def _start_tool(self, e=None) -> None:
+        if self.app.busy():
+            return
+        values = self.tool_values.get(self.tool, {})
+        self.show_log = True
+        self.app.start("trade", plugins.tool_command(self.tool, values, self.tool_tokens()))
 
     def setup(self) -> ft.Control:
         entry, busy = self.entry, self.app.busy()
@@ -179,13 +276,18 @@ class TradeView(View):
             return ft.Row([t.label("Connection", color=t.TEXT),
                            t.pill(f"Demo radio: simulated {s.port or 'red'}", t.INFO),
                            t.label("(Debug; turn it off there)", size=12)], spacing=12)
+        choices = list(CONNECTIONS) + [(scheme, label or scheme) for scheme, (_, _, label) in plugins.registry().radios.items()]
         row: list[ft.Control] = [
             t.label("Connection", color=t.TEXT),
-            ft.SegmentedButton(segments=[ft.Segment(k, label=ft.Text(v)) for k, v in CONNECTIONS],
-                               selected=[s.radio if s.radio in ("esp32", "ldnd") else "esp32"],
+            ft.SegmentedButton(segments=[ft.Segment(k, label=ft.Text(v)) for k, v in choices],
+                               selected=[s.radio if s.radio in [k for k, _ in choices] else "esp32"],
                                on_change=self._connection, disabled=busy),
         ]
-        if s.radio == "ldnd":
+        if s.radio in plugins.registry().radios:
+            row.append(ft.TextField(label="Radio argument", value=s.port, width=200, dense=True, disabled=busy,
+                                    on_blur=lambda e: (setattr(s, "port", (e.control.value or "").strip()), self.save()),
+                                    tooltip="what the plugin's radio takes after the colon"))
+        elif s.radio == "ldnd":
             row.append(ft.TextField(label="ldnd pipe", value=s.port or LDND_PIPE, width=200, dense=True,
                                     on_blur=self._pipe, disabled=busy,
                                     tooltip="ldnd.exe 0.0.5 (not ldnrs), Windows only; start it before the trade"))
