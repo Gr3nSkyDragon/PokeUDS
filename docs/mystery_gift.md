@@ -119,7 +119,8 @@ The PKHeX helper reads, makes and checks Gen 6/7 cards (`services/pkhex/Gifts.cs
 |---|---|
 | `gifts` | the official cards PKHeX.Core embeds for a game (one per card, species and form; `all` for every card, items and revisions too, with their bytes) |
 | `gift` | an official card (by key) or a `.wc6`/`.wc7`/full file, made into its Pokemon for the trainer and checked |
-| `card` | a custom card from a form, and the Pokemon it gives |
+| `card` | a card from the editor's fields, and the Pokemon it gives |
+| `card_fields` | any card (official or a file) as the editor's fields, which rebuild it byte for byte |
 
 PKHeX.Core 26.10.18 carries 838 Gen 6 and 937 Gen 7 cards. A card that names its own OT gives a Pokemon
 traded from that trainer; one that leaves it open makes the receiver the OT (in Gen 7 the card marks this
@@ -128,8 +129,8 @@ mask: 1 X / Sun, 2 Y / Moon, 4 Alpha Sapphire / Ultra Sun, 8 Omega Ruby / Ultra 
 
 ### The gift Pokemon by trade (simulated gifts)
 
-As pokeldn does for the Switch games without local gifts: the card's Pokemon, made as the Builder's
-trainer would receive it, goes into the bank and from there into a trade. The Gifts page has three ways
+As pokeldn does for the Switch games without local gifts: the card's Pokemon, made as the builder's
+trainer (Trade page, Build one) would receive it, goes into the bank and from there into a trade. The Gifts page has three ways
 in: **Official events** (searchable), **Open a card** (`.wc6`/`.wc7`/`.wc6full`/`.wc7full`) and **Build your
 own**; each shows what the card gives, PKHeX's verdict, Keep its Pokemon in the bank, Offer in a trade,
 and Save the card (264 bytes) or the full file (784 bytes). From the command line:
@@ -150,22 +151,26 @@ What a trade cannot give: items, Festival Coins, Poke Beans and BP, and the card
 
 ### Custom cards
 
-**Build your own** (or `pokeuds gift card`) writes a card PokeUDS made: a Pokemon (species, level,
-shiny, nickname, the card's OT or the receiver, moves it knows at that level, Classic Ribbon, met in "a
-lovely place", a fateful encounter as every card gives), an item and quantity, or Gen 7 Battle Points, for the
-versions ticked. The file is a well-formed card that PKHeX opens. Its Pokemon can go by trade today, but
-**PKHeX flags it** ("Unable to match to a Mystery Gift in the database"): no such event existed, and a
-check such as the GTS's, or a future one, would refuse it. A Gen 6 card for "the receiver" names the
-trainer entered, since Gen 6's games copy a card's IDs (no non-egg Gen 6 card leaves the OT open).
+**Build your own** on the Gifts page edits every field a card holds: the title, the card text, the date, the
+games, how often it can be received, and a Pokemon down to its nature, ability, ball, held item (and Gen 7's
+second item), moves and relearn moves, IVs (or a number of perfect ones), EVs, ribbons, OT, met place,
+language, PID and contest stats; or up to six items (Gen 7; one in Gen 6) with their amounts, Battle Points,
+or Poke Beans. Preview shows the Pokemon it gives, with the stats the game will work out. **Customize** opens
+any official card or card file in the editor. A gift is saved as a `.udsgift` (to open and change later) and
+exported as the card itself (`.wc6`/`.wc7`, or the 784-byte full file). The whole format, byte by byte, and
+what a card cannot hold (stats, a message of your own, a background) are in
+[docs/wonder_cards.md](wonder_cards.md).
 
-Whether a game accepts a custom card over local wireless is the signature question above. If it does
-(as Sword/Shield do), these files are what a PokeUDS distributor would send.
+A custom card's Pokemon can go by trade today, but **PKHeX flags it** ("Unable to match to a Mystery Gift in
+the database"): no such event existed, and a check such as the GTS's, or a future one, would refuse it.
+Whether a game accepts a custom card over local wireless is the signature question above. If it does (as
+Sword/Shield do), these files are what a PokeUDS distributor would send.
 
 ### Testing
 
 `tests/test_gifts.py` runs a sample of each game's official cards through every path (card file, full
 file, conversion, legality, the bank) whenever the helper is built. `scripts/check_gifts.py OUT_DIR` runs
-all of them and writes each as a file, about 80 s:
+all of them and writes each as a file, about a minute; it also rebuilds each from the editor's fields:
 
 | game | cards | Pokemon and eggs legal | items | BP |
 |---|---:|---:|---:|---:|
@@ -185,6 +190,6 @@ found and PokeUDS now handles:
 - PKHeX's "Simulated Pokemon Bank" entries (card 0000) are its own stand-ins for Pokemon Bank gifts, not
   distributions; they are listed last.
 
-In Gen 1 and 2 the event Pokemon come from the Builder, which falls back to PKHeX's event encounters
+In Gen 1 and 2 the event Pokemon come from the builder (Build one), which falls back to PKHeX's event encounters
 (`pokeuds build rby mew --level 5`: "Event Gift (Mew)", legal; Crystal's Celebi is the GS Ball's, in
 Ilex Forest), and go by trade.

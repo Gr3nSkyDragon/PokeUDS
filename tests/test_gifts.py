@@ -84,3 +84,95 @@ def test_refusals(helper):
         helper.gifts("gsc")
     with pytest.raises(ValueError, match="not in this game"):
         helper.card("xy", species=722)
+
+
+@pytest.mark.parametrize("game", ["xy", "oras", "sm", "usum"])
+def test_official_cards_rebuild_from_their_fields(helper, game):
+    """The editor's schema holds a whole card: fields out, card back, byte for byte (all of them: scripts/check_gifts.py)."""
+    cards = [c for c in helper.gifts(game, all=True) if c["card_id"] > 0]
+    for card in cards[::max(1, len(cards) // 60)]:
+        raw = base64.b64decode(card["card_data"])
+        fields = helper.card_fields(game, data=raw)
+        assert helper.card(game, **fields).card_data == raw, (card["card_id"], card["title"])
+
+
+def test_a_fully_custom_pokemon(helper):
+    from pokeuds.app import giftfile
+
+    f = giftfile.new_fields("usum")
+    f.update(species=778, level=50, met_level=50, shiny="always", nature=3, gender=1, ability="1", ball=1,
+             held_item=234, additional_item=50, moves=[389, 421, 104, 0], relearn=[0, 0, 0, 0],
+             ivs=[31, 31, 31, -1, 31, 31], evs=[252, 252, 0, 0, 0, 4], nickname="Mimi",
+             title="A shiny Mimikyu for you!", ribbons=["classic", "wishing"], contest=[10, 0, 0, 0, 0, 0])
+    gift = helper.card("usum", trainer=TRAINER, **f)
+    s = gift.pokemon.summary
+    assert (s["species_name"], s["level"], s["nature"], s["ability"], s["ball"], s["held_item"]) == \
+        ("Mimikyu", 50, "Adamant", "Disguise", "Master Ball", "Leftovers")
+    assert s["moves"] == ["Sucker Punch", "Shadow Claw", "Double Team"] and s["shiny"] and s["gender"] == "female"
+    assert s["ivs"][:3] == [31, 31, 31] and s["evs"] == [252, 252, 0, 0, 0, 4] and s["nickname"] == "Mimi"
+    assert s["stats"][0] > 0 and len(s["stats"]) == 6                   # what the game will show
+    back = helper.card_fields("usum", data=gift.card_data)
+    for key in ("title", "nature", "ivs", "evs", "additional_item", "ball", "held_item", "moves", "contest"):
+        assert back[key] == f[key], key
+    assert set(back["ribbons"]) == {"classic", "wishing"} and back["met_location"] == giftfile.LOVELY_PLACE
+
+
+def test_perfect_ivs_and_kinds(helper):
+    gift = helper.card("xy", trainer=TRAINER, species=25, level=30, perfect_ivs=3)
+    assert gift.card_data[0xAF] == 0xFE and gift.card_data[0xB0] == 0xFF       # the marker in the HP byte alone
+    assert sum(1 for v in gift.pokemon.summary["ivs"] if v == 31) >= 3
+    assert helper.card("sm", kind="bp", quantity=50).card_data[0x51] == 3        # Gen 7: 3 Battle Points
+    assert helper.card("sm", kind="beans", bean=1, quantity=20).card_data[0x51] == 2   # 2 Poke Beans
+    six = helper.card("usum", kind="item", items=[{"item": 50, "quantity": 5}, {"item": 1, "quantity": 2}])
+    assert helper.card_fields("usum", data=six.card_data)["items"] == [{"item": 50, "quantity": 5}, {"item": 1, "quantity": 2}]
+    with pytest.raises(ValueError, match="one item"):
+        helper.card("xy", kind="item", items=[{"item": 50, "quantity": 1}, {"item": 1, "quantity": 1}])
+    with pytest.raises(ValueError, match="510"):
+        helper.card("xy", species=25, evs=[252, 252, 252, 0, 0, 0])
+
+
+def test_gift_project_files(helper, tmp_path):
+    from pokeuds.app import giftfile
+
+    f = giftfile.new_fields("oras")
+    f.update(species=384, level=70, shiny="always", title="Our Rayquaza")
+    card = helper.card("oras", trainer=TRAINER, **f).card_data
+    path = giftfile.save(tmp_path / "ray", giftfile.GiftProject("oras", f, "Rayquaza", card))
+    assert path.suffix == ".udsgift"
+    back = giftfile.load(path)
+    assert back.game == "oras" and back.fields == f and back.card == card and not back.problems
+    assert helper.card("oras", trainer=TRAINER, **back.fields).card_data[:0x4C] == card[:0x4C]
+    body = path.read_text().replace('"version": 1', '"version": 9')
+    (tmp_path / "new.udsgift").write_text(body)
+    with pytest.raises(ValueError, match="newer PokeUDS"):
+        giftfile.load(tmp_path / "new.udsgift")
+    (tmp_path / "x.udsgift").write_text("{}")
+    with pytest.raises(ValueError, match="not a PokeUDS gift file"):
+        giftfile.load(tmp_path / "x.udsgift")
+    texts = giftfile.card_texts(helper.gifts("usum", all=True))
+    assert texts[0][0] == 44 and texts[0][1] > 100 and any(i == 56 for i, *_ in texts)
+
+
+def test_egg_cards(helper):
+    from pokeuds.app import giftfile
+
+    # Official event eggs are legal, and stay so when opened in the editor and rebuilt.
+    for game in ("oras", "sm"):
+        egg = next(c for c in helper.gifts(game, all=True) if c["kind"] == "egg" and c["card_id"] > 0)
+        fields = giftfile.unreceived(helper.card_fields(game, data=base64.b64decode(egg["card_data"])))
+        assert fields["is_egg"] and fields["level"] == 1 and fields["egg_location"] in (40001, 40010)
+        rebuilt = helper.card(game, trainer=TRAINER, **fields)
+        assert rebuilt.card["kind"] == "egg" and rebuilt.pokemon.legal, rebuilt.pokemon.report
+    # A custom egg: an Egg at level 1, from a Pokemon Center, met nowhere yet; flagged only for being custom.
+    for game in ("xy", "usum"):
+        f = giftfile.new_fields(game, "egg")
+        f["species"] = 25 if game == "xy" else 778
+        gift = helper.card(game, trainer=TRAINER, **f)
+        p = gift.pokemon
+        assert gift.card["kind"] == "egg" and p.summary["nickname"] == "Egg" and p.summary["level"] == 1
+        assert p.summary["ball"] == ("Poké Ball" if game == "xy" else "Cherish Ball")
+        problems = [line for line in p.report.splitlines() if line.startswith("Invalid")]
+        assert problems and not any("Met Date" in line for line in problems)
+        assert any("event Egg" in line for line in problems)              # no such event: PKHeX says so
+    short = helper.card("oras", trainer=TRAINER, kind="egg", species=371)       # the helper's own egg kind
+    assert short.card["kind"] == "egg" and short.card_data[0xA6] == 0 and short.card_data[0xA4] == 0x4A   # 40010

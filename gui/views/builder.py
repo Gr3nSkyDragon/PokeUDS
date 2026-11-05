@@ -1,38 +1,42 @@
-"""The Builder page: a legal Pokemon made by PKHeX, for someone with no file to send.
+"""The builder, on the Trade page ("Build one"): a legal Pokemon made by PKHeX for someone with no file to send.
 
-Pick the game, the species and the level, add any wishes, and Build: the PKHeX helper walks the
-species' encounters and returns the first record its legality check accepts with every wish
-(docs/pkhex.md). The result goes into the bank, and can be offered in a trade straight away.
+It builds for the game the Trade page has chosen. Pick the species and the level, add any wishes, and
+Build: the PKHeX helper walks the species' encounters and returns the first record its legality check
+accepts with every wish (docs/pkhex.md). The result goes into the bank and becomes the trade's offer.
 """
 
 from __future__ import annotations
 
 import threading
+from typing import Callable
 
 import flet as ft
 
-from pokeuds.app import bank, builder, catalog
+from pokeuds.app import bank, builder
 from pokeuds.app.builder import ABILITIES, GAMES, GENDERS, Trainer, Wish
 
 from .. import theme as t
 from .common import View
+from .picker import name_field
 
 ANY = "-"
 
 
 def _helper_ready() -> bool:
-    from pokeuds import pkhex
+    from . import pkhex_setup
 
-    return pkhex.helper_path() is not None
+    return pkhex_setup.ready()
 
 
-class BuilderView(View):
-    key, label, icon = "builder", "Builder", ft.Icons.AUTO_FIX_HIGH
+class BuilderPanel(View):
+    """Not a page of its own: the Trade page embeds its ``control()`` and gets each built Pokemon."""
 
-    def __init__(self, app) -> None:
+    key = "builder"
+
+    def __init__(self, app, game: str, on_built: Callable[[bank.Entry, str], None]) -> None:
         super().__init__(app)
-        game = app.settings.last_game if app.settings.last_game in GAMES else "xy"
-        self.wish = Wish(game=game, species=25, level=30)
+        self.on_built = on_built
+        self.wish = Wish(game=game if game in GAMES else "xy", species=25, level=30)
         self.lists: dict[str, dict] = {}
         self.loading = ""
         self.building = False
@@ -51,43 +55,31 @@ class BuilderView(View):
 
     # -- layout ---------------------------------------------------------------------------------
 
+    def set_game(self, game: str) -> None:
+        """Follow the Trade page's game (ids of moves and items are each game's own)."""
+        if game in GAMES and game != self.wish.game:
+            self._apply_game(game)
+
     def build(self) -> ft.Control:
-        controls: list[ft.Control] = [t.title("Builder"),
-                                      t.label("Make a legal Pokemon to send when you have no file for it. "
-                                              "PKHeX builds it from an encounter in the game you pick and checks it.")]
+        name = GAMES[self.wish.game][0]
+        head = [t.heading(f"Build a Pokemon for {name}"),
+                t.label("No file to send? PKHeX builds a legal one from an encounter in this game and checks it. "
+                        "It goes into the bank and becomes the offer.")]
         if not _helper_ready():
-            controls.append(self._no_helper())
-            return ft.Column(controls, spacing=t.GAP, scroll=ft.ScrollMode.AUTO)
+            return self._no_helper(head)
         lists = self.lists.get(self.wish.game)
         if lists is None:
             self._load_lists(self.wish.game)
-            controls.append(t.card(ft.Row([ft.ProgressRing(width=18, height=18),
-                                           t.label("Asking PKHeX for the game's species, moves and items...")], spacing=12)))
-            return ft.Column(controls, spacing=t.GAP, scroll=ft.ScrollMode.AUTO)
-        if self.message:
-            controls.append(t.notice(self.message, self.message_color))
-        controls.append(ft.Row([
-            ft.Container(ft.Column([self._pokemon(lists), self._trainer()], spacing=t.GAP), expand=True),
-            ft.Container(self._result(), width=400),
-        ], vertical_alignment=ft.CrossAxisAlignment.START, spacing=t.GAP))
-        return ft.Column(controls, spacing=t.GAP, scroll=ft.ScrollMode.AUTO)
-
-    def _no_helper(self) -> ft.Control:
-        import shutil
-
-        has_dotnet = shutil.which("dotnet") is not None
-        rows = [t.heading("The PKHeX helper is not built"),
-                t.label("The Builder uses PKHeX.Core through a small .NET program in services/pkhex. It is built once, "
-                        "with the .NET 10 SDK:"),
-                ft.Text("dotnet build -c Release services/pkhex", font_family="monospace", color=t.TEXT, selectable=True)]
-        if has_dotnet:
-            rows.append(ft.Row([t.primary("Build it now", self._compile, ft.Icons.BUILD, disabled=self.compiling),
-                                ft.ProgressRing(width=18, height=18, visible=self.compiling)], spacing=12))
-        else:
-            rows.append(t.label("dotnet was not found: install the .NET 10 SDK from Microsoft, then come back here."))
-        if self.message:
-            rows.append(t.notice(self.message, self.message_color))
+            return t.card(*head, ft.Row([ft.ProgressRing(width=18, height=18),
+                                         t.label("Asking PKHeX for the game's species, moves and items...")], spacing=12))
+        rows = head + ([t.notice(self.message, self.message_color)] if self.message else [])
+        rows += self._pokemon(lists) + [ft.Divider(color=t.LINE)] + self._trainer() + [self._build_row()]
         return t.card(*rows, spacing=12)
+
+    def _no_helper(self, head: list[ft.Control]) -> ft.Control:
+        from . import pkhex_setup
+
+        return pkhex_setup.card(self.app, head)
 
     @staticmethod
     def _dd(label: str, value, options: list[tuple[str, str]], on_select, width: int = 220, search: bool = False,
@@ -96,14 +88,11 @@ class BuilderView(View):
                            options=[ft.DropdownOption(key=k, text=v) for k, v in options], on_select=on_select,
                            enable_filter=search, editable=search)
 
-    def _pokemon(self, lists: dict) -> ft.Control:
+    def _pokemon(self, lists: dict) -> list[ft.Control]:
         w, gen = self.wish, builder.generation(self.wish.game)
         busy = self.building
-        species = [(str(v), f"{n} (#{v})") for v, n in sorted(lists["species"], key=lambda x: x[1])]
-        rows: list[ft.Control] = [t.heading("Pokemon"), ft.Row([
-            self._dd("Game", w.game, [(k, v[0]) for k, v in GAMES.items()], self._game, 260, disabled=busy),
-            self._dd("Species", str(w.species), species, self._species, 280, search=True, disabled=busy),
-        ], wrap=True, spacing=12), ft.Row([
+        rows: list[ft.Control] = [ft.Row([
+            name_field("Species", w.species, lists["species"], self._pick_species, 200, disabled=busy),
             ft.TextField(label="Level", value=str(w.level), width=100, dense=True, on_blur=self._level, disabled=busy,
                          keyboard_type=ft.KeyboardType.NUMBER),
             ft.TextField(label="Nickname", value=w.nickname, width=200, dense=True, disabled=busy,
@@ -119,26 +108,26 @@ class BuilderView(View):
             wishes.append(self._dd("Ability", w.ability or ANY, [(k or ANY, v) for k, v in ABILITIES.items()],
                                    self._ability, 180, disabled=busy))
         if gen >= 2:
-            wishes.append(self._dd("Held item", str(w.held_item) if w.held_item else ANY,
-                                   [(ANY, "None")] + [(str(v), n) for v, n in lists["items"]], self._item, 220,
-                                   search=True, disabled=busy))
+            wishes.append(name_field("Held item", w.held_item or 0, lists["items"], self._pick_item, 200, empty="none",
+                                     disabled=busy))
         if gen >= 3:
             wishes.append(self._dd("Ball", str(w.ball) if w.ball else ANY,
                                    [(ANY, "Any")] + [(str(v), n) for v, n in lists["balls"]], self._ball, 180,
                                    disabled=busy))
         rows.append(ft.Row(wishes, wrap=True, spacing=12))
-        moves = [(ANY, "-")] + [(str(v), n) for v, n in lists["moves"]]
         current = (w.moves + [0, 0, 0, 0])[:4]
         rows.append(t.label("Moves: leave them empty for the moves it would know at that level."))
-        rows.append(ft.Row([self._dd(f"Move {i + 1}", str(m) if m else ANY, moves,
-                                     lambda e, i=i: self._move(i, e), 200, search=True, disabled=busy)
+        rows.append(ft.Row([name_field(f"Move {i + 1}", m, lists["moves"], lambda v, i=i: self._pick_move(i, v), 190,
+                                       empty="none", disabled=busy)
                             for i, m in enumerate(current)], wrap=True, spacing=12))
-        rows.append(ft.Row([t.primary("Build", self._build, ft.Icons.AUTO_FIX_HIGH, disabled=busy),
-                            ft.ProgressRing(width=18, height=18, visible=busy),
-                            t.label(w.label())], spacing=12))
-        return t.card(*rows, spacing=12)
+        return rows
 
-    def _trainer(self) -> ft.Control:
+    def _build_row(self) -> ft.Control:
+        busy = self.building
+        return ft.Row([t.primary("Build and offer it", self._build, ft.Icons.AUTO_FIX_HIGH, disabled=busy or self.app.busy()),
+                       ft.ProgressRing(width=18, height=18, visible=busy), t.label(self.wish.label())], spacing=12)
+
+    def _trainer(self) -> list[ft.Control]:
         tr, gen = self.trainer, builder.generation(self.wish.game)
         busy = self.building
         fields: list[ft.Control] = [ft.TextField(label="OT name", value=tr.ot, width=180, dense=True, disabled=busy,
@@ -157,43 +146,9 @@ class BuilderView(View):
                                            on_blur=lambda e: self._id(e, "sid")))
         if gen >= 2:
             fields.append(ft.Switch(label="Female OT", value=tr.female, on_change=self._ot_gender, disabled=busy))
-        return t.card(t.heading("Original trainer"),
-                      t.label("Shown on the Pokemon's summary. Use your own to make it yours, or anything you like; "
-                              "kept for the next build."),
-                      ft.Row(fields, wrap=True, spacing=12, vertical_alignment=ft.CrossAxisAlignment.CENTER), spacing=10)
-
-    def _result(self) -> ft.Control:
-        r = self.result
-        if r is None:
-            return t.card(t.heading("Result"), t.label("Nothing built yet."))
-        s = r.summary
-        facts = [("Species", f"{s['species_name']} (#{s['species']})"), ("Nickname", s.get("nickname") or "-"),
-                 ("Level", str(s["level"])),
-                 ("OT", f"{s['ot_name']} " + (self.saved.shown_tid() if self.saved else f"{s['tid']:05d}")),
-                 ("Moves", ", ".join(m for m in s.get("moves", []) if m) or "-")]
-        for key, name in (("nature", "Nature"), ("ability", "Ability"), ("held_item", "Item"), ("ball", "Ball"),
-                          ("gender", "Gender")):
-            if s.get(key) and s[key] not in ("none", "(None)", "None"):
-                facts.append((name, str(s[key]).capitalize() if key == "gender" else str(s[key])))
-        if s.get("ivs"):
-            facts.append(("IVs" if builder.generation(self.wish.game) >= 3 else "DVs",
-                          " / ".join(str(v) for v in s["ivs"])))
-        rows: list[ft.Control] = [ft.Row([t.heading(s["species_name"]), ft.Container(expand=True),
-                                          *([t.pill("Shiny", t.WARN)] if s.get("shiny") else []),
-                                          t.pill("Legal" if r.legal else "Not legal", t.GOOD if r.legal else t.BAD)])]
-        rows += [ft.Row([t.label(k, size=12), ft.Text(v, size=13, color=t.TEXT, selectable=True, expand=True)],
-                        spacing=8, vertical_alignment=ft.CrossAxisAlignment.START) for k, v in facts]
-        if r.encounter:
-            rows.append(t.label(f"From: {r.encounter}", size=12))
-        rows.append(ft.Text(r.report, size=12, color=t.MUTED, selectable=True))
-        rows.append(ft.Divider(color=t.LINE))
-        if self.saved:
-            games = bank.games_for(self.saved)
-            rows.append(t.label("In the bank.", color=t.GOOD))
-            rows += [t.primary(f"Offer in {catalog.BY_KEY[g].name}", lambda e, g=g: self._offer(g), ft.Icons.SWAP_HORIZ,
-                               disabled=self.app.busy()) for g in games]
-            rows.append(t.secondary("Show in the bank", self._show_in_bank, ft.Icons.INVENTORY_2_OUTLINED))
-        return t.card(*rows, spacing=8)
+        return [t.label("Original trainer: shown on its summary. Use your own to make it yours; kept for the next build.",
+                        color=t.TEXT),
+                ft.Row(fields, wrap=True, spacing=12, vertical_alignment=ft.CrossAxisAlignment.CENTER)]
 
     # -- the helper -----------------------------------------------------------------------------
 
@@ -215,28 +170,6 @@ class BuilderView(View):
 
         threading.Thread(target=work, daemon=True, name="pkhex-lists").start()
 
-    def _compile(self, e) -> None:
-        self.compiling = True
-        self.message = ""
-        self.refresh()
-
-        def work() -> None:
-            from pokeuds import pkhex
-
-            try:
-                done = pkhex.build_helper()
-                if done.returncode == 0 and pkhex.helper_path():
-                    self.message, self.message_color = "The PKHeX helper is built.", t.GOOD
-                else:
-                    tail = "\n".join((done.stdout or done.stderr or "").strip().splitlines()[-4:])
-                    self.message, self.message_color = f"dotnet build failed:\n{tail}", t.BAD
-            except Exception as exc:
-                self.message, self.message_color = str(exc), t.BAD
-            self.compiling = False
-            self.app.ui(self.refresh)
-
-        threading.Thread(target=work, daemon=True, name="pkhex-compile").start()
-
     def _build(self, e) -> None:
         wish, trainer = self.wish, self.trainer
         if problems := wish.problems():
@@ -250,7 +183,12 @@ class BuilderView(View):
             try:
                 self.result = builder.build(wish, trainer)
                 self.saved = builder.keep(self.result, bank.Bank(self.app.settings.bank or None), wish)
-                self.message, self.message_color = f"Built {self.saved.describe()} and kept it in the bank.", t.GOOD
+                self.message = ""
+                verdict = "legal" if self.result.legal else "NOT legal"
+                saved, text = self.saved, f"Built {self.saved.describe()} ({verdict}), kept it in the bank and made it the offer."
+                self.building = False
+                self.app.ui(lambda: self.on_built(saved, text))
+                return
             except ValueError as exc:              # PKHeX found nothing legal with these wishes
                 self.result, self.saved = None, None
                 self.message, self.message_color = f"PKHeX could not build it: {exc}", t.BAD
@@ -268,8 +206,8 @@ class BuilderView(View):
         self.message = ""
         self.refresh()
 
-    def _game(self, e) -> None:
-        self.wish.game = e.control.value
+    def _apply_game(self, game: str) -> None:
+        self.wish.game = game
         gen = builder.generation(self.wish.game)
         if self.wish.species > GAMES[self.wish.game][2]:
             self.wish.species = 25
@@ -279,7 +217,21 @@ class BuilderView(View):
             self.wish.held_item, self.wish.shiny = None, False
         self.wish.moves = []                 # move and item ids are the game's own lists
         self.wish.held_item = None
-        self._changed()
+        self.message = ""
+
+    def _pick_species(self, value: int) -> None:
+        if value:
+            self.wish.species = value
+            self.wish.moves = []
+            self._changed()
+
+    def _pick_item(self, value: int) -> None:
+        self.wish.held_item = value or None
+
+    def _pick_move(self, slot: int, value: int) -> None:
+        moves = (self.wish.moves + [0, 0, 0, 0])[:4]
+        moves[slot] = value
+        self.wish.moves = [m for m in moves if m]
 
     def _species(self, e) -> None:
         if e.control.value and e.control.value.isdigit():
@@ -356,18 +308,3 @@ class BuilderView(View):
             self.refresh()
             return
         self._save_trainer(tr)
-
-    # -- after a build --------------------------------------------------------------------------
-
-    def _offer(self, game: str) -> None:
-        if self.saved:
-            self.app.settings.offers[game] = str(self.saved.path)
-            self.app.views["trade"].pick_game(game)
-            self.app.navigate("trade")
-
-    def _show_in_bank(self, e) -> None:
-        if self.saved:
-            view = self.app.views.get("bank")
-            if view is not None:
-                view.selected = self.saved.id
-            self.app.navigate("bank")

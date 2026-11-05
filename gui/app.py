@@ -16,6 +16,11 @@ class App:
         self.page = page
         self.settings = settings or Settings.load()
         self.picker = ft.FilePicker() if page is not None else None
+        if page is not None:                     # dialogs are translated too (gui/translate.py)
+            from .translate import translate
+
+            show = page.show_dialog
+            page.show_dialog = lambda dialog: show(translate(dialog))
         self.run: Run | None = None
         self.run_kind = ""                       # "trade", "probe", "scan", "analyze", "board"
         self.progress = Progress()

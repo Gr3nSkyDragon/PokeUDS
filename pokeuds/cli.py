@@ -9,6 +9,8 @@
     trade    trade with a retail console (xy, oras, sm, usum), joining or hosting
     board    ESP32-S3 boards: list, check, download or flash esp32-uds-bridge
     build    build a legal Pokemon with the PKHeX helper (docs/pkhex.md)
+    pkhex    the PKHeX helper: status, get (download, nothing to install), build
+    plugins  installed plugins: list, install, remove, enable, disable; plugin run TOOL -- ARGS
     gift     Gen 6/7 Mystery Gift cards: list PKHeX's, show a .wc6/.wc7, make its Pokemon, build a custom card
 """
 
@@ -30,7 +32,7 @@ log = logging.getLogger(__name__)
 
 def _add_radio(p: argparse.ArgumentParser) -> None:
     p.add_argument("--radio", default="esp32",
-                   help="esp32[:PORT] (ESP32-S3, found by USB id) or ldnd[:PIPE] (USB adapter via ldnd.exe 0.0.5)")
+                   help="esp32[:PORT] (an ESP32 board, found by USB id) or ldnd[:PIPE] (USB adapter via ldnd.exe 0.0.5)")
     p.add_argument("--mac", type=parse_mac, help="MAC address to use on the air (default: random, locally administered)")
     p.add_argument("--channel", type=int, default=11, help="starting channel")
 
@@ -245,6 +247,12 @@ def cmd_trade(args) -> int:
 
     game = get(args.game)
     offer = pkx.load(args.offer)
+    from . import plugins
+
+    try:
+        offer = plugins.edit_offer(game.key, offer, game.key, game.record.extension)
+    except ValueError as exc:
+        raise SystemExit(str(exc))
     try:
         pkx.check_format(offer, game.record)
     except ValueError as exc:
@@ -371,6 +379,14 @@ def cmd_vc_trade(args) -> int:
     from .vc.trade import VcTrade
 
     offer = gbpk.load(args.offer)
+    from . import plugins
+
+    edit_game = {"gen1": "rby", "gen2": "gsc"}.get(args.partner or "", "rby" if offer.generation == 1 else "gsc")
+    try:
+        raw = plugins.edit_offer(edit_game, offer.to_file(), "rby" if offer.generation == 1 else "gsc", offer.extension)
+    except ValueError as exc:
+        raise SystemExit(str(exc))
+    offer = gbpk.Record.from_file(raw)
     mail_file = Path(args.offer).with_suffix(".mail")
     mail = mail_file.read_bytes()[:47] if offer.generation == 2 and mail_file.exists() else b""
     if args.role == "host" and not args.as_title:
@@ -425,12 +441,12 @@ def cmd_board(args) -> int:
             print(port.label())
         status.emit("boards", ports=[{"device": p.device, "description": p.description, "native": p.native} for p in found])
         if not found:
-            print("No ESP32-S3 found (Espressif USB 303A:1001, or a CP210x/CH340 UART bridge).")
+            print("No ESP32 found (Espressif USB 303A:1001, or a CP210x/CH340 UART bridge).")
         return 0
     if args.board_command == "check":
         port = args.port or next((p.device for p in board.ports() if p.native), None)
         if not port:
-            print("No ESP32-S3 on its native USB port. Plug in the port marked USB (not UART), or pass --port.")
+            print("No ESP32 on its native USB port. Plug in the port marked USB (not UART), or pass --port.")
             return 1
         print(f"Asking the board on {port} for its firmware (1.8 restarts into its 3DS mode first)")
         try:
@@ -547,11 +563,32 @@ def cmd_gift(args) -> int:
             found += 1
         print(f"{found} card(s)")
         return 0
+    if args.gift_command == "edit":
+        from .app import giftfile
+
+        source = Path(args.source)
+        fields = (helper.card_fields(args.game, data=source.read_bytes()) if source.exists()
+                  else helper.card_fields(args.game, key=args.source))
+        out = giftfile.save(args.save, giftfile.GiftProject(args.game, giftfile.unreceived(fields), fields.get("title", "")))
+        print(f"Saved the card's fields as {out}: change them (in the app's Gifts page, or the JSON), then "
+              f"`pokeuds gift card {args.game} --project {out.name} --out card.wc{giftfile.generation(args.game)}`")
+        return 0
     if args.gift_command == "card":
-        gift = helper.card(args.game, trainer=trainer, kind=args.kind, card_id=args.card_id, title=args.title,
-                           species=args.species, level=args.level, shiny=args.shiny, item=args.item,
-                           quantity=args.quantity, versions=args.versions, nickname=args.nickname,
-                           ot="" if args.your_ot else args.card_ot, tid=args.tid, sid=args.sid)
+        if args.project:
+            from .app import giftfile
+
+            project = giftfile.load(args.project)
+            for problem in project.problems:
+                print(f"note: {problem}")
+            if project.game != args.game:
+                print(f"{args.project} is a gift for {project.game}, not {args.game}")
+                return 1
+            gift = helper.card(args.game, trainer=trainer, **project.fields)
+        else:
+            gift = helper.card(args.game, trainer=trainer, kind=args.kind, card_id=args.card_id, title=args.title,
+                               species=args.species, level=args.level, shiny=args.shiny, item=args.item,
+                               quantity=args.quantity, versions=args.versions, nickname=args.nickname,
+                               **({"ot": args.card_ot, "tid": args.tid, "sid": args.sid} if args.card_ot else {}))
     elif args.source.lower().endswith((".wc6", ".wc7", ".wc6full", ".wc7full")) or Path(args.source).exists():
         gift = helper.gift(args.game, data=Path(args.source).read_bytes(), trainer=trainer)
     else:
@@ -581,6 +618,84 @@ def cmd_gift(args) -> int:
                                            note=gift.card["title"], extra={"card_id": gift.card["card_id"]})
         print(f"Kept in the bank as {entry.id}")
     return 0
+
+
+def cmd_plugins(args) -> int:
+    from . import plugins
+    from .app import plugin_store as store
+
+    if args.plugins_command == "list":
+        found = plugins.registry().plugins
+        for p in found:
+            state = "error" if p.error else ("on" if p.enabled else "off")
+            print(f"{p.id} {p.version} [{state}]{' (POKEUDS_PLUGINS)' if p.development else ''}: {p.name}")
+            for line in p.adds():
+                print(f"    adds {line}")
+            if p.error:
+                print(f"    {p.error}")
+        if not found:
+            print(f"No plugins in {plugins.plugins_dir()}")
+        return 0
+    if args.plugins_command == "install":
+        package = store.read(args.file)
+        print(f"{package.name} {package.version} by {package.author or 'unknown'} ({store.size_text(package.size)})")
+        print(f"  {store.TRUST_TEXT[store.trust(package)]}" + (f" (key {store.fingerprint(package.key)})" if package.key else ""))
+        for finding in package.findings or ["Nothing the scan flags (it is a hint, not a review)"]:
+            print(f"  - {finding}")
+        print("A plugin runs as Python inside PokeUDS with full access to your files, console keys, the network and "
+              "the radio.")
+        if not args.yes:
+            print("Run again with --yes to install it.")
+            return 1
+        print(f"Installed in {store.install(package, origin=str(args.file))}")
+        return 0
+    if args.plugins_command == "remove":
+        store.remove(args.id, data=args.data)
+        print(f"Removed {args.id}" + (" and its saved data" if args.data else ""))
+        return 0
+    if args.plugins_command in ("enable", "disable"):
+        plugins.set_enabled(args.id, args.plugins_command == "enable")
+        print(f"{args.id} is {'on' if args.plugins_command == 'enable' else 'off'}")
+        return 0
+    return 2
+
+
+def cmd_pkhex(args) -> int:
+    from . import pkhex
+
+    if args.pkhex_command == "status":
+        print(pkhex.status())
+        sdks = pkhex.dotnet_sdks()
+        print(f".NET SDKs: {', '.join(sdks) or 'none'}; this computer is {pkhex.runtime_id()}")
+        return 0 if pkhex.helper_path() else 1
+    if args.pkhex_command == "get":
+        try:
+            pkhex.download_helper()
+        except OSError as exc:
+            print(f"Could not get the helper: {exc}")
+            return 1
+        return 0
+    if args.pkhex_command == "build":
+        try:
+            done = pkhex.build_helper()
+        except pkhex.HelperMissing as exc:
+            print(exc)
+            return 1
+        if done.returncode != 0:
+            print("dotnet build failed:\n" + pkhex.build_problem(done))
+            return 1
+        print(pkhex.status())
+        return 0
+    return 2
+
+
+def cmd_plugin_run(args) -> int:
+    from . import plugins
+
+    argv = list(args.args)
+    if argv[:1] == ["--"]:
+        argv = argv[1:]
+    return plugins.run_tool(args.tool, argv)
 
 
 GAME_KEYS = ["xy", "oras", "sm", "usum"]
@@ -651,7 +766,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--output")
     p.set_defaults(func=cmd_vc_convert)
 
-    bd = sub.add_parser("board", help="ESP32-S3 boards and their esp32-uds-bridge firmware")
+    bd = sub.add_parser("board", help="ESP32 boards and their esp32-uds-bridge firmware")
     bsub = bd.add_subparsers(dest="board_command", required=True)
     bsub.add_parser("list", help="list attached boards").set_defaults(func=cmd_board)
     p = bsub.add_parser("check", help="read a board's firmware version and build")
@@ -706,10 +821,17 @@ def main(argv: list[str] | None = None) -> int:
             p.add_argument("--pokemon-out", help="write the Pokemon to this .pk6/.pk7")
             p.add_argument("--bank", action="store_true", help="also keep it in the bank")
         p.set_defaults(func=cmd_gift)
+    p = gsub.add_parser("edit", help="turn a card (official key or .wc6/.wc7/full file) into a .udsgift to change")
+    p.add_argument("game", choices=GAME_KEYS)
+    p.add_argument("source", help="a key from `gift list`, or a card file")
+    p.add_argument("--save", required=True, help="the .udsgift to write")
+    p.set_defaults(func=cmd_gift)
     p = gsub.add_parser("card", help="build a custom card (its Pokemon matches no real event: PKHeX flags it)")
     p.add_argument("game", choices=GAME_KEYS)
     p.add_argument("--out", required=True, help="the card file: .wc6/.wc7, or .wc6full/.wc7full")
-    p.add_argument("--kind", choices=["pokemon", "item", "bp", "beans"], default="pokemon")
+    p.add_argument("--project", help="a .udsgift (from the app or `gift edit`): every field; the flags below are ignored")
+    p.add_argument("--kind", choices=["pokemon", "egg", "item", "bp", "beans"], default="pokemon",
+                   help="egg: a Pokemon egg, set as official event eggs (level 1, from a Pokemon Center)")
     p.add_argument("--card-id", type=int, default=2000)
     p.add_argument("--title", default="PokeUDS gift")
     p.add_argument("--species", type=int)
@@ -720,9 +842,37 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--quantity", type=int, default=1)
     p.add_argument("--versions", type=int, default=0, help="RestrictVersion bits: 1 X/Sun, 2 Y/Moon, 4 AS/US, 8 OR/UM; 0 all")
     p.add_argument("--card-ot", default="", help="the card's own OT (default: the receiver is the OT)")
-    p.add_argument("--your-ot", action="store_true", help=argparse.SUPPRESS)
     _gift_trainer(p)
     p.set_defaults(func=cmd_gift)
+
+    ph = sub.add_parser("pkhex", help="the PKHeX helper: whether it is here, get it (download) or build it")
+    phsub = ph.add_subparsers(dest="pkhex_command", required=True)
+    phsub.add_parser("status", help="where the helper is, or what is missing").set_defaults(func=cmd_pkhex)
+    phsub.add_parser("get", help="download the self-contained helper for this computer from PokeUDS's releases"
+                     ).set_defaults(func=cmd_pkhex)
+    phsub.add_parser("build", help="dotnet build it (needs the .NET 10 SDK)").set_defaults(func=cmd_pkhex)
+
+    pl = sub.add_parser("plugins", help="installed plugins (docs/plugins.md)")
+    psub = pl.add_subparsers(dest="plugins_command", required=True)
+    psub.add_parser("list", help="plugins, what they add and why one failed").set_defaults(func=cmd_plugins)
+    p = psub.add_parser("install", help="install a .udsplugin after showing what it does")
+    p.add_argument("file")
+    p.add_argument("--yes", action="store_true", help="accept: it runs with full access")
+    p.set_defaults(func=cmd_plugins)
+    p = psub.add_parser("remove", help="remove a plugin")
+    p.add_argument("id")
+    p.add_argument("--data", action="store_true", help="also delete its saved data")
+    p.set_defaults(func=cmd_plugins)
+    for name in ("enable", "disable"):
+        p = psub.add_parser(name, help=f"turn a plugin {'on' if name == 'enable' else 'off'}")
+        p.add_argument("id")
+        p.set_defaults(func=cmd_plugins)
+    p = sub.add_parser("plugin", help="run a plugin's tool: pokeuds plugin run TOOL -- ARGS")
+    pr = p.add_subparsers(dest="plugin_command", required=True)
+    p = pr.add_parser("run", help="run a plugin tool's script")
+    p.add_argument("tool")
+    p.add_argument("args", nargs=argparse.REMAINDER)
+    p.set_defaults(func=cmd_plugin_run)
 
     p = sub.add_parser("trade", help="trade with a retail console")
     p.add_argument("game", choices=GAME_KEYS)

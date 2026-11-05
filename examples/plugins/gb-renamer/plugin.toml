@@ -1,0 +1,6 @@
+id = "gb-renamer"
+name = "Game Boy renamer"
+version = "1.0.0"
+author = "PokeUDS"
+description = "An offer edit: every Pokemon a Red/Blue/Yellow or Gold/Silver/Crystal trade offers is nicknamed (UDS by default). Shows how an edit runs before PKHeX's check."
+api = "1.0"

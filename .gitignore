@@ -19,3 +19,4 @@ profiles/*.local.toml
 services/pkhex/bin/
 services/pkhex/obj/
 services/pkhex/publish/
+services/pkhex/dist/

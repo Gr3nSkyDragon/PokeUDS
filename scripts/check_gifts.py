@@ -1,7 +1,7 @@
 """Every official Gen 6/7 Mystery Gift card PKHeX.Core embeds, end to end (about a minute and a half).
 
 Each card is written as a .wc6/.wc7 into OUT_DIR, opened again through the PKHeX helper, written and opened as
-a 784-byte full file, made into its Pokemon for an English trainer, checked by PKHeX and put in a scratch bank.
+a 784-byte full file, turned into the card editor's fields and rebuilt from them (byte for byte), made into its Pokemon for an English trainer, checked by PKHeX and put in a scratch bank.
 Prints counts and any failure; exits 1 on a failure.
 
     python scripts/check_gifts.py OUT_DIR
@@ -40,6 +40,11 @@ for game in ("xy", "oras", "sm", "usum"):
         full = h.gift(game, data=opened.full_data, trainer=tr)
         if full.card_data[:] != raw or full.card["card_id"] != c["card_id"]:
             problems.append((game, path.name, "full file did not round-trip"))
+        fields = h.card_fields(game, data=raw)
+        if fields["kind"] != "other" and c["card_id"] > 0:
+            if h.card(game, **fields).card_data != raw:
+                problems.append((game, path.name, "the editor's fields did not rebuild the card"))
+            stats["fields round trip"] += 1
         if opened.pokemon is None:
             continue
         p = opened.pokemon

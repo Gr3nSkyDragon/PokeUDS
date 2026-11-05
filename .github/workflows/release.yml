@@ -1,0 +1,60 @@
+# A release of PokeUDS's PKHeX helper: self-contained executables for each computer, which the app downloads
+# (Settings, PKHeX helper; `pokeuds pkhex get`) so players need no .NET SDK. Push a tag like v0.2.0, or run it
+# by hand from the Actions tab with a tag name. docs/pkhex.md, Getting the helper.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "The release tag to create or add the helpers to (e.g. v0.2.0)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  helper:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            rids: "--rid win-x64 --rid win-arm64 --rid linux-x64 --rid linux-arm64"
+          - os: macos-latest            # Apple Silicon runs only signed programs; the SDK signs them on a Mac
+            rids: "--rid osx-arm64 --rid osx-x64"
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: python scripts/publish_pkhex.py ${{ matrix.rids }} --out assets
+      - uses: actions/upload-artifact@v4
+        with:
+          name: helper-${{ matrix.os }}
+          path: assets/pokeuds-pkhex-*
+
+  release:
+    needs: helper
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: assets
+          merge-multiple: true
+      - name: SHA256SUMS
+        run: cd assets && sha256sum pokeuds-pkhex-* > SHA256SUMS && cat SHA256SUMS
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 || \
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "PokeUDS $TAG" \
+              --notes "The PKHeX helper for each computer: the app downloads the one it needs (docs/pkhex.md)."
+          gh release upload "$TAG" assets/* --repo "$GITHUB_REPOSITORY" --clobber

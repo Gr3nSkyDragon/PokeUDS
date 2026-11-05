@@ -9,6 +9,7 @@ import sys
 import flet as ft
 
 from .. import theme as t
+from ..translate import translate
 
 
 class View:
@@ -23,14 +24,14 @@ class View:
         self.root = ft.Container(expand=True)
 
     def control(self) -> ft.Container:
-        self.root.content = self.build()
+        self.root.content = translate(self.build())
         return self.root
 
     def build(self) -> ft.Control:
         raise NotImplementedError
 
     def refresh(self) -> None:
-        self.root.content = self.build()
+        self.root.content = translate(self.build())
         try:
             self.root.page                  # raises when the view is not on the page (Flet 1.0)
         except RuntimeError:

@@ -31,23 +31,37 @@ def test_wish_checks_and_request():
     assert six["nature"] == 0 and six["ability"] == "1" and six["ball"] == 4 and six["held_item"] == 234 and six["shiny"]
 
 
-def test_builder_page_builds_headless(tmp_path, monkeypatch):
+def test_trade_page_builder_headless(tmp_path, monkeypatch):
     pytest.importorskip("flet")
     monkeypatch.setenv("POKEUDS_DATA", str(tmp_path))
     from gui.app import App
-    from gui.views import builder as page
+    from gui.views import builder as panel
+    from gui.views.trade import TradeView
+    from pokeuds.app import bank
     from pokeuds.app.settings import Settings
 
-    app = App(None, Settings(output=str(tmp_path / "received")))
-    monkeypatch.setattr(page, "_helper_ready", lambda: False)
-    page.BuilderView(app).control()                     # the "build the helper" card
-    monkeypatch.setattr(page, "_helper_ready", lambda: True)
-    view = page.BuilderView(app)
+    app = App(None, Settings(output=str(tmp_path / "received"), last_game="gsc"))
+    trade = TradeView(app)
+    trade.toggle_builder()
+    assert trade.building and trade.builder.wish.game == "gsc"
+    monkeypatch.setattr(panel, "_helper_ready", lambda: False)
+    trade.control()                                     # the "build the helper" card inside the Trade page
+    monkeypatch.setattr(panel, "_helper_ready", lambda: True)
     for game in builder.GAMES:
-        view.lists[game] = {"species": [[25, "Pikachu"], [1, "Bulbasaur"]], "moves": [[84, "Thunder Shock"]],
-                            "items": [[1, "Master Ball"]], "balls": [[4, "Poke Ball"]], "natures": [[3, "Adamant"]]}
-        view.wish.game = game
-        view.control()
+        trade.builder.lists[game] = {"species": [[25, "Pikachu"], [1, "Bulbasaur"]], "moves": [[84, "Thunder Shock"]],
+                                     "items": [[1, "Master Ball"]], "balls": [[4, "Poke Ball"]], "natures": [[3, "Adamant"]]}
+        trade.pick_game(game)
+        assert trade.builder.wish.game == game
+        trade.control()
+    # A built Pokemon becomes the offer and closes the panel.
+    from pokeuds.radio.demo import sample_mon
+    trade.pick_game("rby")
+    entry, _ = bank.Bank().deposit(sample_mon(1, 25, 12, "PIKA").to_file(), "pk1", source="built")
+    trade.building = True
+    trade._built(entry, "Built it")
+    assert not trade.building and trade.offer and "Pikachu" in trade.offer.summary
+    assert app.settings.offers["rby"] == str(entry.path) and trade.problems() == ["Console keys: No aes_keys.txt chosen (Settings)"]
+    trade.control()
 
 
 @pytest.mark.skipif(pkhex.helper_path() is None, reason="the PKHeX helper is not built")
@@ -78,10 +92,18 @@ def test_gifts_page_builds_headless(tmp_path, monkeypatch):
     view.control()                                   # with the result panel
     view._keep(None)
     assert view.saved and view.saved.species == "Rayquaza" and view.saved.source == "gift"
-    view.mode = "custom"
-    view.lists["oras"] = {"species": [[25, "Pikachu"]], "items": [[50, "Rare Candy"]]}
+    view._customize(None)                            # the official card into the editor
+    assert view.mode == "custom" and view.editor.f["species"] == 384 and view.editor.f["shiny"] == "always"
+    lists = pkhex.shared().lists("oras")
+    view.editor.lists["oras"], view.editor.texts["oras"] = lists, [(43, 233, ["An example"])]
+    view.editor.more = True
+    view.control()
     for kind in ("pokemon", "item"):
-        view.form["kind"] = kind
+        view.editor._kind(kind)
         view.control()
+    view.editor.f["ot"] = "KUKUI"                    # named OT shows its own fields
+    view.control()
+    gift = view.editor.make()
+    assert gift.card["kind"] == "item" and len(gift.card_data) == 264
     view.mode = "file"
     view.control()

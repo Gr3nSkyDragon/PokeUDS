@@ -1,0 +1,8 @@
+id = "pseudo"
+name = "Pseudo"
+version = "1.0.0"
+author = "PokeUDS"
+description = "A pseudo-locale: every string the app shows, accented and in brackets, to see what a language pack covers. Start a real pack from pokeuds/app/data/strings.en.toml."
+api = "1.1"
+locale = "qps-ploc"
+strings = "strings.toml"

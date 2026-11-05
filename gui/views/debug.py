@@ -29,7 +29,7 @@ class DebugView(View):
         scan = t.card(
             t.heading("Network scan"),
             t.label("Lists every 3DS local wireless network in range, any game: comm id, players, application data. "
-                    "Uses the radio on the Radio page."),
+                    "Uses the connection chosen on the Trade page."),
             ft.Row([ft.Dropdown(label="Seconds", value=str(self.seconds), width=120, disabled=busy,
                                 options=[ft.DropdownOption(key=str(n), text=str(n)) for n in (10, 20, 30, 60)],
                                 on_select=self._seconds),

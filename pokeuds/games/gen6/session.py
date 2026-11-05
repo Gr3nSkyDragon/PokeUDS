@@ -417,11 +417,18 @@ def party_record(offer: bytes) -> bytes:
         from ... import pkhex
 
         built = pkhex.shared().check("xy", offer)
-        if len(built.data) == pkx.PARTY_SIZE and pkx.checksum_valid(built.data[:pkx.PARTY_SIZE]):
-            return built.data
+        data = built.data
+        # The checksum covers only the box part, so check the party part has stats too (level, max HP).
+        if (len(data) == pkx.PARTY_SIZE and pkx.checksum_valid(data) and data[PARTY_LEVEL]
+                and data[PARTY_MAX_HP] | data[PARTY_MAX_HP + 1]):
+            return data
+        log.warning("the PKHeX helper returned no party stats for the offer; update it, or offer a party .pk6")
     except Exception as exc:  # The helper is optional.
-        log.warning("no party stats for the offer (%s); build the PKHeX helper or offer a party .pk6", exc)
+        log.warning("no party stats for the offer (%s); get the PKHeX helper or offer a party .pk6", exc)
     return offer + bytes(pkx.PARTY_SIZE - len(offer))
+
+
+PARTY_LEVEL, PARTY_MAX_HP = 0xEC, 0xF2     # In the party block (PKHeX PK6: Stat_Level, Stat_HPMax).
 
 
 def trainer_from_offer(offer: bytes, version: int, settings: dict | None = None) -> wire.Trainer:

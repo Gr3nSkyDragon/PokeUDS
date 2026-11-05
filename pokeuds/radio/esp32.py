@@ -80,7 +80,7 @@ class Esp32Radio(Radio):
         name = self.port_name or find_port()
         if not name:
             raise RuntimeError(
-                "No ESP32-S3 found. Connect the board's native USB port (Espressif USB "
+                "No ESP32 found. Connect the board's native USB port (Espressif USB "
                 "Serial/JTAG, 303A:1001) or pass --port.")
         deadline = time.monotonic() + OPEN_TIMEOUT
         restarted = opened = False

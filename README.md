@@ -20,11 +20,12 @@ messages still need one capture ([docs/captures.md](docs/captures.md)).
 | UDS session, host | ✓ | ✓ | ✓ | ✓ | ✓ experimental | ✓ experimental |
 | Trade messages | ✓ | ✓ (X/Y's values, assumed) | needs a capture | needs a capture | ✓ | ✓ |
 
-✓ works in simulation, untested on hardware; Gen 6 also replays the five captured X sessions to the end. All four 3DS generations' games share one trade
-session (`games/trade.py`); `games/gen6` and `games/gen7` declare the games, and each game reads its
-constants from `profiles/<game>.toml`. Local trades never cross a generation.
+✓ works in simulation, untested on hardware; Gen 6 also replays the five captured X sessions to the end.
+X/Y and ORAS trade from the PSS through `games/gen6`; Sun/Moon and USUM use the generic session in
+`games/trade.py` until their messages are mapped. Each game reads its constants from
+`profiles/<game>.toml`. Local trades never cross a generation.
 
-The Virtual Console Gen 1 and 2 games are the first with the **whole trade implemented** (tested in simulation, not yet on hardware): their link protocol is
+The Virtual Console Gen 1 and 2 games also have the **whole trade implemented** (tested in simulation, not yet on hardware): their link protocol is
 known (pret's disassemblies for the Game Boy side, Gr3nSkyDragon's captures for the VC's Pia session), so
 PokeUDS trades a `.pk1`/`.pk2` from end to end, including mail between Gen 2 games and the Time Capsule in
 both directions ([docs/vc.md](docs/vc.md)).
@@ -59,10 +60,11 @@ pip install -r requirements-gui.txt
 python -m gui
 ```
 
-Pick a game, the Pokemon to offer and who hosts, then Start ([docs/gui.md](docs/gui.md)). The Bank keeps
-every Pokemon received, imported or built; the Builder makes a legal one with PKHeX when you have no file
-([docs/pkhex.md](docs/pkhex.md); build the helper once with `dotnet build -c Release services/pkhex`); the
-Board page installs the ESP32 firmware. Settings, Debug tools adds a demo radio that trades with a
+Pick a game, the Pokemon to offer, who hosts and the connection, then Start ([docs/gui.md](docs/gui.md)).
+No file to offer? Build one makes a legal Pokemon with PKHeX right there ([docs/pkhex.md](docs/pkhex.md)):
+the app offers to get the PKHeX helper the first time, a download with nothing to install (or build it with the
+.NET 10 SDK). The Bank keeps every Pokemon
+received, imported or built; the Board page installs the ESP32 firmware. Settings, Debug tools adds a demo radio that trades with a
 simulated 3DS, a network scan and capture analysis.
 
 ### The command line
@@ -133,8 +135,11 @@ filled in from captures.
 | `pokeuds/vc/` | Virtual Console: Pia frames and session, the Game Boy trade engine, the end-to-end trade |
 | `pokeuds/gbpk.py` | .pk1/.pk2 records and the Time Capsule conversions |
 | `profiles/` | Per-game constants filled in from captures |
-| `gui/`, `pokeuds/app/` | The app (Flet) and what it shares with the command line: settings, catalog, child runs, progress |
-| `docs/` | [The app](docs/gui.md), [architecture](docs/architecture.md), [UDS protocol](docs/uds.md), [Generation 6](docs/gen6.md), [Virtual Console](docs/vc.md), [hardware](docs/hardware.md), [captures](docs/captures.md), [PKHeX helper](docs/pkhex.md), [Mystery Gift feasibility](docs/mystery_gift.md) |
+| `gui/`, `pokeuds/app/` | The app (Flet) and what it shares with the command line: settings, catalog, child runs, progress, strings and language packs |
+| `pokeuds/plugins.py`, `plugin_guard.py`, `examples/plugins/` | Plugins and language packs, the install guardrails, example plugins ([docs/plugins.md](docs/plugins.md)) |
+| `services/pkhex/` | The PKHeX helper: builds and checks Pokemon, Mystery Gift cards and the card editor ([docs/pkhex.md](docs/pkhex.md)) |
+| `scripts/` | Table generation, gift and language-pack checks, plugin packing, publishing the PKHeX helper |
+| `docs/` | [The app](docs/gui.md), [architecture](docs/architecture.md), [UDS protocol](docs/uds.md), [Generation 6](docs/gen6.md), [Virtual Console](docs/vc.md), [hardware](docs/hardware.md), [captures](docs/captures.md), [PKHeX helper](docs/pkhex.md), [Mystery Gift](docs/mystery_gift.md), [Wonder Cards](docs/wonder_cards.md), [Plugins](docs/plugins.md) |
 
 ```bash
 python -m pytest -q
