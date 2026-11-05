@@ -86,4 +86,6 @@ about a real console. It needs no console keys.
 
 ## Screenshots
 
-`POKEUDS_GUI_WEB=8550 python -m gui` serves the app to a browser instead of opening a window.
+`POKEUDS_GUI_WEB=8550 python -m gui` serves the app to a browser instead of opening a window. Add `POKEUDS_GUI_HOST=0.0.0.0` to
+reach it from another machine (a phone on the same network, a preview pane); it has no login, so only
+do that on a network you trust.

@@ -1,6 +1,7 @@
 """The PokeUDS app: ``python -m gui``.
 
-``POKEUDS_GUI_WEB=<port>`` serves it to a browser instead of opening a window (for screenshots).
+``POKEUDS_GUI_WEB=<port>`` serves it to a browser instead of opening a window (for screenshots);
+``POKEUDS_GUI_HOST`` chooses the address it listens on (default: this machine only).
 """
 
 from __future__ import annotations
@@ -90,7 +91,8 @@ def main(page: ft.Page) -> None:
 
 def run() -> None:
     if port := os.environ.get("POKEUDS_GUI_WEB"):
-        ft.run(main, view=ft.AppView.WEB_BROWSER, no_cdn=True, port=int(port))
+        # POKEUDS_GUI_HOST=0.0.0.0 also serves other machines (a preview pane, a phone on the LAN).
+        ft.run(main, view=ft.AppView.WEB_BROWSER, no_cdn=True, port=int(port), host=os.environ.get("POKEUDS_GUI_HOST") or None)
     else:
         ft.run(main)
 
