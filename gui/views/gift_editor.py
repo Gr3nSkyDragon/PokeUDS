@@ -171,6 +171,16 @@ class GiftEditor(View):
             ft.Row([ft.Checkbox(label=name, value=bool(int(f.get("versions", 0)) & bit),
                                 on_change=lambda e, b=bit: self._version(b, e.control.value))
                     for name, bit in VERSION_BITS[gen]], spacing=16),
+            t.heading("Local distribution (.wc%dfull)" % gen),
+            ft.Row([ft.TextField(label="Distribution text", value=f.get("distribution_text", ""), width=420, dense=True,
+                                 multiline=True, min_lines=2, max_lines=4, max_length=252,
+                                 hint_text="Empty: \"<what it gives> will be given to you as a gift!\"",
+                                 on_blur=lambda e: self._set("distribution_text", e.control.value or "")),
+                    ft.Switch(label="Halo while receiving", value=bool(f.get("halo")),
+                              on_change=lambda e: self._set("halo", bool(e.control.value)))],
+                   wrap=True, spacing=16, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+            t.label("What the game shows while it receives the gift from a distributor. Only the full file carries it.",
+                    size=12),
         ]
         return t.card(*rows, spacing=10)
 
@@ -396,7 +406,7 @@ class GiftEditor(View):
     def _kind(self, value) -> None:
         if value == self._shown_kind():
             return
-        keep = {k: self.f[k] for k in ("card_id", "title", "text", "date", "versions", "multi_obtain") if k in self.f}
+        keep = {k: self.f[k] for k in ("card_id", "title", "text", "date", "versions", "multi_obtain", "distribution_text", "halo") if k in self.f}
         self.f = {**giftfile.new_fields(self.game, value), **keep}
         self.last = None
         self.refresh()

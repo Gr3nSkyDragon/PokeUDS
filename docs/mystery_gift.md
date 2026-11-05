@@ -34,16 +34,51 @@ worth pursuing**; Gen 2 trades already deliver any Pokemon or held item.
 
 - **The containers.** A gift as a distributor sends it is a "full" file: **784 bytes (0x310)**, a
   **520-byte (0x208) distribution header** followed by the **264-byte (0x108) card** (PKHeX.Core's
-  `WC6Full` / `WC7Full`, `GiftStart` = 0x208). The header carries the distribution's restrictions, among
-  them the games (`RestrictVersion`, at 0x000) and languages (`RestrictLanguage`, at 0x1FF) it is offered
-  to. The card is the familiar `.wc6` / `.wc7`: card ID, title, date, the Pokemon or item, and its flags
-  (one per save, once a day, already received). Event archives keep most cards in both forms.
+  `WC6Full` / `WC7Full`, `GiftStart` = 0x208). The header is mapped below ("The full file"). The card is
+  the familiar `.wc6` / `.wc7`: card ID, title, date, the Pokemon or item, and its flags (one per save, once
+  a day, already received). Event archives keep most cards in both forms.
 - **The link.** All 3DS local wireless is UDS, so a local distribution is UDS: either a session the game
   joins (as with the PSS and the Festival Plaza), or beacons alone, as Sword and Shield do it (next
   section). PokeUDS has both sides: beacons it sends on its own timer, and the join, CCMP and data channels.
 - **The games' side.** Receiving is a menu in each game's Mystery Gift: the game looks for a nearby
   distribution, lists what it finds, and saves the card it accepts. A Gen 6/7 game cannot distribute; only
   Nintendo's distribution software (official, event-only) does.
+- **What X looks for** (Pokemon X in Azahar, Mystery Gift > Get via Local Wireless, about 70 s with nothing
+  in range, 2026-11-05): it starts UDS and only scans, never hosts, polling the beacons every 0.3 s for
+  **comm id 0x00055D10**, the PSS's own (profiles/xy.toml), with **network id 255** (any) and no MAC
+  filter. So a distribution is a network of the Gen 6 comm id, told apart from the PSS presence (id 2) and
+  the trade network (id 1) by its network id or beacon data, neither seen yet. Gen 7 not looked at yet.
+
+
+### The full file
+
+The header, as Project Pokemon mapped it from RAM dumps of local wireless events (theSLAYER, 2017), checked
+against every full file PKHeX.Core embeds (422 Gen 6, 801 Gen 7):
+
+| Offset | Size | Holds |
+|---|---|---|
+| 0x000 | 4 | the games that may receive it: bits 1 X / Sun, 2 Y / Moon, 4 Alpha Sapphire / Ultra Sun, 8 Omega Ruby / Ultra Moon (0x001-0x003 zero in all) |
+| 0x004 | 0x1FA | the distribution text the receiving screen shows: UTF-16, `
+` line breaks, NUL-terminated (up to 506 bytes seen) |
+| 0x1FE | 1 | 1: a halo effect while receiving (7 Gen 6 cards, 17 Gen 7, Marshadow and Ash's Pikachu among them) |
+| 0x1FF | 1 | the language it is limited to; 0 any (0 in all) |
+| 0x200 | 1 | 1: receivable once a day (mostly, not always, the Gen 7 card's own once-a-day flag) |
+| 0x201 | 1 | the card's place in a set |
+| 0x202 | 2 | **CRC-16/CCITT-FALSE** (poly 0x1021, init 0xFFFF, gflnet's) of all 784 bytes with this field zero, little-endian: every one of the 1223 matches |
+| 0x204 | 1 | the number of cards in a set (one more than the set holds: receivable once although repeatable) |
+| 0x205 | 1 | Gen 6: 0x46; Gen 7: a weight for picking from a random set, mostly 0 |
+| 0x206 | 2 | 0x46 0x46 |
+| 0x208 | 0x108 | the card |
+
+The game takes a distribution whole (up to 20 full files, 0x310 apart in its memory) and picks from it: at
+random from a random set, else every card. The official distributors check the checksum.
+
+PokeUDS writes the whole header (`services/pkhex/Gifts.cs`): an official card gets the header of PKHeX's own
+full file of it (its real distribution text, in its language), byte for byte; a card opened from a full file
+keeps that file's header; a new card gets "<what it gives> will be given to you as a gift!", the fixed bytes,
+and the card's once-a-day flag. The card editor's **distribution text** and **halo** fields change it, and the
+checksum is always computed anew. A card that several official files share (3 Gen 6, 13 Gen 7, with
+different texts) takes the first one's header.
 
 ### How pokeldn does it, and what that suggests
 
@@ -74,8 +109,9 @@ in PokeUDS is mostly beacons, which both radios already send.
 
 None of this is documented, and no capture is known to be public:
 
-1. **The network the game looks for:** its local communication ID and the beacon's application data
-   (how it recognises a distribution), and the passphrase the CCMP key derives from.
+1. **The network the game looks for:** the comm id is known for Gen 6 (above); not the network id or
+   beacon application data that mark a distribution, nor whether the game joins at all (a passphrase for
+   the CCMP key) or reads the gifts from beacons alone.
 2. **The exchange:** what the game sends once joined, how the distributor offers its gifts (a list,
    then one full file, or several), in what framing (a transport like the VC's Pia, or the game's own), and
    what acknowledges a received gift.

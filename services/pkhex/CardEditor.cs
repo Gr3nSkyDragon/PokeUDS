@@ -13,6 +13,7 @@
 //           date (yyyy-mm-dd), kind ("pokemon", "item"; Gen 7 also "bp", "beans"), versions (RestrictVersion
 //           bits: 1 X/Sun, 2 Y/Moon, 4 AS/US, 8 OR/UM; 0 all), restrict_language (full file only),
 //           multi_obtain, once_per_day (Gen 7), repeatable (Gen 7), card_flags (raw byte 0x52), extra_66.
+// Full file: distribution_text (what the receiving screen says; "" for the default), halo (its halo effect).
 // Pokemon:  species, form, level, met_level, is_egg, egg_location, met_location, ball, held_item, moves[4],
 //           relearn[4], nickname, language (0: the receiver's), ot (""/absent: the receiver; then tid, sid,
 //           ot_gender), origin_game (0: the receiver's), shiny ("random", "always", "never", "fixed" with pid),
@@ -280,12 +281,20 @@ static partial class Program
     static JsonObject CardFieldsReply(Game game, JsonObject request)
     {
         MysteryGift gift;
+        byte[]? header = null;
         if ((string?)request["key"] is { } key)
             gift = Table(game).FirstOrDefault(g => GiftKey(g) == key && ForGame(game, g))
                    ?? throw new ArgumentException($"no card {key} for this game");
         else
-            gift = CardFromBytes(game, Convert.FromBase64String((string)request["data"]!));
-        return new JsonObject { ["ok"] = true, ["fields"] = CardFields(game, (DataMysteryGift)gift) };
+            gift = CardFromBytes(game, Convert.FromBase64String((string)request["data"]!), out header);
+        var card = (DataMysteryGift)gift;
+        var fields = CardFields(game, card);
+        // The distribution header's own fields: from the full file the card came from, or PKHeX's official one.
+        var bytes = card.Data.ToArray();
+        var full = header is not null ? [.. header, .. bytes] : OfficialFullFile(game.Generation, bytes);
+        fields["distribution_text"] = full is null ? "" : GetDistributionText(full);
+        fields["halo"] = full is not null && full[FullHalo] == 1;
+        return new JsonObject { ["ok"] = true, ["fields"] = fields };
     }
 
     static JsonObject CardFields(Game game, DataMysteryGift card)

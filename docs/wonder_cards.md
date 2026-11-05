@@ -12,7 +12,7 @@ itself cannot write back.
 | file | size | what it is |
 |---|---|---|
 | `.wc6` / `.wc7` | 264 (0x108) | the card, as PKHeX, the event galleries and a save's card album keep it |
-| `.wc6full` / `.wc7full` | 784 (0x310) | a distribution: a 520-byte (0x208) header, then the card; the header's 0x000 is `RestrictVersion`, 0x1FF `RestrictLanguage`, the rest not mapped |
+| `.wc6full` / `.wc7full` | 784 (0x310) | a distribution: a 520-byte (0x208) header, then the card (the header: [mystery_gift.md](mystery_gift.md), "The full file") |
 | `.udsgift` | JSON | PokeUDS's saved custom gift: the editor's fields (below), and the card they made |
 
 ## The card
@@ -92,7 +92,9 @@ means random. A blank card (`pokeuds.app.giftfile.new_fields`) holds what most o
 
 `versions` is the RestrictVersion mask: 1 X / Sun, 2 Y / Moon, 4 Alpha Sapphire / Ultra Sun, 8 Omega Ruby /
 Ultra Moon, 0 all. An item card holds `items: [{"item": 50, "quantity": 5}]` (one in Gen 6, up to six in Gen 7);
-a Battle Points card `quantity`; a Poke Beans card `bean` and `quantity`.
+a Battle Points card `quantity`; a Poke Beans card `bean` and `quantity`. Two fields are the full file's, not the
+card's: `distribution_text` (what the receiving screen says; `""` for the default, or the text of the full file
+or official card it was opened from) and `halo` (its halo effect while receiving).
 
 A Gen 6 card cannot say "the receiver is the OT" for a Pokemon (no official non-egg card does, and the game
 copies the card's IDs), so a Gen 6 card for the receiver names the trainer the app uses (the Trade page's

@@ -63,7 +63,8 @@ def new_fields(game: str, kind: str = "pokemon") -> dict:
         return fields
     # card_flags 1: bit 0 "not repeatable", set on nearly every official card; bit 1 would mark it received.
     fields = {"card_id": 2000, "title": "PokeUDS gift", "text": 43 if gen == 6 else 44, "date": date.today().isoformat(),
-              "kind": kind, "versions": 0, "multi_obtain": False, "card_flags": 1}
+              "kind": kind, "versions": 0, "multi_obtain": False, "card_flags": 1,
+              "distribution_text": "", "halo": False}          # the full file's distribution header
     if kind == "pokemon":
         fields.update(species=25, form=0, level=10, met_level=10, is_egg=False, egg_location=0, met_location=LOVELY_PLACE,
                       ball=4, held_item=0, moves=[0, 0, 0, 0], relearn=[0, 0, 0, 0], nickname="", language=0, ot="",

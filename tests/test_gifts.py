@@ -176,3 +176,46 @@ def test_egg_cards(helper):
         assert any("event Egg" in line for line in problems)              # no such event: PKHeX says so
     short = helper.card("oras", trainer=TRAINER, kind="egg", species=371)       # the helper's own egg kind
     assert short.card["kind"] == "egg" and short.card_data[0xA6] == 0 and short.card_data[0xA4] == 0x4A   # 40010
+
+
+def full_crc(full: bytes) -> int:
+    """CRC-16/CCITT-FALSE over the full file with its checksum field (0x202) zero."""
+    crc = 0xFFFF
+    for b in full[:0x202] + b"\0\0" + full[0x204:]:
+        crc ^= b << 8
+        for _ in range(8):
+            crc = ((crc << 1) ^ 0x1021) & 0xFFFF if crc & 0x8000 else (crc << 1) & 0xFFFF
+    return crc
+
+
+def distribution_text(full: bytes) -> str:
+    return full[4:0x1FE].decode("utf-16-le").split("\0")[0]
+
+
+def test_full_files_carry_a_whole_distribution_header(helper):
+    six = helper.card("xy", trainer=TRAINER, species=25, level=30, title="PokeUDS Pikachu")
+    full = six.full_data
+    assert int.from_bytes(full[0x202:0x204], "little") == full_crc(full)
+    assert distribution_text(full) == "Pikachu\nwill be given to you as a gift!"
+    assert full[0] == 15 and full[0x205:0x208] == b"FFF" and full[0x208:] == six.card_data
+    seven = helper.card("sm", trainer=TRAINER, species=25, level=30, distribution_text="Hello\nfrom PokeUDS", halo=True)
+    full = seven.full_data
+    assert int.from_bytes(full[0x202:0x204], "little") == full_crc(full)
+    assert distribution_text(full) == "Hello\nfrom PokeUDS" and full[0x1FE] == 1 and full[0x205:0x208] == b"\0FF"
+    assert helper.gift("sm", data=full, trainer=TRAINER).full_data == full        # opened again: the header stays
+    fields = helper.card_fields("sm", data=full)
+    assert (fields["distribution_text"], fields["halo"]) == ("Hello\nfrom PokeUDS", True)
+    with pytest.raises(ValueError, match="at most 252"):
+        helper.card("sm", species=25, distribution_text="x" * 253)
+
+
+def test_official_cards_keep_their_own_full_file(helper):
+    """A card PKHeX has a distributor's full file for comes back as that file, distribution text and all."""
+    for game in ("oras", "usum"):
+        cards = [c for c in helper.gifts(game, all=True) if c["kind"] == "pokemon"]
+        texts = []
+        for c in cards[:40]:
+            g = helper.gift(game, data=base64.b64decode(c["card_data"]), trainer=TRAINER)
+            assert int.from_bytes(g.full_data[0x202:0x204], "little") == full_crc(g.full_data)
+            texts.append(distribution_text(g.full_data))
+        assert any("will be given" not in t for t in texts)      # some carry an official text of their own

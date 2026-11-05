@@ -3,8 +3,18 @@
 // requested trainer would receive it, and checked; a custom card's Pokemon matches no real event, so PKHeX's
 // check refuses it ("custom" says so).
 //
-// Card files: a .wc6 / .wc7 is the 264-byte card; a full file (.wc6full / .wc7full) is 784 bytes, a 520-byte
-// distribution header (RestrictVersion at 0x000, RestrictLanguage at 0x1FF, the rest not mapped) then the card.
+// Card files: a .wc6 / .wc7 is the 264-byte card; a full file (.wc6full / .wc7full) is 784 bytes, the 520-byte
+// distribution header a local distributor sends, then the card at 0x208 (docs/mystery_gift.md, "The full file"):
+//   0x000      the games that may receive it (RestrictVersion bits; 0x001-0x003 zero)
+//   0x004      the distribution text, UTF-16 with \n line breaks, NUL-terminated (0x1FA bytes)
+//   0x1FE      1: the receiving screen's halo effect
+//   0x1FF      the language it is limited to (0: any)
+//   0x200      1: receivable once a day
+//   0x201      the card's place in a set; 0x204 the number of cards in the set
+//   0x202      CRC-16/CCITT-FALSE of all 784 bytes with this field zero, little-endian (every one of PKHeX's
+//              422 Gen 6 and 801 Gen 7 full files matches)
+//   0x205      Gen 6: 0x46; Gen 7: a weight for random sets, mostly 0
+//   0x206      0x46 0x46
 
 using System.Text.Json.Nodes;
 using PKHeX.Core;
@@ -12,6 +22,8 @@ using PKHeX.Core;
 static partial class Program
 {
     const int CardSize = 0x108, FullSize = 0x310, FullCardAt = 0x208;
+    const int FullTextAt = 0x004, FullTextSize = 0x1FA, FullHalo = 0x1FE, FullLanguage = 0x1FF, FullOncePerDay = 0x200,
+              FullChecksumAt = 0x202;
 
     // RestrictVersion bits: 1 X / Sun, 2 Y / Moon, 4 Alpha Sapphire / Ultra Sun, 8 Omega Ruby / Ultra Moon.
     static readonly Dictionary<GameVersion, int> VersionBit = new()
@@ -117,8 +129,12 @@ static partial class Program
 
     // -- one card -----------------------------------------------------------------------------
 
-    static MysteryGift CardFromBytes(Game game, byte[] data)
+    static MysteryGift CardFromBytes(Game game, byte[] data) => CardFromBytes(game, data, out _);
+
+    // ``header``: a full file's distribution header (its first 0x208 bytes), or null for a bare card.
+    static MysteryGift CardFromBytes(Game game, byte[] data, out byte[]? header)
     {
+        header = data.Length == FullSize ? data[..FullCardAt] : null;
         var restrictions = (byte)0;
         var language = (byte)0;
         if (data.Length == FullSize)
@@ -143,12 +159,13 @@ static partial class Program
     static JsonObject Gift(Game game, JsonObject request)
     {
         MysteryGift gift;
+        byte[]? header = null;
         if ((string?)request["key"] is { } key)
             gift = Table(game).FirstOrDefault(g => g.IsEntity && GiftKey(g) == key && ForGame(game, g))
                    ?? throw new ArgumentException($"no card {key} for this game");
         else
-            gift = CardFromBytes(game, Convert.FromBase64String((string)request["data"]!));
-        var reply = GiftReply(game, gift, request, custom: false);
+            gift = CardFromBytes(game, Convert.FromBase64String((string)request["data"]!), out header);
+        var reply = GiftReply(game, gift, request, custom: false, header);
         if (request["key"] is not null)
             Undated(reply["card"]!.AsObject());
         return reply;
@@ -164,14 +181,14 @@ static partial class Program
 
     // The card made into its Pokemon for the trainer, on a version the card reaches, rolled again where a random
     // PID or IVs fail the check; the first legal copy is kept.
-    static JsonObject GiftReply(Game game, MysteryGift gift, JsonObject request, bool custom)
+    static JsonObject GiftReply(Game game, MysteryGift gift, JsonObject request, bool custom, byte[]? header = null)
     {
         var reply = new JsonObject { ["ok"] = true, ["card"] = CardInfo(game, gift), ["custom"] = custom };
         if (gift is DataMysteryGift data)
         {
             var bytes = data.Data.ToArray();
             reply["card_data"] = Convert.ToBase64String(bytes);
-            reply["full_data"] = Convert.ToBase64String(FullFile(gift, bytes));
+            reply["full_data"] = Convert.ToBase64String(FullFile(game, gift, bytes, request, header));
             reply["card_extension"] = game.Generation == 6 ? "wc6" : "wc7";
         }
         if (!gift.IsEntity)
@@ -221,19 +238,124 @@ static partial class Program
         return reply;
     }
 
-    static byte[] FullFile(MysteryGift gift, byte[] card)
+    // The full file a local distributor sends for the card: the header of the full file the card came from, else
+    // that of PKHeX's own copy of an official one (its real distribution text and set fields), else a new header;
+    // then the card as given (an official file of an undated card holds it undated). Request fields
+    // distribution_text and halo change the header; the text defaults to what the card gives. The checksum is
+    // always computed anew, so an official card the same byte for byte gives back PKHeX's file exactly.
+    static byte[] FullFile(Game game, MysteryGift gift, byte[] card, JsonObject request, byte[]? header)
     {
+        var text = (string?)request["distribution_text"] ?? "";
+        var halo = request["halo"] is JsonValue h && h.TryGetValue(out bool on) ? on : (bool?)null;
         var full = new byte[FullSize];
-        card.CopyTo(full, FullCardAt);
         var (version, language) = gift switch
         {
             WC6 w => (w.RestrictVersion, w.RestrictLanguage),
             WC7 w => (w.RestrictVersion, w.RestrictLanguage),
             _ => ((byte)0, (byte)0),
         };
-        full[0x000] = version == 0 ? (byte)15 : version;
-        full[0x1FF] = language;
+        var source = header ?? OfficialFullFile(game.Generation, card);
+        if (source is not null)
+            source.AsSpan(0, FullCardAt).CopyTo(full);
+        else
+        {
+            full[0x205] = game.Generation == 6 ? (byte)0x46 : (byte)0;
+            full[0x206] = full[0x207] = 0x46;
+            full[FullOncePerDay] = (byte)(gift is WC7 { GiftOncePerDay: true } ? 1 : 0);
+            SetDistributionText(full, DefaultDistributionText(gift));
+        }
+        card.CopyTo(full, FullCardAt);
+        // A bare card holds no restrictions (they live in the header): a header taken from a file keeps its own.
+        if (source is null || version != 0)
+        {
+            full[0x000] = version == 0 ? (byte)15 : version;
+            full[FullLanguage] = language;
+        }
+        if (text.Length > 0)
+            SetDistributionText(full, text);
+        if (halo is { } shown)
+            full[FullHalo] = (byte)(shown ? 1 : 0);
+        RefreshFullChecksum(full);
         return full;
+    }
+
+    static void SetDistributionText(byte[] full, string text)
+    {
+        var bytes = System.Text.Encoding.Unicode.GetBytes(text.Replace("\r\n", "\n"));
+        if (bytes.Length > FullTextSize - 2)
+            throw new ArgumentException($"the distribution text is at most {(FullTextSize - 2) / 2} characters");
+        Array.Clear(full, FullTextAt, FullTextSize);
+        bytes.CopyTo(full, FullTextAt);
+    }
+
+    static string GetDistributionText(byte[] full)
+    {
+        var text = System.Text.Encoding.Unicode.GetString(full, FullTextAt, FullTextSize);
+        var end = text.IndexOf('\0');
+        return end >= 0 ? text[..end] : text;
+    }
+
+    // How official cards' distribution text puts it, for a card that brings none.
+    static string DefaultDistributionText(MysteryGift gift) =>
+        gift.IsEgg ? "A Pokémon Egg\nwill be given to you as a gift!"
+        : gift.IsEntity ? $"{Name(Strings.Species, gift.Species)}\nwill be given to you as a gift!"
+        : gift.IsItem ? $"{Name(Strings.Item, gift.ItemID)}\nwill be given to you as a gift!"
+        : gift.CardTitle.Trim();
+
+    static void RefreshFullChecksum(byte[] full)
+    {
+        full[FullChecksumAt] = full[FullChecksumAt + 1] = 0;
+        ushort crc = 0xFFFF;                                   // CRC-16/CCITT-FALSE, as gflnet's
+        foreach (var b in full)
+        {
+            crc ^= (ushort)(b << 8);
+            for (var i = 0; i < 8; i++)
+                crc = (crc & 0x8000) != 0 ? (ushort)((crc << 1) ^ 0x1021) : (ushort)(crc << 1);
+        }
+        full[FullChecksumAt] = (byte)crc;
+        full[FullChecksumAt + 1] = (byte)(crc >> 8);
+    }
+
+    static bool FullChecksumValid(byte[] full)
+    {
+        var copy = full.ToArray();
+        RefreshFullChecksum(copy);
+        return copy[FullChecksumAt] == full[FullChecksumAt] && copy[FullChecksumAt + 1] == full[FullChecksumAt + 1];
+    }
+
+    // The official full files PKHeX.Core embeds (wc6full.pkl, wc7full.pkl), by the card they carry. PKHeX stamps
+    // today's date into the cards of its database that carry none, so a card is also looked up with its date
+    // (0x4C, four bytes) zero, among the full files whose card has no date.
+    static readonly Dictionary<int, Dictionary<string, byte[]>> OfficialFull = [];
+    const int CardDateAt = 0x4C;
+
+    static string UndatedKey(ReadOnlySpan<byte> card)
+    {
+        var copy = card.ToArray();
+        Array.Clear(copy, CardDateAt, 4);
+        return "undated:" + Convert.ToHexString(copy);
+    }
+
+    static byte[]? OfficialFullFile(int generation, byte[] card)
+    {
+        lock (OfficialFull)
+        {
+            if (!OfficialFull.TryGetValue(generation, out var files))
+            {
+                files = [];
+                var raw = Util.GetBinaryResource(generation == 6 ? "wc6full.pkl" : "wc7full.pkl");
+                for (var at = 0; at + FullSize <= raw.Length; at += FullSize)
+                {
+                    var full = raw[at..(at + FullSize)];
+                    var inner = full.AsSpan(FullCardAt, CardSize);
+                    files.TryAdd(Convert.ToHexString(inner), full);
+                    if (inner.Slice(CardDateAt, 4).IndexOfAnyExcept((byte)0) < 0)
+                        files.TryAdd(UndatedKey(inner), full);
+                }
+                OfficialFull[generation] = files;
+            }
+            return files.GetValueOrDefault(Convert.ToHexString(card)) ?? files.GetValueOrDefault(UndatedKey(card));
+        }
     }
 
     // -- a custom card: CardEditor.cs ------------------------------------------------------------
