@@ -660,7 +660,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("game", choices=GAME_KEYS)
     p.add_argument("--out", required=True, help="the card file: .wc6/.wc7, or .wc6full/.wc7full")
     p.add_argument("--project", help="a .udsgift (from the app or `gift edit`): every field; the flags below are ignored")
-    p.add_argument("--kind", choices=["pokemon", "item", "bp", "beans"], default="pokemon")
+    p.add_argument("--kind", choices=["pokemon", "egg", "item", "bp", "beans"], default="pokemon",
+                   help="egg: a Pokemon egg, set as official event eggs (level 1, from a Pokemon Center)")
     p.add_argument("--card-id", type=int, default=2000)
     p.add_argument("--title", default="PokeUDS gift")
     p.add_argument("--species", type=int)

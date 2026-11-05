@@ -151,3 +151,28 @@ def test_gift_project_files(helper, tmp_path):
         giftfile.load(tmp_path / "x.udsgift")
     texts = giftfile.card_texts(helper.gifts("usum", all=True))
     assert texts[0][0] == 44 and texts[0][1] > 100 and any(i == 56 for i, *_ in texts)
+
+
+def test_egg_cards(helper):
+    from pokeuds.app import giftfile
+
+    # Official event eggs are legal, and stay so when opened in the editor and rebuilt.
+    for game in ("oras", "sm"):
+        egg = next(c for c in helper.gifts(game, all=True) if c["kind"] == "egg" and c["card_id"] > 0)
+        fields = giftfile.unreceived(helper.card_fields(game, data=base64.b64decode(egg["card_data"])))
+        assert fields["is_egg"] and fields["level"] == 1 and fields["egg_location"] in (40001, 40010)
+        rebuilt = helper.card(game, trainer=TRAINER, **fields)
+        assert rebuilt.card["kind"] == "egg" and rebuilt.pokemon.legal, rebuilt.pokemon.report
+    # A custom egg: an Egg at level 1, from a Pokemon Center, met nowhere yet; flagged only for being custom.
+    for game in ("xy", "usum"):
+        f = giftfile.new_fields(game, "egg")
+        f["species"] = 25 if game == "xy" else 778
+        gift = helper.card(game, trainer=TRAINER, **f)
+        p = gift.pokemon
+        assert gift.card["kind"] == "egg" and p.summary["nickname"] == "Egg" and p.summary["level"] == 1
+        assert p.summary["ball"] == ("Poké Ball" if game == "xy" else "Cherish Ball")
+        problems = [line for line in p.report.splitlines() if line.startswith("Invalid")]
+        assert problems and not any("Met Date" in line for line in problems)
+        assert any("event Egg" in line for line in problems)              # no such event: PKHeX says so
+    short = helper.card("oras", trainer=TRAINER, kind="egg", species=371)       # the helper's own egg kind
+    assert short.card["kind"] == "egg" and short.card_data[0xA6] == 0 and short.card_data[0xA4] == 0x4A   # 40010

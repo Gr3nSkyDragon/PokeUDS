@@ -43,9 +43,24 @@ def generation(game: str) -> int:
     return 6 if game in ("xy", "oras") else 7
 
 
+EGG_PLACE = 40010          # "a Pokemon Center": where official event eggs come from
+
+
+def is_egg(fields: dict) -> bool:
+    return fields.get("kind") == "pokemon" and bool(fields.get("is_egg"))
+
+
 def new_fields(game: str, kind: str = "pokemon") -> dict:
-    """A blank card as the editor starts it: what most official cards hold."""
+    """A blank card as the editor starts it: what most official cards hold. ``kind`` "egg" is a Pokemon card
+    set as official event eggs are (the 70 of ORAS and 12 of Sun/Moon in PKHeX's database)."""
     gen = generation(game)
+    if kind == "egg":
+        fields = new_fields(game, "pokemon")
+        fields.update(is_egg=True, level=1, met_level=1, met_location=0, egg_location=EGG_PLACE, ability="hidden",
+                      text=7 if gen == 6 else 43, title="A Pokemon Egg for you!",
+                      ball=4 if gen == 6 else 16,              # Gen 6 eggs a Poke Ball, Gen 7's the Cherish Ball
+                      shiny="never" if gen == 6 else "random")
+        return fields
     # card_flags 1: bit 0 "not repeatable", set on nearly every official card; bit 1 would mark it received.
     fields = {"card_id": 2000, "title": "PokeUDS gift", "text": 43 if gen == 6 else 44, "date": date.today().isoformat(),
               "kind": kind, "versions": 0, "multi_obtain": False, "card_flags": 1}

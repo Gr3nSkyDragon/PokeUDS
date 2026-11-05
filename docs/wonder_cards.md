@@ -98,6 +98,28 @@ A Gen 6 card cannot say "the receiver is the OT" for a Pokemon (no official non-
 copies the card's IDs), so a Gen 6 card for the receiver names the trainer the app uses (the Trade page's
 builder trainer).
 
+## Eggs
+
+An egg card is a Pokemon card with the egg byte (0x0D1) set; the editor offers it as **Gives: Pokemon egg**
+(`kind: "egg"` to the helper and `pokeuds gift card --kind egg`), set as PKHeX's official event eggs are:
+
+| | Gen 6 (70 eggs in ORAS's table) | Gen 7 (12 in Sun/Moon's) |
+|---|---|---|
+| level, met level | 1 | 1 |
+| egg from | a Pokemon Center (40010) | a Pokemon Center or a lovely place |
+| met at | nowhere yet (0) for the editor; some Gen 6 cards hold 40001 | nowhere yet (0) |
+| OT | the receiver | the receiver |
+| ball, shiny | Poke Ball, never shiny | Cherish Ball, may be shiny |
+| ability | hidden on most | hidden on half |
+| card text | 7 | 43 or 8 |
+
+It arrives named Egg and hatches at level 1 for whoever hatches it, with the card's nature, ability, IVs,
+moves, ball and item. **Legality:** the official egg cards are legal, also opened with Customize and rebuilt
+unchanged; a custom egg is flagged like any custom card ("Unable to match an event Egg encounter"), and one
+that copies an official egg's species but not its moves is flagged for the moves (an ORAS Bagon egg is
+expected to know Thrash and Rage, as card 142's does). An egg with a met place fails PKHeX's met-date check,
+so the editor leaves it empty.
+
 ## Working with them
 
 | | in the app (Gifts) | command line |

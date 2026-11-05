@@ -7,6 +7,8 @@
 // PKHeX's). Stats are not stored in a card: the game computes them from species, level, nature, IVs and EVs.
 // Six-stat lists (ivs, evs) are in display order: HP, Attack, Defense, Sp. Atk, Sp. Def, Speed.
 //
+// An egg is kind "pokemon" with is_egg; kind "egg" is that with official event eggs' defaults (level 1, from
+// "a Pokemon Center", met nowhere yet).
 // Card:     card_id, title (36 characters; the field holds 37), text (the card text index at 0x50: a message of the game's own),
 //           date (yyyy-mm-dd), kind ("pokemon", "item"; Gen 7 also "bp", "beans"), versions (RestrictVersion
 //           bits: 1 X/Sun, 2 Y/Moon, 4 AS/US, 8 OR/UM; 0 all), restrict_language (full file only),
@@ -81,6 +83,18 @@ static partial class Program
 
     static DataMysteryGift MakeCard(Game game, JsonObject r)
     {
+        if ((string?)r["kind"] == "egg")
+        {
+            // An egg is a Pokemon card with the egg flag, set as official event eggs are: level 1, from "a Pokemon
+            // Center", no met place until it hatches (one there fails PKHeX's met-date check).
+            r = (JsonObject)r.DeepClone();
+            r["kind"] = "pokemon";
+            r["is_egg"] = true;
+            r["level"] ??= 1;
+            r["met_level"] ??= 1;
+            r["met_location"] ??= 0;
+            r["egg_location"] ??= 40010;
+        }
         var six = game.Generation == 6;
         DataMysteryGift card = six ? new WC6(new byte[CardSize]) : new WC7(new byte[CardSize]);
         dynamic c = card;

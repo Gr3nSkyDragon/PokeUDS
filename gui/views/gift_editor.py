@@ -21,8 +21,9 @@ from .. import theme as t
 from .common import View
 from .picker import name_field
 
-KINDS = {6: (("pokemon", "Pokemon"), ("item", "Item")),
-         7: (("pokemon", "Pokemon"), ("item", "Items"), ("bp", "Battle Points"), ("beans", "Poke Beans"))}
+KINDS = {6: (("pokemon", "Pokemon"), ("egg", "Pokemon egg"), ("item", "Item")),
+         7: (("pokemon", "Pokemon"), ("egg", "Pokemon egg"), ("item", "Items"), ("bp", "Battle Points"),
+             ("beans", "Poke Beans"))}
 VERSION_BITS = {6: (("X", 1), ("Y", 2), ("Alpha Sapphire", 4), ("Omega Ruby", 8)),
                 7: (("Sun", 1), ("Moon", 2), ("Ultra Sun", 4), ("Ultra Moon", 8))}
 ORIGINS = {6: ((0, "The receiver's game"), (24, "X"), (25, "Y"), (26, "Alpha Sapphire"), (27, "Omega Ruby")),
@@ -160,7 +161,7 @@ class GiftEditor(View):
             t.label("The title is yours to write. The card's text is one of the game's own messages, chosen by number: "
                     "each is named by official cards that use it. Wonder Cards have no background to choose; the game "
                     "draws the card from what it gives.", size=12),
-            ft.Row([self._dd("Gives", f["kind"], KINDS[gen], self._kind, 200),
+            ft.Row([self._dd("Gives", self._shown_kind(), KINDS[gen], self._kind, 200),
                     ft.Switch(label="Can be received more than once", value=bool(f.get("multi_obtain")),
                               on_change=lambda e: self._set("multi_obtain", bool(e.control.value)))]
                    + ([ft.Switch(label="Once a day", value=bool(f.get("once_per_day")),
@@ -176,11 +177,16 @@ class GiftEditor(View):
     def _pokemon_section(self, lists) -> ft.Control:
         f, gen = self.f, self.gen
         languages = [(0, "The receiver's")] + [(v, n) for v, n in lists.get("languages", [])]
+        egg = giftfile.is_egg(f)
         row1 = [name_field("Species", f["species"], lists["species"], lambda v: self._int("species", v or 25), 200),
-                self._num("Form", f.get("form", 0), lambda v: self._set("form", v), 80, 0, 63),
-                self._num("Level", f["level"], lambda v: self._set("level", v), 90, 1, 100),
-                self._num("Met level", f.get("met_level", f["level"]), lambda v: self._set("met_level", v), 100, 0, 100),
-                self._text("Nickname", "nickname", 180, 12)]
+                self._num("Form", f.get("form", 0), lambda v: self._set("form", v), 80, 0, 63)]
+        if egg:
+            row1.append(name_field("Egg from", f.get("egg_location", giftfile.EGG_PLACE), lists.get("egg_locations", []),
+                                   lambda v: self._set("egg_location", v or giftfile.EGG_PLACE), 240))
+        else:
+            row1 += [self._num("Level", f["level"], lambda v: self._set("level", v), 90, 1, 100),
+                     self._num("Met level", f.get("met_level", f["level"]), lambda v: self._set("met_level", v), 100, 0, 100),
+                     self._text("Nickname", "nickname", 180, 12)]
         row2 = [self._dd("Shiny", f.get("shiny", "random"), SHINY, lambda v: self._set("shiny", v), 170)]
         if f.get("shiny") == "fixed":
             row2.append(self._num("PID (0x...)", f.get("pid", 0), lambda v: self._set("pid", v), 150, 0, 0xFFFFFFFF))
@@ -194,11 +200,16 @@ class GiftEditor(View):
         if gen == 7:
             row3.append(name_field("Second item (bag)", f.get("additional_item", 0), lists["items"],
                                    lambda v: self._set("additional_item", v), 220, empty="none"))
-        row3 += [self._dd("Language", f.get("language", 0), languages, lambda v: self._int("language", v), 200),
-                 ft.Switch(label="An egg", value=bool(f.get("is_egg")),
-                           on_change=lambda e: self._set("is_egg", bool(e.control.value)))]
-        return t.card(t.heading("The Pokemon"), ft.Row(row1, wrap=True, spacing=12), ft.Row(row2, wrap=True, spacing=12),
-                      ft.Row(row3, wrap=True, spacing=12, vertical_alignment=ft.CrossAxisAlignment.CENTER), spacing=10)
+        row3.append(self._dd("Language", f.get("language", 0), languages, lambda v: self._int("language", v), 200))
+        rows: list[ft.Control] = [t.heading("The egg" if egg else "The Pokemon"), ft.Row(row1, wrap=True, spacing=12)]
+        if egg:
+            rows.append(t.label("It arrives as an Egg (the game names it so) and hatches at level 1 for whoever hatches "
+                                "it, with the nature, ability, IVs, moves, ball and item set here. Official event eggs: "
+                                "from a Pokemon Center, the receiver as OT; Gen 6 never shiny in a Poke Ball, Gen 7 in "
+                                "a Cherish Ball.", size=12))
+        rows += [ft.Row(row2, wrap=True, spacing=12),
+                 ft.Row(row3, wrap=True, spacing=12, vertical_alignment=ft.CrossAxisAlignment.CENTER)]
+        return t.card(*rows, spacing=10)
 
     def _moves_section(self, lists) -> ft.Control:
         def row(key: str, label: str) -> ft.Row:
@@ -279,9 +290,12 @@ class GiftEditor(View):
             memory = f.get("memory") or {}
             rows += [
                 ft.Row([name_field("Met at", f.get("met_location", giftfile.LOVELY_PLACE), lists.get("locations", []),
-                                   lambda v: self._set("met_location", v), 300),
-                        name_field("Egg from", f.get("egg_location", 0), lists.get("egg_locations", []),
-                                   lambda v: self._set("egg_location", v), 300, empty="none")], wrap=True, spacing=12),
+                                   lambda v: self._set("met_location", v), 300,
+                                   empty="none yet (an egg: set when it hatches)" if giftfile.is_egg(f) else ""),
+                        *([] if giftfile.is_egg(f) else [
+                            name_field("Egg from", f.get("egg_location", 0), lists.get("egg_locations", []),
+                                       lambda v: self._set("egg_location", v), 300, empty="none")])],
+                       wrap=True, spacing=12),
                 t.label("Event places: a lovely place, a Pokemon Center, a Pokemon event, the PGL, an online Present...",
                         size=12),
                 ft.Row([self._num("Encryption constant (0: random)", f.get("encryption_constant", 0),
@@ -376,8 +390,11 @@ class GiftEditor(View):
         versions = int(self.f.get("versions", 0))
         self.f["versions"] = versions | bit if on else versions & ~bit
 
+    def _shown_kind(self) -> str:
+        return "egg" if giftfile.is_egg(self.f) else self.f["kind"]
+
     def _kind(self, value) -> None:
-        if value == self.f["kind"]:
+        if value == self._shown_kind():
             return
         keep = {k: self.f[k] for k in ("card_id", "title", "text", "date", "versions", "multi_obtain") if k in self.f}
         self.f = {**giftfile.new_fields(self.game, value), **keep}

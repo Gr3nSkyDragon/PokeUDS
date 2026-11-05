@@ -180,7 +180,8 @@ class GiftsView(View):
                                 color=t.TEXT))
         else:
             s = p.summary
-            facts = [("Pokemon", f"{s['species_name']} Lv {s['level']}" + (" (shiny)" if s["shiny"] else "")),
+            facts = [("Pokemon", f"{s['species_name']} Lv {s['level']}" + (" (shiny)" if s["shiny"] else "")
+                      + (", as an egg" if c.get("kind") == "egg" else "")),
                      ("OT", f"{s['ot_name']} {s.get('shown_id', s['tid'])}" + ("" if c.get("ot") else " (you)")),
                      ("Moves", ", ".join(m for m in s["moves"] if m) or "-")]
             if s.get("stats"):
