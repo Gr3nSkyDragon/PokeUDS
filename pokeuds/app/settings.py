@@ -33,6 +33,7 @@ class Settings:
     trainer: dict = field(default_factory=dict)     # the Builder's OT: {ot, tid, sid, female}
     pss: dict = field(default_factory=dict)         # Gen 6 PSS identity, made once: {id, key} (hex)
     language: str = ""                              # a language pack's plugin id; "" is English
+    sprites: bool = True                            # download Pokemon sprites from PokeAPI (pokeuds.app.sprites)
 
     def radio_spec(self) -> str:
         return f"{self.radio}:{self.port}" if self.port else self.radio

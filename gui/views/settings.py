@@ -63,12 +63,19 @@ class SettingsView(View):
         from . import pkhex_setup
 
         helper = t.card(t.heading("PKHeX helper"), pkhex_setup.card(self.app, compact=True))
+        art = t.card(
+            ft.Row([ft.Column([t.heading("Pokemon sprites"),
+                               t.label("Previews in the builder, the bank and Mystery Gift show each Pokemon's sprite, "
+                                       "downloaded once from PokeAPI's sprite collection and kept. Off: only the ones "
+                                       "already downloaded show.")],
+                              spacing=4, expand=True),
+                    ft.Switch(value=s.sprites, on_change=self._sprites)]))
         debug = t.card(
             ft.Row([ft.Column([t.heading("Debug tools"),
                                t.label("Adds a Debug page: the demo radio, a network scan and capture analysis.")],
                               spacing=4, expand=True),
                     ft.Switch(value=s.debug, on_change=self._debug)]))
-        return ft.Column([t.title("Settings"), keys, output, trainer, language, helper, debug, t.label(f"PokeUDS {__version__}", size=12)],
+        return ft.Column([t.title("Settings"), keys, output, trainer, language, helper, art, debug, t.label(f"PokeUDS {__version__}", size=12)],
                          spacing=t.GAP, scroll=ft.ScrollMode.AUTO)
 
     async def _pick_keys(self, e) -> None:
@@ -96,6 +103,13 @@ class SettingsView(View):
         self.app.save()
         i18n.select(self.app.settings.language)
         self.app.rebuild_shell()                 # every page again, in the new language
+
+    def _sprites(self, e) -> None:
+        from pokeuds.app import sprites
+
+        self.app.settings.sprites = bool(e.control.value)
+        sprites.CACHE.online = self.app.settings.sprites
+        self.app.save()
 
     def _debug(self, e) -> None:
         self.app.settings.debug = bool(e.control.value)

@@ -15,6 +15,10 @@ class App:
     def __init__(self, page: ft.Page | None, settings: Settings | None = None) -> None:
         self.page = page
         self.settings = settings or Settings.load()
+        from pokeuds.app import sprites
+
+        # Sprites download only in the running app (never in a test's page-less App), and when Settings allow it.
+        sprites.CACHE.online = page is not None and self.settings.sprites
         self.picker = ft.FilePicker() if page is not None else None
         if page is not None:                     # dialogs are translated too (gui/translate.py)
             from .translate import translate

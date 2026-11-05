@@ -59,6 +59,7 @@ class Entry:
     report: str = ""
     has_mail: bool = False
     meta: dict = field(default_factory=dict, compare=False, repr=False)
+    form: int = 0            # Gen 6/7: the form (Alolan, Unown's letter...), for its sprite
 
     @property
     def when(self) -> str:
@@ -91,6 +92,7 @@ class Parsed:
     ot: str
     tid: int
     held_item: int
+    form: int = 0
 
 
 def parse(path: str | Path, raw: bytes | None = None) -> Parsed:
@@ -120,7 +122,7 @@ def parse(path: str | Path, raw: bytes | None = None) -> Parsed:
             raise ValueError(f"{path.name}: species {s.species} does not exist in Generation {gen}")
         level = s.level or species.level_for_exp(s.species, int.from_bytes(plain[0x10:0x14], "little"))
         return Parsed(pkx.to_stored(plain), f"pk{gen}", gen, s.species, s.nickname, level, s.shiny, s.ot_name,
-                      s.tid if gen == 6 else _g7_tid(plain), s.held_item)
+                      s.tid if gen == 6 else _g7_tid(plain), s.held_item, form=plain[0x1D] >> 3)
     raise ValueError(f"{path.name}: not a Pokemon file ({', '.join(IMPORTABLE)})")
 
 
@@ -189,7 +191,7 @@ class Bank:
                      parsed.nickname, parsed.level, parsed.shiny, parsed.ot, parsed.tid, parsed.held_item,
                      meta.get("source", "imported"), float(meta.get("created", path.stat().st_mtime)),
                      meta.get("origin", ""), meta.get("note", ""), meta.get("legal"), meta.get("report", ""),
-                     path.with_suffix(".mail").exists(), meta)
+                     path.with_suffix(".mail").exists(), meta, form=parsed.form)
 
     @staticmethod
     def _meta(path: Path) -> dict:

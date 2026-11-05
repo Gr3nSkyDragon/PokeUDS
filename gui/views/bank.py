@@ -15,6 +15,7 @@ from pokeuds.app import bank, catalog
 
 from .. import theme as t
 from .common import View, open_folder
+from .sprite import sprite
 
 FILTERS = (("all", "All"), ("gb", "Game Boy"), ("6", "Gen 6"), ("7", "Gen 7"))
 SOURCE_COLORS = {"received": t.GOOD, "imported": t.MUTED, "built": t.INFO, "converted": t.WARN, "gift": t.ACCENT}
@@ -102,6 +103,7 @@ class BankView(View):
         legal = {True: ft.Icon(ft.Icons.VERIFIED_OUTLINED, color=t.GOOD, size=16, tooltip="Legal (PKHeX)"),
                  False: ft.Icon(ft.Icons.REPORT_GMAILERRORRED, color=t.BAD, size=16, tooltip="Not legal (PKHeX)")}
         return ft.Container(ft.Row([
+            sprite(self.app, e.dex, form=e.form, shiny=e.shiny, size=44, on_ready=self.refresh),
             t.pill(e.extension.upper(), t.ACCENT),
             ft.Column([ft.Text(e.describe(), color=t.TEXT, size=14),
                        t.label(" · ".join(x for x in (bank.SOURCES.get(e.source, e.source), e.when, e.note) if x), size=12)],
@@ -124,7 +126,8 @@ class BankView(View):
             facts.append(("Mail", "holds mail (sent with it in Gen 2 trades)"))
         if e.origin:
             facts.append(("Origin", e.origin))
-        rows: list[ft.Control] = [ft.Row([t.heading(e.species), ft.Container(expand=True),
+        rows: list[ft.Control] = [ft.Row([sprite(self.app, e.dex, form=e.form, shiny=e.shiny, size=96, on_ready=self.refresh),
+                                          t.heading(e.species), ft.Container(expand=True),
                                           *([t.pill("Shiny", t.WARN)] if e.shiny else []),
                                           ft.IconButton(ft.Icons.CLOSE, on_click=lambda _: self._select(""), icon_size=18)])]
         rows += [ft.Row([t.label(k, size=12), ft.Text(v, size=13, color=t.TEXT, selectable=True, expand=True)],

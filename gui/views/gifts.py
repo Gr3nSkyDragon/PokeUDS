@@ -25,6 +25,7 @@ from pokeuds.app.builder import Trainer
 from .. import theme as t
 from .common import View
 from .gift_editor import GiftEditor
+from .sprite import sprite
 
 GAMES = {"xy": "X / Y", "oras": "Omega Ruby / Alpha Sapphire", "sm": "Sun / Moon", "usum": "Ultra Sun / Ultra Moon"}
 MODES = (("official", "Official events"), ("file", "Open a card"), ("custom", "Build your own"))
@@ -107,6 +108,8 @@ class GiftsView(View):
         for c in shown[:SHOWN]:
             chosen = c["key"] == self.selected
             rows.append(ft.Container(ft.Row([
+                sprite(self.app, c.get("species", 0), form=c.get("form", 0), shiny=c.get("shiny") == "always", size=44,
+                       on_ready=self.refresh),
                 t.pill(f"{c['card_id']:04d}", t.ACCENT),
                 ft.Column([ft.Text(c["title"] or "(untitled)", size=14, color=t.TEXT),
                            t.label(" · ".join(x for x in (
@@ -168,8 +171,12 @@ class GiftsView(View):
         if g is None:
             return t.card(t.heading("The gift"), t.label("Choose a card, open one or make one."))
         c = g.card
+        p = g.pokemon
+        shown = p.summary if p is not None else {}
         rows: list[ft.Control] = [
-            ft.Row([t.heading(c["title"] or "(untitled)"), ft.Container(expand=True),
+            ft.Row([*([sprite(self.app, shown["species"], form=shown.get("form", 0), shiny=bool(shown.get("shiny")),
+                              size=96, on_ready=self.refresh)] if shown.get("species") else []),
+                    t.heading(c["title"] or "(untitled)"), ft.Container(expand=True),
                     *([t.pill("Custom", t.WARN)] if g.custom else [])]),
             t.label(f"Card {c['card_id']:04d} · for {', '.join(c['games']) or 'no game here'}"
                     + (f" · {c['date']}" if c.get("date") else ""), size=12),

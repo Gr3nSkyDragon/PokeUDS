@@ -18,8 +18,15 @@ from pokeuds.app.builder import ABILITIES, GAMES, GENDERS, Trainer, Wish
 from .. import theme as t
 from .common import View
 from .picker import name_field
+from .sprite import sprite
 
 ANY = "-"
+TOP = ft.CrossAxisAlignment.START       # fields align by their boxes: a helper or counter line hangs below
+
+
+def beside(control: ft.Control) -> ft.Control:
+    """A switch at a dense field's height, so it sits level with the field's box rather than its helper line."""
+    return ft.Container(control, height=48, alignment=ft.Alignment.CENTER_LEFT)
 
 
 def _helper_ready() -> bool:
@@ -91,14 +98,17 @@ class BuilderPanel(View):
     def _pokemon(self, lists: dict) -> list[ft.Control]:
         w, gen = self.wish, builder.generation(self.wish.game)
         busy = self.building
-        rows: list[ft.Control] = [ft.Row([
-            name_field("Species", w.species, lists["species"], self._pick_species, 200, disabled=busy),
-            ft.TextField(label="Level", value=str(w.level), width=100, dense=True, on_blur=self._level, disabled=busy,
-                         keyboard_type=ft.KeyboardType.NUMBER),
+        names = ft.Column([
+            ft.Row([name_field("Species", w.species, lists["species"], self._pick_species, 200, disabled=busy),
+                    ft.TextField(label="Level", value=str(w.level), width=100, dense=True, on_blur=self._level,
+                                 disabled=busy, keyboard_type=ft.KeyboardType.NUMBER),
+                    beside(ft.Switch(label="Shiny", value=w.shiny, on_change=self._shiny, disabled=busy or gen == 1))],
+                   spacing=12, vertical_alignment=TOP),
             ft.TextField(label="Nickname", value=w.nickname, width=200, dense=True, disabled=busy,
                          max_length=builder.NAME_LIMITS[gen][0], on_blur=self._nickname),
-            ft.Switch(label="Shiny", value=w.shiny, on_change=self._shiny, disabled=busy or gen == 1),
-        ], wrap=True, spacing=12, vertical_alignment=ft.CrossAxisAlignment.CENTER)]
+        ], spacing=8)
+        preview = sprite(self.app, w.species, shiny=w.shiny and gen >= 2, size=112, on_ready=self.refresh)
+        rows: list[ft.Control] = [ft.Row([names, ft.Container(expand=True), preview], spacing=24, vertical_alignment=TOP)]
         wishes: list[ft.Control] = [self._dd("Gender", w.gender or ANY, [(k or ANY, v) for k, v in GENDERS.items()],
                                              self._gender, 140, disabled=busy)]
         if gen >= 3:
@@ -107,19 +117,22 @@ class BuilderPanel(View):
                                    self._nature, 160, disabled=busy))
             wishes.append(self._dd("Ability", w.ability or ANY, [(k or ANY, v) for k, v in ABILITIES.items()],
                                    self._ability, 180, disabled=busy))
-        if gen >= 2:
-            wishes.append(name_field("Held item", w.held_item or 0, lists["items"], self._pick_item, 200, empty="none",
-                                     disabled=busy))
+        rows.append(ft.Row(wishes, wrap=True, spacing=12, vertical_alignment=TOP))
+        carried: list[ft.Control] = []
         if gen >= 3:
-            wishes.append(self._dd("Ball", str(w.ball) if w.ball else ANY,
-                                   [(ANY, "Any")] + [(str(v), n) for v, n in lists["balls"]], self._ball, 180,
-                                   disabled=busy))
-        rows.append(ft.Row(wishes, wrap=True, spacing=12))
+            carried.append(self._dd("Ball", str(w.ball) if w.ball else ANY,
+                                    [(ANY, "Any")] + [(str(v), n) for v, n in lists["balls"]], self._ball, 180,
+                                    disabled=busy))
+        if gen >= 2:
+            carried.append(name_field("Held item", w.held_item or 0, lists["items"], self._pick_item, 200, empty="none",
+                                      disabled=busy))
+        if carried:
+            rows.append(ft.Row(carried, wrap=True, spacing=12, vertical_alignment=TOP))
         current = (w.moves + [0, 0, 0, 0])[:4]
         rows.append(t.label("Moves: leave them empty for the moves it would know at that level."))
         rows.append(ft.Row([name_field(f"Move {i + 1}", m, lists["moves"], lambda v, i=i: self._pick_move(i, v), 190,
                                        empty="none", disabled=busy)
-                            for i, m in enumerate(current)], wrap=True, spacing=12))
+                            for i, m in enumerate(current)], wrap=True, spacing=12, vertical_alignment=TOP))
         return rows
 
     def _build_row(self) -> ft.Control:
@@ -134,21 +147,21 @@ class BuilderPanel(View):
                                                  max_length=builder.NAME_LIMITS[gen][1],
                                                  on_blur=self._ot)]
         if gen >= 7:
-            fields += [ft.TextField(label="ID (6 digits)", value=tr.shown_id(7), width=140, dense=True, disabled=busy,
+            fields += [ft.TextField(label="TID (6 digits)", value=tr.shown_id(7), width=140, dense=True, disabled=busy,
                                     on_blur=lambda e: self._g7_id(e, None)),
                        ft.TextField(label="SID (4 digits)", value=str(tr.g7_sid()), width=130, dense=True, disabled=busy,
                                     on_blur=lambda e: self._g7_id(None, e))]
         else:
-            fields.append(ft.TextField(label="ID", value=f"{tr.tid:05d}", width=110, dense=True, disabled=busy,
+            fields.append(ft.TextField(label="TID", value=f"{tr.tid:05d}", width=110, dense=True, disabled=busy,
                                        on_blur=lambda e: self._id(e, "tid")))
             if gen >= 3:
                 fields.append(ft.TextField(label="SID", value=f"{tr.sid:05d}", width=110, dense=True, disabled=busy,
                                            on_blur=lambda e: self._id(e, "sid")))
         if gen >= 2:
-            fields.append(ft.Switch(label="Female OT", value=tr.female, on_change=self._ot_gender, disabled=busy))
+            fields.append(beside(ft.Switch(label="Female OT", value=tr.female, on_change=self._ot_gender, disabled=busy)))
         return [t.label("Original trainer: shown on its summary. Use your own to make it yours; kept for the next build.",
                         color=t.TEXT),
-                ft.Row(fields, wrap=True, spacing=12, vertical_alignment=ft.CrossAxisAlignment.CENTER)]
+                ft.Row(fields, wrap=True, spacing=12, vertical_alignment=TOP)]
 
     # -- the helper -----------------------------------------------------------------------------
 
@@ -251,6 +264,7 @@ class BuilderPanel(View):
 
     def _shiny(self, e) -> None:
         self.wish.shiny = bool(e.control.value)
+        self.refresh()                       # the preview turns shiny
 
     def _gender(self, e) -> None:
         self.wish.gender = "" if e.control.value == ANY else e.control.value
@@ -291,7 +305,7 @@ class BuilderPanel(View):
             if not 0 <= value <= 65535:
                 raise ValueError
         except (TypeError, ValueError):
-            self.message, self.message_color = "An ID or SID is 0 to 65535.", t.BAD
+            self.message, self.message_color = "A TID or SID is 0 to 65535.", t.BAD
             self.refresh()
             return
         setattr(tr, which, value)

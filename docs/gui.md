@@ -92,6 +92,19 @@ The bank is a folder (`<data folder>/bank`, or Settings' `bank`) holding one fil
 Levels of stored Gen 6/7 records (which carry no level byte) come from their experience and the species'
 growth rate (`pokeuds/species.py`, taken from PKHeX.Core).
 
+## Pokemon sprites
+
+The builder's preview, the bank (each row and the chosen Pokemon) and Mystery Gift (each card and the gift)
+show the Pokemon's sprite, shiny when it is. They come from PokeAPI's sprite collection
+(github.com/PokeAPI/sprites, as pokeldn's app gets its own): none ship with PokeUDS; each is downloaded the
+first time it is shown and kept in `<data>/sprites` (`normal/`, `shiny/`). Gen 6/7 forms with a look of their
+own (Alolan forms, Unown's letters, Rotom, Arceus's types...) get theirs; other forms show the species.
+
+A sprite is never needed: offline, the preview keeps a placeholder and the app does not ask again for a minute;
+a sprite PokeAPI does not have is not asked for again for a week. Only a small, plain PNG is kept, rebuilt from
+the chunks that draw it. **Settings > Pokemon sprites** turns downloading off; the sprites already kept still show.
+Code: `pokeuds/app/sprites.py` (the cache), `gui/views/sprite.py` (the preview).
+
 ## The demo radio
 
 Debug, Demo radio, picks a simulated 3DS (Red, Yellow, Gold, Gold in the Time Capsule, Crystal). Runs then
