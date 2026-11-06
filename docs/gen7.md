@@ -2,7 +2,8 @@
 
 PokeUDS trades with Pokemon Sun and Moon through the Festival Plaza's local Link Trade, in both directions. Everything
 below was read off two Azahar logs of Sun/Moon trades between a retail 3DS and an emulated Sun/Moon, one with each
-console inviting. Ultra Sun/Ultra Moon has no capture yet (`profiles/usum.toml` is empty).
+console inviting. Ultra Sun/Ultra Moon has no capture of its own: it trades with Sun/Moon, which only knows its own
+network, so `profiles/usum.toml` carries Sun/Moon's values and `trade usum` runs the same session.
 
 ```bash
 python -m pokeuds trade sm --radio esp32 --keys aes_keys.txt --offer my.pk7

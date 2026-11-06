@@ -135,8 +135,8 @@ def test_host_times_out_without_a_console(air, key, tmp_path):
 
 
 def test_profiles_ship_and_load(tmp_path):
-    usum = profile.load("usum", profile.PROFILE_DIR / "usum.toml")      # Ultra Sun/Ultra Moon waits for captures.
-    assert usum.missing() == ["network.wlan_comm_id", "network.passphrase_hex", "trade.data_channels"]
+    usum = profile.load("usum", profile.PROFILE_DIR / "usum.toml")      # Sun/Moon's values (USUM trades with it)
+    assert usum.missing() == [] and usum.wlan_comm_id == 0x00164810
     sm = profile.load("sm", profile.PROFILE_DIR / "sm.toml")            # Sun/Moon, measured from Azahar logs.
     assert sm.missing() == [] and (sm.wlan_comm_id, sm.passphrase, sm.id, sm.max_nodes, sm.data_channels) == (
         0x00164810, b"GNgBwMcVotYs\0", 2, 4, [243])

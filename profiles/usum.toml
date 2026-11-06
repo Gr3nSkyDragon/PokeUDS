@@ -8,18 +8,20 @@
 # UDS communication id the game passes to the NWM service (BeginHostingNetwork / beacon tag).
 # Azahar logs it as wlanCommId=0x........ on BeginHostingNetwork and ConnectToNetwork;
 # `pokeuds scan` shows it as "comm" for a console idling in the Festival Plaza.
-wlan_comm_id = ""
+# Not captured: Sun/Moon's, by reasoning. USUM trades with Sun/Moon, and Sun/Moon (out a year earlier) only knows its
+# own comm id, so USUM's Festival Plaza must use it. A USUM capture confirms or replaces these.
+wlan_comm_id = "0x00164810"
 
 # The passphrase the game passes to ConnectToNetwork, as hex bytes, including any trailing NUL.
 # Azahar logs it as "ConnectToNetwork key-derivation input ... inputBytes=..". It is only an input
 # to the CCMP key derivation; the derivation also needs the console's keyslot 0x2D key.
-passphrase_hex = ""
+passphrase_hex = "474e6742774d63566f74597300"   # "GNgBwMcVotYs" and a NUL, as Sun/Moon and Gen 6
 
 # NetworkInfo.id (a sub-id inside the comm id); 0 unless a capture shows otherwise.
-id = 0
+id = 2
 
 # Nodes per network as the game creates it (a trade is 2).
-max_nodes = 2
+max_nodes = 4
 
 # Preferred channel when hosting; 0 picks 11 like the NWM default.
 channel = 0
@@ -35,4 +37,4 @@ also_join_comm_ids = []
 [trade]
 # SecureData channel(s) the game binds for trade traffic. From the "channel=" field of the
 # UDS DATA TRACE lines.
-data_channels = []
+data_channels = [243]

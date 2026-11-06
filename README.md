@@ -1,57 +1,53 @@
 # PokeUDS
 
-PokeUDS trades with retail Pokemon games on Nintendo 3DS over local wireless (UDS), the way
-[pokeldn](https://github.com/Decryptu/pokeldn) does for Switch: a computer with an ESP32-S3 board or a
-USB Wi-Fi adapter stands in for a second console. Nothing is installed on the 3DS.
+PokeUDS trades with retail Pokemon games on a Nintendo 3DS over local wireless (UDS), the way
+[pokeldn](https://github.com/Decryptu/pokeldn) does for the Switch. A computer with an ESP32-S3 board or a USB Wi-Fi
+adapter stands in for a second console: the 3DS sees another player and trades with it. Nothing is installed on the
+3DS.
 
-Status: **alpha**. The radio backends and the UDS layer (scanning, hosting, joining, CCMP,
-SecureData) work and are tested against each other in simulation; nothing has run on hardware yet.
-Generation 6 trades are implemented end to end ([docs/gen6.md](docs/gen6.md)): decoded from azahar_uds
-logs of Pokemon X trading with retail consoles, and replayed against those consoles' real messages.
-Sun/Moon trades work too ([docs/gen7.md](docs/gen7.md)): the Festival Plaza invitation and the trade,
-decoded from Azahar logs of Sun/Moon trading with a retail console, and traded with a retail 3DS in
-both directions. Ultra Sun/Ultra Moon still needs a capture.
+**Status: alpha.** Trades have run against retail 3DS consoles for the Virtual Console games, Pokemon X/Y and Sun/Moon.
 
-| | X/Y | ORAS | Sun/Moon | USUM | VC Gen 1 | VC Gen 2 |
-|---|:---:|:---:|:---:|:---:|:---:|:---:|
-| Trading starts in | PSS | PSS | Festival Plaza | Festival Plaza | VC link menu, Trade Center | VC link menu, Trade Center or Time Capsule |
-| Record | .pk6 | .pk6 | .pk7 | .pk7 | .pk1 | .pk2 (+ mail) |
-| Trades with | ORAS | X/Y | USUM | Sun/Moon | Gen 2 through the Time Capsule | Gen 1 through the Time Capsule |
-| UDS session, join | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| UDS session, host | ✓ | ✓ | ✓ | ✓ | ✓ experimental | ✓ experimental |
-| Trade messages | ✓ | ✓ (X/Y's values, assumed) | needs a capture | needs a capture | ✓ | ✓ |
+| Game | Trades start in | Record | PokeUDS joins | PokeUDS hosts | Tested with a 3DS |
+|---|---|---|:---:|:---:|---|
+| Red / Blue / Yellow (VC) | VC link menu, Trade Center | `.pk1` (or `.pk2` through the Time Capsule) | ✓ | ✓ experimental | ✓ Gen 1 trades |
+| Gold / Silver / Crystal (VC) | VC link menu, Trade Center or Time Capsule | `.pk2` with mail (or `.pk1`) | ✓ | ✓ experimental | ✓ Gen 2 trades |
+| X / Y | PSS | `.pk6` | ✓ | ✓ | ✓ the 3DS asking |
+| Omega Ruby / Alpha Sapphire | PSS | `.pk6` | ✓ | ✓ | uses X/Y's values |
+| Sun / Moon | Festival Plaza | `.pk7` | ✓ | ✓ | ✓ both directions |
+| Ultra Sun / Ultra Moon | Festival Plaza | `.pk7` | ✓ | ✓ | uses Sun/Moon's values |
 
-✓ works in simulation, untested on hardware; Gen 6 also replays the five captured X sessions to the end.
-X/Y and ORAS trade from the PSS through `games/gen6`; Sun/Moon and USUM use the generic session in
-`games/trade.py` until their messages are mapped. Each game reads its constants from
-`profiles/<game>.toml`. Local trades never cross a generation.
+Local trades never cross a generation (Sun/Moon and USUM trade with each other, as do X/Y and ORAS); Gen 1 and Gen 2
+meet in the Time Capsule. To move a Pokemon forward, the Bank migrates Gen 1/2 and Gen 6 Pokemon to Gen 7 the way
+Poke Transporter and Pokemon Bank do.
 
-The Virtual Console Gen 1 and 2 games also have the **whole trade implemented** (tested in simulation, not yet on hardware): their link protocol is
-known (pret's disassemblies for the Game Boy side, Gr3nSkyDragon's captures for the VC's Pia session), so
-PokeUDS trades a `.pk1`/`.pk2` from end to end, including mail between Gen 2 games and the Time Capsule in
-both directions ([docs/vc.md](docs/vc.md)).
+## What it does
 
-## Hardware
+- **Trade** with the 3DS asking PokeUDS or PokeUDS asking the 3DS, one Pokemon or a queue of them in one session
+  (up to six for the Game Boy games, a box's worth and more for the 3DS games).
+- **Bank** every Pokemon received, imported or built: legality checks with PKHeX (one or the whole bank), Time
+  Capsule copies, migration to Gen 7, duplicates caught, sprites.
+- **Build** a legal Pokemon to offer when you have no file (PKHeX.Core, through a small helper program).
+- **Mystery Gift**: PKHeX's official Gen 6/7 cards, `.wc6`/`.wc7` and full files, and a card editor; the card's
+  Pokemon goes into the bank and a trade.
+- **Board**: install and update the ESP32 firmware from the app.
+- **Plugins and language packs**, with an install screen that shows what a plugin's code does.
 
-Either radio works; see [docs/hardware.md](docs/hardware.md).
+## Getting it
 
-- **ESP32-S3** flashed with [esp32-uds-bridge](https://github.com/Gr3nSkyDragon/VC-Adapter/tree/main/firmware/esp32-uds-bridge),
-  firmware 1.8 (GB-Link build; 1.7 works too), connected by its native USB port. Any OS. The app's
-  Board page downloads and installs it.
-- **USB Wi-Fi adapter** through legacy **ldnd.exe 0.0.5** (unlimitedcoder2's gist), Windows only. Not the
-  ldnrs revision.
+**Windows:** download `PokeUDS-windows.zip` from the [releases](https://github.com/Gr3nSkyDragon/PokeUDS/releases),
+unzip it anywhere and run `PokeUDS.exe`. Nothing else to install: the pages that use PKHeX (Build, legality,
+Mystery Gift) offer to download its helper, about 20 MB, once. The first start takes a few seconds longer while the
+app unpacks its window.
 
-You also need `aes_keys.txt` with the keyslot 0x2D key (`slot0x2DKeyN`, or `slot0x2DKeyX`,
-`slot0x2DKeyY` and `generatorConstant`), the same file Azahar uses. Only scanning works without it.
-
-## Use
+**From source** (any OS, Python 3.11 or newer):
 
 ```bash
-python -m venv .venv && . .venv/bin/activate
-pip install -r requirements-dev.txt
+python -m venv .venv
 ```
 
-### The app
+```bash
+.venv\Scripts\activate
+```
 
 ```bash
 pip install -r requirements-gui.txt
@@ -61,86 +57,67 @@ pip install -r requirements-gui.txt
 python -m gui
 ```
 
-Pick a game, the Pokemon to offer, who hosts and the connection, then Start ([docs/gui.md](docs/gui.md)).
-No file to offer? Build one makes a legal Pokemon with PKHeX right there ([docs/pkhex.md](docs/pkhex.md)):
-the app offers to get the PKHeX helper the first time, a download with nothing to install (or build it with the
-.NET 10 SDK). The Bank keeps every Pokemon
-received, imported or built; the Board page installs the ESP32 firmware. Settings, Debug tools adds a demo radio that trades with a
-simulated 3DS, a network scan and capture analysis.
+On macOS or Linux, activate with `. .venv/bin/activate`. `requirements.txt` alone is enough for the command line.
 
-### The command line
+## What you need
 
-```bash
-python -m pokeuds probe --radio esp32
-```
+- **A radio** ([docs/hardware.md](docs/hardware.md)):
+  - an **ESP32-S3** with [esp32-uds-bridge](https://github.com/Gr3nSkyDragon/VC-Adapter/tree/main/firmware/esp32-uds-bridge)
+    firmware 1.8, on its native USB port (the app's Board page installs it); any OS; or
+  - a **USB Wi-Fi adapter** through legacy **ldnd.exe 0.0.5** (Windows; not the ldnrs revision).
+- **`aes_keys.txt`** holding the keyslot 0x2D key (`slot0x2DKeyN`, or `slot0x2DKeyX`, `slot0x2DKeyY` and
+  `generatorConstant`): the same file Azahar uses. Set it once in Settings. Only scanning works without it.
+
+## Trading from the app
+
+1. Settings: choose `aes_keys.txt`, and set your trainer (name, TID/SID) for Pokemon you build.
+2. Trade: pick the game and the connection (ESP32 board or USB Wi-Fi adapter).
+3. Add Pokemon to the trade queue: the **+** row picks from the bank, or Build one, or Add a file.
+4. Pick who asks, then Start, and follow the steps the page shows on the 3DS:
+   - **VC games**: choose Host (or Join) in the VC link menu, then sit at the Trade Center table.
+   - **X/Y, ORAS**: open the PSS with local wireless on, then ask PokeUDS for a trade (or accept its request).
+   - **Sun/Moon, USUM**: open the Festival Plaza, then invite PokeUDS to a Link Trade (or accept its invite).
+
+What the 3DS sends lands in the bank. See [docs/gui.md](docs/gui.md) for every page.
+
+## The command line
 
 ```bash
 python -m pokeuds scan --radio esp32 --seconds 30
 ```
 
-`scan` lists every 3DS UDS network in range with its comm id, decrypted player list and application
-data; open the PSS (X/Y, ORAS) or the Festival Plaza (Sun/Moon, USUM) on a console and it should appear. With a USB adapter use `--radio ldnd`.
-
 ```bash
-python -m pokeuds analyze azahar_log.txt --extract captures/pokemon
+python -m pokeuds trade sm --radio esp32 --offer my.pk7
 ```
 
 ```bash
-python -m pokeuds sniff --radio esp32 --keys aes_keys.txt --game xy --out captures/xy_trade.jsonl
+python -m pokeuds trade xy --role host --radio esp32 --offer my.pk6 --partner Serena
 ```
 
 ```bash
-python -m pokeuds trade xy --radio esp32 --keys aes_keys.txt --offer my.pk6 --output received
+python -m pokeuds vc trade --radio esp32 --offer my.pk1
 ```
 
-```bash
-python -m pokeuds trade oras --role host --radio esp32 --keys aes_keys.txt --offer my.pk6
-```
-
-For X/Y and ORAS, `--role join` (default) puts PokeUDS in the console's PSS list: ask it for a trade
-from the 3DS. `--role host` has PokeUDS ask the first trainer it hears (`--partner NAME` to choose).
-`--radio demo:x` trades with a simulated console. See [docs/gen6.md](docs/gen6.md).
-
-```bash
-python -m pokeuds trade usum --radio esp32 --keys aes_keys.txt --offer my.pk7
-```
-
-```bash
-python -m pokeuds vc trade --radio esp32 --keys aes_keys.txt --offer my.pk1
-```
-
-`vc trade` joins a 3DS that chose Host in the VC link menu and trades through the Trade Center or the
-Time Capsule; see [docs/vc.md](docs/vc.md) for the modes and hosting.
-
-`trade` loads and checks the offer (a Gen 7 species is refused for a Gen 6 game). For Sun/Moon and
-USUM it then either finds the console and joins its network (`--role join`, the default) or opens a
-network and waits for the console to join (`--role host`, advertising the profile's application data
-or `--application-data HEX`); once connected it records what the console sends for `--listen` seconds
-and saves any Pokemon found in it, then stops with an explanation, since Gen 7's trade messages are
-not mapped yet. Received Pokemon go to `--output` as
-`<time>_<game>_trade<N>_<species>_<nickname>_<PID>.pk6` (`.pk7` for Sun/Moon and USUM).
-
-Each game reads its constants from `profiles/<game>.toml` (or an untracked `<game>.local.toml`),
-filled in from captures.
+`--offer` repeats for a queue; `--keys` defaults to the app's Settings; `-v` (before the command) shows what happens.
+`scan` lists every 3DS network in range, `analyze` decodes an Azahar log or a capture, `build` makes a Pokemon with
+PKHeX, `gift` works with Mystery Gift cards, `board` manages the ESP32. Each game's protocol is in
+[docs/vc.md](docs/vc.md), [docs/gen6.md](docs/gen6.md) and [docs/gen7.md](docs/gen7.md).
 
 ## Layout
 
 | Path | Contents |
 |---|---|
-| `pokeuds/radio/` | ESP32 serial protocol, ldnd pipe + nl80211 monitor setup, radiotap, a simulated air |
-| `pokeuds/uds/` | 802.11 frames, beacons, CCMP and key derivation, SecureData, EAPoL, the station (host/client), the sniffer |
-| `pokeuds/pkx.py`, `received.py` | Generation 6/7 records (crypto, checksum, summary, PK6/PK7 formats) and the output folder |
-| `pokeuds/capture/` | Azahar-log and sniff transcripts, Pokemon finder |
-| `pokeuds/nex/` | NEX's PRUDP V1 as Gen 6/7 run it over Pia's local UDS layer (signature, both connections, reliability) |
-| `pokeuds/games/` | Game registry, profile loader, the trade session (join and host); `gen6/` X/Y and ORAS (PSS, Net-Z, gflnet, the trade), `gen7/` Sun/Moon and USUM, `vc.py` the VC titles |
-| `pokeuds/vc/` | Virtual Console: Pia frames and session, the Game Boy trade engine, the end-to-end trade |
-| `pokeuds/gbpk.py` | .pk1/.pk2 records and the Time Capsule conversions |
-| `profiles/` | Per-game constants filled in from captures |
-| `gui/`, `pokeuds/app/` | The app (Flet) and what it shares with the command line: settings, catalog, child runs, progress, strings and language packs |
-| `pokeuds/plugins.py`, `plugin_guard.py`, `examples/plugins/` | Plugins and language packs, the install guardrails, example plugins ([docs/plugins.md](docs/plugins.md)) |
-| `services/pkhex/` | The PKHeX helper: builds and checks Pokemon, Mystery Gift cards and the card editor ([docs/pkhex.md](docs/pkhex.md)) |
-| `scripts/` | Table generation, gift and language-pack checks, plugin packing, publishing the PKHeX helper |
-| `docs/` | [The app](docs/gui.md), [architecture](docs/architecture.md), [UDS protocol](docs/uds.md), [Generation 6](docs/gen6.md), [Generation 7](docs/gen7.md), [Virtual Console](docs/vc.md), [hardware](docs/hardware.md), [captures](docs/captures.md), [PKHeX helper](docs/pkhex.md), [Mystery Gift](docs/mystery_gift.md), [Wonder Cards](docs/wonder_cards.md), [Plugins](docs/plugins.md) |
+| `pokeuds/radio/` | The ESP32 serial protocol, the ldnd pipe and nl80211 monitor, radiotap, a simulated air |
+| `pokeuds/uds/` | 802.11 frames, beacons, CCMP and key derivation, SecureData, EAPoL, the station (host and client), the sniffer |
+| `pokeuds/nex/` | NEX's PRUDP V1 as Gen 6/7 run it over Pia's local UDS layer |
+| `pokeuds/games/` | Game registry and profiles; `gen6/` the PSS and X/Y-ORAS trade, `gen7/` the Festival Plaza and Sun/Moon-USUM trade |
+| `pokeuds/vc/` | Virtual Console: Pia frames and session, the Game Boy trade engine |
+| `pokeuds/pkx.py`, `gbpk.py` | Gen 6/7 and Gen 1/2 records, the Time Capsule conversions |
+| `pokeuds/capture/` | Azahar-log and sniff transcripts, the protocol decoders behind `analyze` |
+| `gui/`, `pokeuds/app/` | The app (Flet) and what it shares with the command line |
+| `services/pkhex/` | The PKHeX helper: building and checking Pokemon, Mystery Gift cards, migration |
+| `profiles/` | Each game's network constants, from captures |
+| `docs/` | [The app](docs/gui.md), [architecture](docs/architecture.md), [UDS](docs/uds.md), [Gen 6](docs/gen6.md), [Gen 7](docs/gen7.md), [Virtual Console](docs/vc.md), [hardware](docs/hardware.md), [captures](docs/captures.md), [PKHeX helper](docs/pkhex.md), [Mystery Gift](docs/mystery_gift.md), [Wonder Cards](docs/wonder_cards.md), [plugins](docs/plugins.md), [releases](docs/release.md) |
 
 ```bash
 python -m pytest -q
@@ -148,13 +125,10 @@ python -m pytest -q
 
 ## Credits and licensing
 
-The UDS layer is a Python port of the physical-UDS work in
-[azahar_uds](https://github.com/Gr3nSkyDragon/azahar_uds) (itself built on Citra/Azahar's NWM
-emulation, GPLv2 or later), so this project must stay GPL-compatible; no license file has been chosen
-yet. Generation 6 record handling follows [PKHeX](https://github.com/kwsch/PKHeX). The Virtual Console
-support is built on Gr3nSkyDragon's VC link measurements ([mgba_LDN](https://github.com/Gr3nSkyDragon/mgba_LDN)
-`wiki/vc_link.md` and `wiki/gb_link.md`, and the retail-session frames used as test fixtures) and on
-[pret](https://github.com/pret)'s pokered and pokecrystal, from which `scripts/gen_gb_tables.py`
-generates the species, stat and item tables. The overall shape
-(radio backends, received-file handling, docs per protocol) follows pokeldn. ESP32 firmware:
-Gr3nSkyDragon's VC-Adapter. ldnd: unlimitedcoder2.
+The UDS layer is a Python port of the physical-UDS work in [azahar_uds](https://github.com/Gr3nSkyDragon/azahar_uds)
+(built on Citra/Azahar's NWM emulation, GPLv2 or later), so PokeUDS must stay GPL-compatible; no license file has been
+chosen yet. The Gen 6/7 protocols were read off Azahar logs of retail trades. Pokemon records, legality, Mystery Gift
+cards and migration come from [PKHeX](https://github.com/kwsch/PKHeX). The Virtual Console support builds on
+Gr3nSkyDragon's VC link measurements ([mgba_LDN](https://github.com/Gr3nSkyDragon/mgba_LDN)) and
+[pret](https://github.com/pret)'s pokered and pokecrystal. Sprites: [PokeAPI](https://github.com/PokeAPI/sprites).
+The overall shape follows pokeldn. ESP32 firmware: Gr3nSkyDragon's VC-Adapter. ldnd: unlimitedcoder2.

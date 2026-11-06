@@ -1,6 +1,7 @@
-# A release of PokeUDS's PKHeX helper: self-contained executables for each computer, which the app downloads
-# (Settings, PKHeX helper; `pokeuds pkhex get`) so players need no .NET SDK. Push a tag like v0.2.0, or run it
-# by hand from the Actions tab with a tag name. docs/pkhex.md, Getting the helper.
+# A release of PokeUDS: the Windows app (PokeUDS-windows.zip) and the PKHeX helper's self-contained executables for
+# each computer, which the app downloads (Settings, PKHeX helper; `pokeuds pkhex get`) so players need no .NET SDK.
+# Push a tag like v0.1.0, or run it by hand from the Actions tab with a tag name. docs/release.md has the checklist.
+# The release is created as a draft: publish it from the Releases page once the files are checked.
 name: release
 
 on:
@@ -39,22 +40,45 @@ jobs:
           name: helper-${{ matrix.os }}
           path: assets/pokeuds-pkhex-*
 
+  app:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install -r requirements-gui.txt pyinstaller
+      - run: python -m pytest -q
+        env:
+          PYTHONIOENCODING: utf-8
+      - run: python scripts/build_exe.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: app-windows
+          path: dist/PokeUDS-windows.zip
+
   release:
-    needs: helper
+    needs: [helper, app]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+        with:
+          path: src
       - uses: actions/download-artifact@v4
         with:
           path: assets
           merge-multiple: true
       - name: SHA256SUMS
-        run: cd assets && sha256sum pokeuds-pkhex-* > SHA256SUMS && cat SHA256SUMS
+        run: cd assets && sha256sum PokeUDS-windows.zip pokeuds-pkhex-* > SHA256SUMS && cat SHA256SUMS
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.event.inputs.tag || github.ref_name }}
         run: |
+          NOTES="src/docs/releases/$TAG.md"
+          [ -f "$NOTES" ] || { echo "PokeUDS $TAG" > notes.md; NOTES=notes.md; }
+          PRE=""; case "$TAG" in v0.*) PRE="--prerelease";; esac
           gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 || \
             gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "PokeUDS $TAG" \
-              --notes "The PKHeX helper for each computer: the app downloads the one it needs (docs/pkhex.md)."
+              --notes-file "$NOTES" --draft $PRE
           gh release upload "$TAG" assets/* --repo "$GITHUB_REPOSITORY" --clobber

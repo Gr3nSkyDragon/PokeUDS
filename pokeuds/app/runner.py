@@ -21,6 +21,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 
 
 def command(*args: str) -> list[str]:
+    if getattr(sys, "frozen", False):          # the packaged app: its own exe is the command line (packaging/)
+        return [sys.executable, "--cli", *args]
     return [sys.executable, "-u", "-m", "pokeuds", *args]
 
 

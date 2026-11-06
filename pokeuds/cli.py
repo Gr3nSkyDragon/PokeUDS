@@ -323,7 +323,7 @@ def cmd_trade(args) -> int:
     status.emit("radio", description=station.radio.describe())
     if game.generation == 6:
         return _trade_gen6(args, station, game, prof, offer, offers[1:])
-    if game.key == "sm":
+    if game.generation == 7:
         return _trade_gen7(args, station, game, prof, offer, offers[1:])
     trade = LocalTrade(station, game, prof, offer, Path(args.output))
     try:
@@ -413,7 +413,7 @@ def _gen7_trainer(game, offer: bytes, args):
     tid = args.tid if args.tid is not None else int(trainer["tid"]) if same and trainer.get("tid") is not None else s.tid
     sid = args.sid if args.sid is not None else int(trainer["sid"]) if same and trainer.get("sid") is not None else s.sid
     return wire.Trainer(name, tid & 0xFFFF, sid & 0xFFFF, int(plaza["pid"], 16), bytes.fromhex(plaza["id8"]),
-                        wire.VERSION_CODES["Moon"])
+                        wire.VERSION_CODES["Ultra Moon" if game.key == "usum" else "Moon"])
 
 
 def _trade_gen7(args, station, game, prof, offer: bytes, queue: list[bytes]) -> int:

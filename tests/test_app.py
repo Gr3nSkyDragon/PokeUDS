@@ -58,9 +58,7 @@ def test_what_stops_a_start(data, offers, tmp_path):
     totodile = tmp_path / "toto.pk2"
     totodile.write_bytes(sample_mon(2, 158, 5, "TOTO").to_file())
     assert "Time Capsule" in catalog.describe_offer(rby, str(totodile)).problem          # Gen 2 only species
-    usum = catalog.BY_KEY["usum"]                       # still waiting for captures
-    gaps = catalog.missing_for_start(usum, demo, catalog.Offer("a.pk7", "x"))
-    assert any("profiles/usum.toml" in g for g in gaps)
+    assert catalog.missing_for_start(catalog.BY_KEY["usum"], demo, catalog.Offer("a.pk7", "x")) == []
     assert catalog.missing_for_start(catalog.BY_KEY["sm"], demo, catalog.Offer("a.pk7", "x")) == []
     assert catalog.missing_for_start(catalog.BY_KEY["xy"], demo, catalog.Offer("a.pk6", "x")) == []
     assert catalog.describe_offer(rby, str(tmp_path / "missing.pk1")).problem
@@ -135,3 +133,13 @@ def test_gui_pages_build(data, offers):
     trade.pick_game("usum")
     assert trade.offer is None and settings.last_game == "usum"
     assert name_problem("POKEUDS") == "" and name_problem("TOOLONGNAME") and name_problem("")
+
+
+def test_the_packaged_app_runs_trades_through_its_own_exe(monkeypatch):
+    """PokeUDS.exe has no ``python -m pokeuds``: a trade child is the exe with --cli (packaging/pokeuds_app.py)."""
+    from pokeuds.app import runner
+
+    assert runner.command("scan")[1:] == ["-u", "-m", "pokeuds", "scan"]
+    monkeypatch.setattr(runner.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(runner.sys, "executable", r"C:\PokeUDS\PokeUDS.exe")
+    assert runner.command("trade", "sm") == [r"C:\PokeUDS\PokeUDS.exe", "--cli", "trade", "sm"]

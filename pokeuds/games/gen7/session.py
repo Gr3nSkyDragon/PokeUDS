@@ -241,4 +241,4 @@ class Gen7Session(gen6.Gen6Session):
 
 def party_record(offer: bytes) -> bytes:
     """The 260-byte party form of a .pk7 (decrypted); battle stats from the PKHeX helper when it is there."""
-    return gen6.party_record(offer, game="sm")
+    return gen6.party_record(offer, game="usum")      # USUM's rules cover every Sun/Moon species too
