@@ -341,9 +341,9 @@ class TradeView(View):
 
     def setup(self) -> ft.Control:
         entry, busy = self.entry, self.app.busy()
-        # In the PSS (Gen 6) whoever asks for the trade hosts it, so the roles are named by who asks. Literal texts, so
-        # scripts/extract_strings.py lists them for language packs.
-        if entry.group == "Generation 6":
+        # In the PSS (Gen 6) and the Festival Plaza (Gen 7) a trade starts with one player asking the other, so the roles
+        # are named by who asks. Literal texts, so scripts/extract_strings.py lists them for language packs.
+        if entry.group == "Generation 6" or (entry.group == "Generation 7" and entry.complete):
             segments = [ft.Segment("join", label=ft.Text("3DS asks")), ft.Segment("host", label=ft.Text("PokeUDS asks"))]
         else:
             segments = [ft.Segment("join", label=ft.Text("3DS hosts")), ft.Segment("host", label=ft.Text("PokeUDS hosts"))]

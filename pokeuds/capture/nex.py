@@ -37,12 +37,15 @@ def _describe_game(raw: bytes) -> str:
         return f"gflnet ? ({exc}), {len(raw)} B"
     if not m.body:
         return ""
-    b = wire.parse_body(m.body)
-    if b.kind == "sync":
-        return f"sync {'03' if b.done else '02'} module {b.module} id {b.ident:02X}"
-    if b.kind == "command":
-        return f"command module {b.module} cmd {b.ident:02X}, {len(b.data)} B: {b.data[:12].hex(' ')}"
-    return f"{b.kind}, {len(m.body)} B: {m.body[:12].hex(' ')}"
+    parts = []
+    for b in wire.parse_bodies(m.body):
+        if b.kind == "sync":
+            parts.append(f"sync {'03' if b.done else '02'} module {b.module} id {b.ident:02X}")
+        elif b.kind == "command":
+            parts.append(f"command module {b.module} cmd {b.ident:02X}, {len(b.data)} B: {b.data[:12].hex(' ')}")
+        else:
+            parts.append(f"{b.kind}, {len(b.data)} B: {b.data[:12].hex(' ')}")
+    return " + ".join(parts)
 
 
 def decode(messages: list[Message]) -> Decoded:

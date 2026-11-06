@@ -33,6 +33,7 @@ class Settings:
     queued: dict = field(default_factory=dict)      # game -> the files queued after the offer, traded in order
     trainer: dict = field(default_factory=dict)     # the Builder's OT: {ot, tid, sid, female}
     pss: dict = field(default_factory=dict)         # Gen 6 PSS identity, made once: {id, key} (hex)
+    plaza: dict = field(default_factory=dict)       # Gen 7 Festival Plaza identity, made once: {pid, id8} (hex)
     language: str = ""                              # a language pack's plugin id; "" is English
     sprites: bool = True                            # download Pokemon sprites from PokeAPI (pokeuds.app.sprites)
     window: dict = field(default_factory=dict)      # the app window's last place and size (gui/window.py)

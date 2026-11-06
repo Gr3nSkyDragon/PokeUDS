@@ -239,6 +239,8 @@ class Endpoint:
         if p.signature != signature(p, self._my_sig):
             log.warning("PRUDP packet with a bad signature (type %d, seq %d) dropped", p.type, p.seq)
             return []
+        if log.isEnabledFor(logging.DEBUG) and p.type != PING:
+            log.debug("PRUDP in: type %d flags %#x seq %d, %d B", p.type, p.flags, p.seq, len(p.payload))
         with self._lock:
             return self._handle(p)
 
@@ -272,6 +274,7 @@ class Endpoint:
                 self._emit(Packet(PING, F_ACK | F_HAS_SIZE, self.session_id, p.seq))
             return []
         if p.type == DISCONNECT:
+            log.info("the peer sent a PRUDP disconnect (our connection: %s)", self.outbound)
             self.closed, self.close_reason = True, "disconnect"
             return []
         if p.type != DATA:

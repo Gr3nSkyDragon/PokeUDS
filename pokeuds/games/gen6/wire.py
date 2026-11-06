@@ -6,6 +6,10 @@ reliable PRUDP message on the game stream::
     u16 CRC-16/CCITT-FALSE of everything after it | u16 body length | u32 index | u32 0x201
     | u32 received counts (byte 0: node 1's, byte 1: node 2's) | u32 0x201 | body
 
+Generation 7 (Sun/Moon's gflnet2) frames messages the same way with two differences, read off Azahar logs of
+Sun/Moon trades (every message of two sessions verifies): the checksum is CRC-16/USB (polynomial 0x8005 reflected,
+init and final XOR 0xFFFF) over the same bytes, and the first node-pair word is ``01 02 ff ff``.
+
 ``index`` numbers the sender's messages that carry a body. After each one the sender, and the
 receiver, send an empty message that reports the counts (the sender counts its own message too).
 
@@ -47,6 +51,7 @@ from . import templates
 
 GFL_HEADER = 20
 NODE_PAIR = 0x201
+NODE_PAIR_GEN7 = 0xFFFF0201     # Sun/Moon's first node-pair word: 01 02 ff ff
 SYNC_REQUEST, SYNC_DONE = 2, 3
 SESSION, TRADE = 0, 1
 
@@ -79,9 +84,20 @@ def crc16(data: bytes, crc: int = 0xFFFF) -> int:
 
 # -- gflnet ---------------------------------------------------------------------------------------
 
-def gfl_encode(index: int, counts: int, body: bytes = b"") -> bytes:
-    rest = struct.pack("<HIIII", len(body), index, NODE_PAIR, counts, NODE_PAIR) + body
-    return struct.pack("<H", crc16(rest)) + rest
+def crc16_usb(data: bytes) -> int:
+    """CRC-16/USB: polynomial 0x8005 reflected, init 0xFFFF, final XOR 0xFFFF (Generation 7's gflnet2)."""
+    crc = 0xFFFF
+    for byte in data:
+        crc ^= byte
+        for _ in range(8):
+            crc = (crc >> 1) ^ 0xA001 if crc & 1 else crc >> 1
+    return crc ^ 0xFFFF
+
+
+def gfl_encode(index: int, counts: int, body: bytes = b"", generation: int = 6) -> bytes:
+    first = NODE_PAIR_GEN7 if generation == 7 else NODE_PAIR
+    rest = struct.pack("<HIIII", len(body), index, first, counts, NODE_PAIR) + body
+    return struct.pack("<H", crc16_usb(rest) if generation == 7 else crc16(rest)) + rest
 
 
 @dataclass
@@ -89,15 +105,21 @@ class GflMessage:
     index: int
     counts: int
     body: bytes
+    generation: int = 6
 
 
 def gfl_decode(data: bytes) -> GflMessage:
+    """A gflnet message of either generation (told apart by which checksum holds)."""
     if len(data) < GFL_HEADER:
         raise ValueError("short gflnet message")
     crc, size, index, _, counts, _ = struct.unpack_from("<HHIIII", data)
-    if crc != crc16(data[2:]) or size != len(data) - GFL_HEADER:
+    if size != len(data) - GFL_HEADER:
         raise ValueError("gflnet message fails its CRC or length")
-    return GflMessage(index, counts, data[GFL_HEADER:])
+    if crc == crc16(data[2:]):
+        return GflMessage(index, counts, data[GFL_HEADER:], 6)
+    if crc == crc16_usb(data[2:]):
+        return GflMessage(index, counts, data[GFL_HEADER:], 7)
+    raise ValueError("gflnet message fails its CRC or length")
 
 
 def counts_word(node1: int, node2: int) -> int:
@@ -119,6 +141,25 @@ class Body:
     ident: int = 0       # The sync id or the command.
     done: bool = False   # A sync's 03.
     data: bytes = b""
+
+
+def parse_bodies(body: bytes) -> list[Body]:
+    """Every sync and command in one gflnet message: a console may pack several into one (Sun/Moon sent the Pokemon
+    under its cursor and its offer as one message), so reading only the first loses the rest."""
+    out: list[Body] = []
+    rest = body
+    while rest:
+        if len(rest) >= 10 and rest[0] in (SYNC_REQUEST, SYNC_DONE):
+            out.append(parse_body(rest[:10]))
+            rest = rest[10:]
+        elif len(rest) >= 8 and rest[0] == 1:
+            size = struct.unpack_from("<I", rest, 4)[0]
+            out.append(parse_body(rest[:8 + size]))
+            rest = rest[8 + size:]
+        else:
+            out.append(parse_body(rest))
+            break
+    return out
 
 
 def parse_body(body: bytes) -> Body:
@@ -307,15 +348,20 @@ def netz_kind(message: bytes) -> int:
     return message[5] if len(message) > 5 else -1
 
 
-def heartbeat_client(counter: int, now_ms: int) -> bytes:
+HB_OBJECT = 16             # The Net-Z object the heartbeats belong to: 3 in X/Y, 4 in Sun/Moon (one object more).
+
+
+def heartbeat_client(counter: int, now_ms: int, obj: int = 3) -> bytes:
     m = bytearray(template(templates.HEARTBEAT_CLIENT))
+    m[HB_OBJECT] = obj
     struct.pack_into("<H", m, HB_COUNTER, counter & 0xFFFF)
     struct.pack_into("<I", m, HB_TIME, now_ms & 0xFFFFFFFF)
     return bytes(m)
 
 
-def heartbeat_host(counter: int, echo: bytes, now_ms: int) -> bytes:
+def heartbeat_host(counter: int, echo: bytes, now_ms: int, obj: int = 3) -> bytes:
     m = bytearray(template(templates.HEARTBEAT_HOST))
+    m[HB_OBJECT] = obj
     struct.pack_into("<H", m, HB_COUNTER, counter & 0xFFFF)
     m[HB_HOST_ECHO:HB_HOST_ECHO + 4] = echo
     struct.pack_into("<I", m, HB_HOST_TIME, now_ms & 0xFFFFFFFF)

@@ -358,7 +358,12 @@ class Station:
             return
         if frame.type == dot11.TYPE_MGMT:
             peer = self.peers.get(frame.transmitter)
-            if peer and frame.retry and peer.last_mgmt_seq == frame.sequence:
+            # A joiner's authentication and association requests are answered every time they come, retransmissions
+            # included, as azahar_uds does: the radio does not acknowledge them (the ESP32 owns a twin of our address),
+            # so the console keeps resending until one of our answers reaches it, and one answer to the first copy
+            # can arrive before it listens (a Sun/Moon console then gave up, "Failed to connect to the other trainer").
+            joining = self.role is Role.HOST and frame.subtype in (dot11.SUBTYPE_AUTH, dot11.SUBTYPE_ASSOC_REQ)
+            if peer and frame.retry and peer.last_mgmt_seq == frame.sequence and not joining:
                 return  # A retransmission the monitor also captured.
             if peer:
                 peer.last_mgmt_seq = frame.sequence
@@ -392,6 +397,11 @@ class Station:
             if sender in self.peers:
                 self._send_mgmt(dot11.FC_ASSOC_RESP, sender, self.mac, dot11.assoc_response_body(1, self.network.network_id))
         elif frame.subtype == dot11.SUBTYPE_DEAUTH:
+            peer = self.peers.get(sender)
+            if peer is not None:
+                reason = int.from_bytes(frame.body[:2], "little") if len(frame.body) >= 2 else -1
+                log.info("%s sent a deauthentication, reason %d (%s)", mac_str(sender), reason,
+                         "joined" if peer.connected else "still joining")
             self._drop_peer(sender)
 
     def _drop_peer(self, mac: bytes) -> None:

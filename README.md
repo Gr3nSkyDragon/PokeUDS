@@ -8,8 +8,9 @@ Status: **alpha**. The radio backends and the UDS layer (scanning, hosting, join
 SecureData) work and are tested against each other in simulation; nothing has run on hardware yet.
 Generation 6 trades are implemented end to end ([docs/gen6.md](docs/gen6.md)): decoded from azahar_uds
 logs of Pokemon X trading with retail consoles, and replayed against those consoles' real messages.
-Generation 7 runs the same transport (NEX PRUDP with the same key, gflnet) but its Festival Plaza
-messages still need one capture ([docs/captures.md](docs/captures.md)).
+Sun/Moon trades work too ([docs/gen7.md](docs/gen7.md)): the Festival Plaza invitation and the trade,
+decoded from Azahar logs of Sun/Moon trading with a retail console, and traded with a retail 3DS in
+both directions. Ultra Sun/Ultra Moon still needs a capture.
 
 | | X/Y | ORAS | Sun/Moon | USUM | VC Gen 1 | VC Gen 2 |
 |---|:---:|:---:|:---:|:---:|:---:|:---:|
@@ -139,7 +140,7 @@ filled in from captures.
 | `pokeuds/plugins.py`, `plugin_guard.py`, `examples/plugins/` | Plugins and language packs, the install guardrails, example plugins ([docs/plugins.md](docs/plugins.md)) |
 | `services/pkhex/` | The PKHeX helper: builds and checks Pokemon, Mystery Gift cards and the card editor ([docs/pkhex.md](docs/pkhex.md)) |
 | `scripts/` | Table generation, gift and language-pack checks, plugin packing, publishing the PKHeX helper |
-| `docs/` | [The app](docs/gui.md), [architecture](docs/architecture.md), [UDS protocol](docs/uds.md), [Generation 6](docs/gen6.md), [Virtual Console](docs/vc.md), [hardware](docs/hardware.md), [captures](docs/captures.md), [PKHeX helper](docs/pkhex.md), [Mystery Gift](docs/mystery_gift.md), [Wonder Cards](docs/wonder_cards.md), [Plugins](docs/plugins.md) |
+| `docs/` | [The app](docs/gui.md), [architecture](docs/architecture.md), [UDS protocol](docs/uds.md), [Generation 6](docs/gen6.md), [Generation 7](docs/gen7.md), [Virtual Console](docs/vc.md), [hardware](docs/hardware.md), [captures](docs/captures.md), [PKHeX helper](docs/pkhex.md), [Mystery Gift](docs/mystery_gift.md), [Wonder Cards](docs/wonder_cards.md), [Plugins](docs/plugins.md) |
 
 ```bash
 python -m pytest -q

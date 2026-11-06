@@ -33,9 +33,9 @@ ENTRIES = (                    # the Trade page's order: Gen 6, Gen 7, then the 
           "On the 3DS, open the PSS with local wireless on. PokeUDS asks the first trainer it hears for a trade: accept it on the 3DS.",
           True, max_queue=31 * 30 + 6),
     Entry("sm", "Sun / Moon", "Generation 7", "Sun or Moon", ("pk7",),
-          "On the 3DS, open the Festival Plaza and start a local Link Trade. PokeUDS joins its network.",
-          "PokeUDS opens a network; on the 3DS, open the Festival Plaza and start a local Link Trade.", False,
-          max_queue=32 * 30 + 6),
+          "On the 3DS, open the Festival Plaza with local wireless on. PokeUDS appears among the guests: invite it to a Link Trade. PokeUDS accepts and the 3DS joins it.",
+          "On the 3DS, open the Festival Plaza with local wireless on. PokeUDS invites the first player it hears to a Link Trade: accept it on the 3DS.",
+          True, max_queue=32 * 30 + 6),
     Entry("usum", "Ultra Sun / Ultra Moon", "Generation 7", "Ultra Sun or Ultra Moon", ("pk7",),
           "On the 3DS, open the Festival Plaza and start a local Link Trade. PokeUDS joins its network.",
           "PokeUDS opens a network; on the 3DS, open the Festival Plaza and start a local Link Trade.", False,
@@ -114,6 +114,8 @@ def trade_mode(entry: Entry, offer: Offer) -> str:
         return "Gen 2 Trade Center, with mail" if offer.generation == 2 else "Time Capsule: PokeUDS plays a Gen 1 game"
     if entry.group == "Generation 6":
         return "PSS trade: PokeUDS offers right away and confirms as soon as the console does"
+    if entry.complete:
+        return "Festival Plaza Link Trade: PokeUDS offers right away and confirms as soon as the console does"
     return "Joins or hosts the session and records the console (the trade messages are not mapped yet)"
 
 
@@ -142,7 +144,7 @@ def command(entry: Entry, settings: Settings, *, offer: str | list[str], role: s
         if role == "host":
             args += ["--as", host_title or entry.host_titles[0]]
         return args
-    if entry.group == "Generation 6" and trades is not None:
+    if (entry.group == "Generation 6" or entry.complete) and trades is not None:
         common += ["--trades", str(trades)]
     return args + ["trade", entry.key, *common]
 

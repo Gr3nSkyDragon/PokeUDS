@@ -19,6 +19,7 @@ SECUREDATA_HEADER_SIZE = 14
 
 EAPOL_START = 0x0201
 EAPOL_LOGOFF = 0x0202
+HOST_STATUS = 0x06          # in an EAPoL-Logoff, as every retail host sends it
 CONNECTION_CLIENT = 1
 CONNECTION_SPECTATOR = 2
 
@@ -121,7 +122,10 @@ def parse_eapol_start(payload: bytes) -> EapolStart | None:
 
 
 def eapol_logoff(client_mac: bytes, node_id: int, nodes: list[NodeInfo], max_nodes: int, total_nodes: int) -> bytes:
-    body = struct.pack(">H2xH", EAPOL_LOGOFF, node_id) + client_mac + bytes(6) + bytes([total_nodes, max_nodes]) + bytes(4)
+    # Bytes 0x0E-0x13 after the MAC: retail hosts put 0x06 (the host's status, ConnectedAsHost) at the third. X/Y take
+    # a zero there; a Sun/Moon console joining our network leaves at once (deauthentication, reason 3) unless it is 6.
+    body = (struct.pack(">H2xH", EAPOL_LOGOFF, node_id) + client_mac + bytes([0, 0, HOST_STATUS, 0, 0, 0])
+            + bytes([total_nodes, max_nodes]) + bytes(4))
     slots = [nodes[i].pack_eapol() if i < len(nodes) else bytes(0x28) for i in range(MAX_NODES)]
     return llc(ETHERTYPE_EAPOL) + body + b"".join(slots)
 

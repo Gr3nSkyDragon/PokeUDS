@@ -38,7 +38,35 @@ def _add_radio(p: argparse.ArgumentParser) -> None:
 
 
 def _add_keys(p: argparse.ArgumentParser, required: bool = True) -> None:
-    p.add_argument("--keys", required=required, help="aes_keys.txt holding the keyslot 0x2D key (not needed with --radio demo)")
+    p.add_argument("--keys", required=False,
+                   help="aes_keys.txt holding the keyslot 0x2D key (default: the app's Settings; not needed with --radio demo)")
+    p.set_defaults(keys_required=required)
+
+
+def _safe_output() -> None:
+    """Printing a trainer's name never stops a trade: a console's name can be anything (full-width letters, music
+    notes), and output sent to a file on Windows is cp1252, which raised on them mid-session. Output to a file or pipe
+    is UTF-8; a console keeps its encoding and shows what it cannot as ``?``."""
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is None:
+            continue
+        try:
+            if stream.isatty():
+                reconfigure(errors="replace")
+            else:
+                reconfigure(encoding="utf-8", errors="replace")
+        except (OSError, ValueError):
+            pass
+
+
+def _settings_keys() -> str:
+    from .app.settings import Settings
+
+    try:
+        return Settings.load().keys
+    except Exception:  # pragma: no cover - a damaged settings file
+        return ""
 
 
 def _uds_key(path: str | None, radio: str = "") -> bytes | None:
@@ -48,9 +76,31 @@ def _uds_key(path: str | None, radio: str = "") -> bytes | None:
         return DEMO_KEY            # the simulated console's; no console key is involved
     if not path:
         return None
+    if not Path(path).expanduser().is_file():
+        raise SystemExit(f"--keys {path}: no such file (give the full path to your aes_keys.txt, or set it in the app's "
+                         "Settings)")
     from .keys import KeyFile
 
     return KeyFile.load(path).uds_key()
+
+
+def _offer_file(path: str) -> str:
+    """The offer file: as given, else the file of that name in the received folder or the bank (a bare name is read
+    from the folder the command runs in, which is rarely where the Pokemon is)."""
+    if Path(path).expanduser().is_file():
+        return path
+    from .app import bank
+    from .app.settings import Settings
+
+    settings = Settings.load()
+    name = Path(path).name
+    for folder in (settings.output, settings.bank or str(bank.default_folder())):
+        candidate = Path(folder).expanduser() / name
+        if folder and candidate.is_file():
+            print(f"using {candidate}", file=sys.stderr)
+            return str(candidate)
+    raise SystemExit(f"--offer {path}: no such file here ({Path.cwd()}), in the received folder or in the bank; give "
+                     "its full path")
 
 
 def cmd_probe(args) -> int:
@@ -249,6 +299,7 @@ def cmd_trade(args) -> int:
     from . import plugins
 
     offers = []
+    args.offer = [_offer_file(p) for p in args.offer]
     for path in args.offer:                       # the trade queue, in order
         offer = pkx.load(path)
         try:
@@ -272,6 +323,8 @@ def cmd_trade(args) -> int:
     status.emit("radio", description=station.radio.describe())
     if game.generation == 6:
         return _trade_gen6(args, station, game, prof, offer, offers[1:])
+    if game.key == "sm":
+        return _trade_gen7(args, station, game, prof, offer, offers[1:])
     trade = LocalTrade(station, game, prof, offer, Path(args.output))
     try:
         if args.role == "host":
@@ -336,6 +389,56 @@ def _gen6_trainer(game, offer: bytes, args):
     return session.trainer_from_offer(pkx.decrypt(offer) if not pkx.checksum_valid(offer) else offer, version, chosen)
 
 
+def _gen7_trainer(game, offer: bytes, args):
+    """Who PokeUDS is in the Festival Plaza: --trainer/--tid/--sid, else the app's trainer, else the offer's OT. Its
+    principal id and 8-byte id are made once and kept in the settings, so a console sees the same guest each time."""
+    from .app.settings import Settings
+    from .games.gen7 import wire
+
+    settings = Settings.load()
+    trainer = dict(settings.trainer)
+    plaza = dict(settings.plaza)
+    if not plaza.get("pid") or not plaza.get("id8"):
+        fresh = wire.Trainer()
+        plaza = {"pid": f"{fresh.principal_id:08x}", "id8": fresh.id8.hex()}
+        settings.plaza = plaza
+        try:
+            settings.save()
+        except OSError as exc:
+            log.warning("could not keep the plaza id in the settings: %s", exc)
+    record = pkx.decrypt(offer) if not pkx.checksum_valid(offer) else offer
+    s = pkx.summary(record)
+    name = args.trainer or trainer.get("ot") or s.ot_name or "PokeUDS"
+    same = args.trainer is None or args.trainer == trainer.get("ot")
+    tid = args.tid if args.tid is not None else int(trainer["tid"]) if same and trainer.get("tid") is not None else s.tid
+    sid = args.sid if args.sid is not None else int(trainer["sid"]) if same and trainer.get("sid") is not None else s.sid
+    return wire.Trainer(name, tid & 0xFFFF, sid & 0xFFFF, int(plaza["pid"], 16), bytes.fromhex(plaza["id8"]),
+                        wire.VERSION_CODES["Moon"])
+
+
+def _trade_gen7(args, station, game, prof, offer: bytes, queue: list[bytes]) -> int:
+    from .games.gen6.session import TradeEnded
+    from .games.gen7.trade import Gen7Trade
+
+    trainer = _gen7_trainer(game, offer, args)
+    queue = [pkx.decrypt(q) if not pkx.checksum_valid(q) else q for q in queue]
+    trade = Gen7Trade(station, game, prof, offer, Path(args.output), trainer, trades=args.trades, partner=args.partner,
+                      queue=queue)
+    try:
+        trade.run(args.role, args.seconds)
+    except (TimeoutError, TradeEnded) as exc:
+        print(f"stopped: {exc}", file=sys.stderr)
+        status.emit("stopped", reason="timeout" if isinstance(exc, TimeoutError) else "ended", message=str(exc))
+        return 1 if not trade.saved else 0
+    except KeyboardInterrupt:
+        status.emit("stopped", reason="user")
+        return 130
+    finally:
+        station.close()
+    status.emit("stopped", reason="done")
+    return 0
+
+
 def _trade_gen6(args, station, game, prof, offer: bytes, queue: list[bytes]) -> int:
     from .games.gen6.trade import Gen6Trade
     from .games.gen6.session import TradeEnded
@@ -394,6 +497,7 @@ def cmd_vc_trade(args) -> int:
     if len(args.offer) > MAX_QUEUE:
         raise SystemExit(f"a Game Boy party holds {MAX_QUEUE} Pokemon: queue at most {MAX_QUEUE} per session")
     offers, mails = [], []
+    args.offer = [_offer_file(p) for p in args.offer]
     for path in args.offer:                       # the trade queue, in order
         offer = gbpk.load(path)
         edit_game = {"gen1": "rby", "gen2": "gsc"}.get(args.partner or "", "rby" if offer.generation == 1 else "gsc")
@@ -912,15 +1016,20 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--seconds", type=float, default=60.0,
                    help="how long to look for the console (join) or wait for it to join (host)")
     p.add_argument("--listen", type=float, default=20.0, help="Gen 7: how long to record the console once connected")
-    p.add_argument("--trades", type=int, help="Gen 6: trades before PokeUDS leaves the trade screen "
+    p.add_argument("--trades", type=int, help="Gen 6/7: trades before PokeUDS leaves the trade screen "
                                                "(default: one per --offer; more go round the queue again)")
-    p.add_argument("--partner", help="Gen 6, --role host: the trainer to ask in the PSS (default: the first heard)")
-    p.add_argument("--trainer", help="Gen 6: the trainer name shown in the PSS (default: the app's trainer, else the offer's OT)")
-    p.add_argument("--tid", type=int, help="Gen 6: trainer ID shown on the trade screen")
-    p.add_argument("--sid", type=int, help="Gen 6: secret ID")
+    p.add_argument("--partner", help="Gen 6/7, --role host: the trainer to ask in the PSS or Festival Plaza (default: the first heard)")
+    p.add_argument("--trainer", help="Gen 6/7: the trainer name shown in the PSS or plaza (default: the app's trainer, else the offer's OT)")
+    p.add_argument("--tid", type=int, help="Gen 6/7: trainer ID shown on the trade screen")
+    p.add_argument("--sid", type=int, help="Gen 6/7: secret ID")
     p.set_defaults(func=cmd_trade)
 
     args = parser.parse_args(argv)
+    _safe_output()
+    if hasattr(args, "keys_required") and not args.keys and not getattr(args, "radio", "").startswith("demo"):
+        args.keys = _settings_keys()           # the app's keys file, when --keys is left out
+        if not args.keys and args.keys_required:
+            parser.error("--keys aes_keys.txt is needed (or set the keys file in the app's Settings)")
     logging.basicConfig(level=logging.WARNING - 10 * min(args.verbose, 2),
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     if status.enabled() and os.environ.get("POKEUDS_MANAGED"):

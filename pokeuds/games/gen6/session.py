@@ -28,6 +28,7 @@ from dataclasses import dataclass, field
 from ... import pkx, status
 from ...nex import prudp
 from ...uds import Role, Station
+from ...uds.station import UdsError
 from . import wire
 
 log = logging.getLogger(__name__)
@@ -56,6 +57,26 @@ class TradeEnded(RuntimeError):
 
 @dataclass
 class Gen6Session:
+    # What differs by generation (Gen7Session overrides these): the gflnet framing, the Net-Z templates and how many
+    # objects Net-Z sets up (the host's messages after its first three, and the answer pairs it sends the client).
+    GENERATION = 6
+    NETZ_OBJECTS = 10
+    NETZ_PAIRS = 6
+    HEARTBEAT_OBJECT = 3
+    # The index a count report sent on receiving a message carries, past our last message's: X/Y's is the last one's
+    # own, Sun/Moon's the next one's (every acknowledgment in the Sun/Moon captures).
+    ACK_INDEX_AHEAD = 0
+
+    def netz_host_messages(self, call_id: int, nonce: bytes) -> list[bytes]:
+        return wire.netz_host(call_id, nonce)
+
+    def netz_client_messages(self, call_id: int) -> list[bytes]:
+        return wire.netz_client(call_id)
+
+    def host_init_bodies(self) -> list[bytes]:
+        """The host's first gflnet messages once Net-Z is up."""
+        return [template_init()]
+
     station: Station
     trainer: wire.Trainer
     offer: bytes                         # The Pokemon we offer: 260 bytes, decrypted, party format.
@@ -83,7 +104,7 @@ class Gen6Session:
         self._netz_in = 0
         self._netz_sent = 0
         self._netz_client_tail_at: float | None = None
-        self._host_messages = wire.netz_host(self._call_id, os.urandom(4)) if self.host else []
+        self._host_messages = self.netz_host_messages(self._call_id, os.urandom(4)) if self.host else []
         self._client_messages: list[bytes] = []
         self._pairs_sent = 0
         self._client_tail = 0
@@ -111,7 +132,10 @@ class Gen6Session:
 
     def _send_uds(self, payload: bytes) -> None:
         if self.station.role in (Role.HOST, Role.CLIENT):
-            self.station.send(self.peer, DATA_CHANNEL, payload)
+            try:
+                self.station.send(self.peer, DATA_CHANNEL, payload)
+            except UdsError:
+                raise TradeEnded("the console left the network") from None
 
     def _now_ms(self) -> int:
         return int((self.clock() - self._start) * 1000) + 4000
@@ -140,13 +164,14 @@ class Gen6Session:
             self._netz_message(message.payload)
         elif wire.is_heartbeat(message.payload) and self.host:
             self.ep.send_unreliable(wire.heartbeat_host(self._hb_counter, message.payload[wire.HB_TIME:wire.HB_TIME + 4],
-                                                        self._now_ms()))
+                                                        self._now_ms(), self.HEARTBEAT_OBJECT))
             self._hb_counter += 1
 
     # -- Net-Z ------------------------------------------------------------------------------------
 
     def _netz_send(self, messages: list[bytes]) -> None:
         for m in messages:
+            log.debug("us: Net-Z %02X, %d B (PRUDP out %s)", wire.netz_kind(m), len(m), self.ep.outbound)
             self.ep.send_reliable(m)
 
     def _netz_message(self, message: bytes) -> None:
@@ -155,13 +180,15 @@ class Gen6Session:
             return
         self._netz_in += 1
         n = self._netz_in
+        log.debug("console: Net-Z #%d %02X, %d B (PRUDP out %s)", n, wire.netz_kind(message), len(message),
+                  self.ep.outbound)
         if self.host:
             if n == 1 and self.ep.outbound == "idle":
                 self.ep.open(wire.HOST_CONNECT_PAYLOAD)
             elif n == 4:
-                self._netz_send(self._host_messages[3:13])
-            elif wire.netz_kind(message) == 0x0A and self._pairs_sent < 6:
-                start = 13 + 2 * self._pairs_sent
+                self._netz_send(self._host_messages[3:3 + self.NETZ_OBJECTS])
+            elif wire.netz_kind(message) == 0x0A and self._pairs_sent < self.NETZ_PAIRS:
+                start = 3 + self.NETZ_OBJECTS + 2 * self._pairs_sent
                 self._netz_send(self._host_messages[start:start + 2])
                 self._pairs_sent += 1
             elif wire.netz_kind(message) == 0x02 and not self.netz_done:
@@ -169,17 +196,18 @@ class Gen6Session:
                 if self._client_tail == 2:
                     self.netz_done = True
                     log.info("Net-Z set up (host)")
-                    self._gfl_send(template_init())
+                    for body in self.host_init_bodies():
+                        self._gfl_send(body)
         else:
             if n == 2:
                 self._call_id = message[wire.NETZ_CALL_OFFSET]
             if n == 3:
-                self._client_messages = wire.netz_client(self._call_id)
+                self._client_messages = self.netz_client_messages(self._call_id)
                 self._netz_send(self._client_messages[1:4])
-            elif n == 13:
-                self._netz_send(self._client_messages[4:10])
+            elif n == 3 + self.NETZ_OBJECTS:
+                self._netz_send(self._client_messages[4:4 + self.NETZ_PAIRS])
                 self._hb_next = self.clock()
-            elif n == 15 and self._netz_client_tail_at is None:
+            elif n == 5 + self.NETZ_OBJECTS and self._netz_client_tail_at is None:
                 self._netz_client_tail_at = self.clock() + CLIENT_NETZ_TAIL_DELAY
 
     def _netz_timers(self) -> None:
@@ -188,7 +216,7 @@ class Gen6Session:
             if self.ep.outbound == "open" and self._netz_sent == 0:
                 self._netz_send(self._host_messages[0:3])
                 self._netz_sent = 3
-            if self._pairs_sent == 6:      # X's first keepalive follows its replies by about a second.
+            if self._pairs_sent == self.NETZ_PAIRS:   # X's first keepalive follows its replies by about a second.
                 if self._keepalive_next is None:
                     self._keepalive_next = now + HOST_KEEPALIVE_FIRST
                 elif now >= self._keepalive_next:
@@ -199,14 +227,14 @@ class Gen6Session:
         if self.ep.outbound == "idle":
             self.ep.open(wire.CLIENT_CONNECT_PAYLOAD)
         if self.ep.outbound == "open" and self._netz_sent == 0:
-            self.ep.send_reliable(wire.template(wire.templates.NETZ_CLIENT[0]))
+            self.ep.send_reliable(self.netz_client_messages(self._call_id)[0])
             self._netz_sent = 1
         if self._netz_client_tail_at is not None and now >= self._netz_client_tail_at and not self.netz_done:
-            self._netz_send(self._client_messages[10:12])
+            self._netz_send(self._client_messages[4 + self.NETZ_PAIRS:6 + self.NETZ_PAIRS])
             self.netz_done = True
             log.info("Net-Z set up (client)")
         if self._hb_next is not None and now >= self._hb_next:
-            self.ep.send_unreliable(wire.heartbeat_client(self._hb_counter, self._now_ms()))
+            self.ep.send_unreliable(wire.heartbeat_client(self._hb_counter, self._now_ms(), self.HEARTBEAT_OBJECT))
             self._hb_counter += 1
             self._hb_sent += 1
             self._hb_next = now + (HEARTBEAT_BURST_EVERY if self._hb_sent < HEARTBEAT_BURST else HEARTBEAT_EVERY)
@@ -220,9 +248,9 @@ class Gen6Session:
         if log.isEnabledFor(logging.DEBUG):
             log.debug("us: %s", describe(wire.parse_body(body)))
         self._index += 1
-        self.ep.send_reliable(wire.gfl_encode(self._index, self._counts_word(), body), game=True)
+        self.ep.send_reliable(wire.gfl_encode(self._index, self._counts_word(), body, self.GENERATION), game=True)
         self._counts[self.node] = self._index
-        self.ep.send_reliable(wire.gfl_encode(self._index, self._counts_word()), game=True)
+        self.ep.send_reliable(wire.gfl_encode(self._index, self._counts_word(), b"", self.GENERATION), game=True)
 
     def _game_message(self, raw: bytes) -> None:
         try:
@@ -235,13 +263,14 @@ class Gen6Session:
         if m.index <= self._counts[self.peer]:
             return
         self._counts[self.peer] = m.index
-        self.ep.send_reliable(wire.gfl_encode(self._index, self._counts_word()), game=True)
-        body = wire.parse_body(m.body)
-        if body.kind == "sync":
-            self._peer_sync(body)
-        else:
-            log.debug("console: %s", describe(body))
-            self._inbox.append(body)
+        self.ep.send_reliable(wire.gfl_encode(self._index + self.ACK_INDEX_AHEAD, self._counts_word(), b"",
+                                              self.GENERATION), game=True)
+        for body in wire.parse_bodies(m.body):
+            if body.kind == "sync":
+                self._peer_sync(body)
+            else:
+                log.debug("console: %s", describe(body))
+                self._inbox.append(body)
 
     # -- syncs ------------------------------------------------------------------------------------
 
@@ -314,14 +343,19 @@ class Gen6Session:
         while not condition() and self.clock() < deadline:
             self.pump()
 
-    def take(self, module: int, cmd: int, what: str, *, also: tuple[int, ...] = ()) -> wire.Body:
-        """Wait for the console's next command ``cmd`` (or one of ``also``) in ``module``."""
+    def take(self, module: int, cmd: int, what: str, *, also: tuple[int, ...] = (),
+             drop_before: Callable[[wire.Body], bool] | None = None) -> wire.Body:
+        """Wait for the console's next command ``cmd`` (or one of ``also``) in ``module``. ``drop_before`` also
+        removes the messages it matches that arrived before that command (the inbox keeps arrival order)."""
         found: list[wire.Body] = []
 
         def ready() -> bool:
-            for body in self._inbox:
+            for i, body in enumerate(self._inbox):
                 if body.kind == "command" and body.module == module and body.ident in (cmd, *also):
-                    self._inbox.remove(body)
+                    earlier = self._inbox[:i]
+                    if drop_before is not None:
+                        earlier = [b for b in earlier if not drop_before(b)]
+                    self._inbox = earlier + self._inbox[i + 1:]
                     found.append(body)
                     return True
             return False
@@ -462,7 +496,7 @@ def template_init() -> bytes:
     return wire.template(wire.templates.HOST_INIT)
 
 
-def party_record(offer: bytes) -> bytes:
+def party_record(offer: bytes, game: str = "xy") -> bytes:
     """The 260-byte party form of ``offer`` (decrypted). A box record gets its battle stats from the
     PKHeX helper when it is built; otherwise they are left zero, which a console shows as level 0."""
     if len(offer) == pkx.PARTY_SIZE:
@@ -470,7 +504,7 @@ def party_record(offer: bytes) -> bytes:
     try:
         from ... import pkhex
 
-        built = pkhex.shared().check("xy", offer)
+        built = pkhex.shared().check(game, offer)
         data = built.data
         # The checksum covers only the box part, so check the party part has stats too (level, max HP).
         if (len(data) == pkx.PARTY_SIZE and pkx.checksum_valid(data) and data[PARTY_LEVEL]

@@ -5,8 +5,9 @@ Ultra Sun/Ultra Moon trade with each other; neither trades with Generation 6 (Po
 Pokemon forward instead). azahar_uds verified a trade between Ultra Sun and Ultra Moon.
 
 Their code links the same local transport as Generation 6 (NEX PRUDP V1 behind Pia's local UDS
-header, the same checksum key, gflnet), so ``pokeuds.nex`` already speaks it; the Festival Plaza
-invitation and the trade's own messages wait for a capture (docs/captures.md).
+header, the same checksum key, gflnet2). Sun/Moon's Festival Plaza invitation (``plaza``) and trade
+(``wire``, ``session``, ``trade``) are mapped from Azahar logs (docs/gen7.md); Ultra Sun/Ultra Moon
+waits for a capture.
 """
 
 from ...pkx import PK7
