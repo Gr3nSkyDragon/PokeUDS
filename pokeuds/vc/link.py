@@ -224,15 +224,22 @@ class Trade:
 
 
 class TradeEngine:
-    """Our half of the cable, one unit at a time. Offers ``party.mons[0]`` up to ``trades`` times."""
+    """Our half of the cable, one unit at a time.
 
-    def __init__(self, mode: LinkMode, party: Party, *, trades: int = 1,
+    The party is the trade queue (up to six, as a Game Boy party is): each trade offers the next queued Pokemon,
+    and the game's own bookkeeping follows it, the Pokemon sent leaving the party and the one received joining
+    its end, so the next round shows the console the party a real game would have. ``trades`` (default: one per
+    queued Pokemon) above the queue offers the first slot again, for tests."""
+
+    def __init__(self, mode: LinkMode, party: Party, *, trades: int | None = None,
                  on_trade: Callable[[Trade], None] | None = None, rng=os.urandom) -> None:
         if not party.mons or any(m.generation != mode.generation for m in party.mons):
             raise ValueError(f"a {mode.key} trade sends Generation {mode.generation} records")
         self.mode = mode
         self.party = party
-        self.trades_left = trades
+        self.trades_left = len(party.mons) if trades is None else trades
+        self._pending = list(party.mons)          # the queue not traded yet, in order
+        self._our_pick = 0
         self.on_trade = on_trade
         self.rng = rng
         self.state = State.START
@@ -376,7 +383,7 @@ class TradeEngine:
 
     def _decide(self) -> int:
         if self._decision is Decision.PICK:
-            return 0 if self.trades_left > 0 else CANCEL
+            return self._next_slot() if self.trades_left > 0 else CANCEL
         if self._decision is Decision.CONFIRM:
             return ACCEPT
         if self.mode.generation == 2 and self.trades:                 # Gen 2's check byte
@@ -384,6 +391,14 @@ class TradeEngine:
             species = {last.sent.dex, last.received.dex}
             return 1 if MEW in species else 2 if CELEBI in species else 0
         return ACCEPT                                                  # Gen 1: the leftover value
+
+    def _next_slot(self) -> int:
+        """The party slot of the next queued Pokemon (the first slot once the queue is done)."""
+        if self._pending:
+            for slot, mon in enumerate(self.party.mons):
+                if mon is self._pending[0]:
+                    return slot
+        return 0
 
     def _select(self, b: int) -> int:
         if is_sync(b):
@@ -418,7 +433,7 @@ class TradeEngine:
             elif theirs == CANCEL or ours == CANCEL:
                 pass                                                   # Back to picking.
             else:
-                self._their_pick = theirs
+                self._their_pick, self._our_pick = theirs, ours
                 self._decision = Decision.CONFIRM
                 mon = self.partner.mons[theirs] if self.partner and theirs < len(self.partner.mons) else None
                 self._note(f"partner offers slot {theirs}: {mon.describe() if mon else '?'}")
@@ -440,13 +455,18 @@ class TradeEngine:
         mail = self.partner_mail[self._their_pick] if self.partner_mail else None
         if mail is not None and (received.held_item not in MAIL_ITEMS or not any(mail)):
             mail = None
-        sent = self.party.mons[0]
+        slot = self._our_pick if self._our_pick < len(self.party.mons) else 0
+        sent = self.party.mons[slot]
         trade = Trade(sent, received, mail, gbpk.decode_name(self.partner.trainer_name))
         self.trades.append(trade)
         self.trades_left -= 1
-        # The ROM swaps the two: our party now holds what we received (in the slot it is appended to).
-        self.party = Party(self.party.trainer_name, self.party.trainer_id, [received] + self.party.mons[1:],
-                           [mail or b""] + self.party.mail[1:])
+        if self._pending and sent is self._pending[0]:
+            self._pending.pop(0)
+        # As the ROM does it: the Pokemon sent leaves the party, the one received joins at its end.
+        mons = self.party.mons[:slot] + self.party.mons[slot + 1:] + [received]
+        mails = list(self.party.mail) + [b""] * (len(self.party.mons) - len(self.party.mail))
+        mails = mails[:slot] + mails[slot + 1:] + [mail or b""] if self.mode.mail else []
+        self.party = Party(self.party.trainer_name, self.party.trainer_id, mons, mails)
         self._note(f"traded {sent.describe()} for {received.describe()}")
         if self.on_trade:
             self.on_trade(trade)

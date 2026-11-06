@@ -163,6 +163,38 @@ def test_whole_trade_over_the_air(air, tmp_path, pokeuds_role):
         console.station.close()
 
 
+def test_a_queue_offers_each_pokemon_in_turn(air, tmp_path):
+    key = os.urandom(16)
+    first, second = make_record(0x11111111, species=658, nickname="Froakie"), make_record(0x33333333, species=650,
+                                                                                            nickname="Chespin")
+    ours = gen6_trade(air, key, tmp_path / "ours", "02000000A601", first, "POKEUDS", (6,))
+    ours.queue, ours.queue_party, ours.trades = [second], [session.party_record(second)], 2
+    console = gen6_trade(air, key, tmp_path / "console", "02000000A602",
+                         make_record(0x22222222, species=653, nickname="Fennekin"), "Serena", (6,))
+    console.trades = 2
+    errors = []
+
+    def run(trade, role):
+        try:
+            trade.run(role, 20.0)
+        except Exception as exc:  # pragma: no cover - reported below
+            errors.append(f"{role}: {exc!r}")
+
+    threads = [threading.Thread(target=run, args=(ours, "join"), daemon=True),
+               threading.Thread(target=run, args=(console, "host"), daemon=True)]
+    try:
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(60)
+        assert not errors and not any(t.is_alive() for t in threads), errors
+        assert [p.read_bytes() for p in console.saved] == [first[:pkx.STORED_SIZE], second[:pkx.STORED_SIZE]]
+        assert len(ours.saved) == 2
+    finally:
+        ours.station.close()
+        console.station.close()
+
+
 def test_box_record_is_padded_without_the_helper(monkeypatch):
     import pokeuds.pkhex as pkhex
 

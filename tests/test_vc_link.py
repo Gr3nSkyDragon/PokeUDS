@@ -148,6 +148,27 @@ def test_gen1_trade():
     assert model.partner_parties[1].mons[0] == theirs
 
 
+def test_a_queue_trades_each_pokemon_once_in_order():
+    queue = [gen1_mon(dex=25, nick="ONE"), gen1_mon(dex=4, nick="TWO"), gen1_mon(dex=7, nick="THREE")]
+    theirs = gen1_mon(dex=43, nick="ODDISH", ot="LINK", ot_id=31693)
+    engine = link.TradeEngine(link.GEN1, party(*queue, name="POKEUDS"))
+    model = Model3DS(link.GEN1, party(theirs), trades=5)            # the console would go on: the queue ends it
+    play(engine, model)
+    assert model.received == queue and len(engine.trades) == 3
+    # Each round the console sees the party a game would hold: the one sent gone, the one received at the end.
+    assert [[m.dex for m in p.mons] for p in model.partner_parties] == [[25, 4, 7], [4, 7, 43], [7, 43, 25], [43, 25, 4]]
+
+
+def test_gen2_queue_keeps_each_pokemons_mail():
+    mail = b"HELLO".ljust(33, b"\x7f") + b"POKEUDS\x50\x00\x00" + b"\x12\x34" + bytes([158, 0x9E])
+    queue = [gen2_mon(dex=155), gen2_mon(dex=158, item=0x9E)]
+    engine = link.TradeEngine(link.GEN2, party(*queue, mail=[b"", mail]))
+    model = Model3DS(link.GEN2, party(gen2_mon(dex=161)), trades=2)
+    play(engine, model)
+    assert [m.dex for m in model.received] == [155, 158]
+    assert model.partner_mail[1][0] == mail                         # round 2: Totodile's mail leads the party
+
+
 def test_gen2_trade_with_mail():
     mail = b"HELLO".ljust(33, b"\x7f") + b"POKEUDS\x50\x00\x00" + b"\x12\x34" + bytes([155, 0x9E])
     mine = gen2_mon(dex=155, item=0x9E)                          # Cyndaquil holding Flower Mail

@@ -27,6 +27,7 @@ from . import link, pia
 from .session import Config, Role, Session, State
 
 log = logging.getLogger(__name__)
+MAX_QUEUE = 6                           # a Game Boy party: the most one Trade Center session can offer
 _UNSAFE = re.compile(r"[^\w\-]+")
 
 
@@ -60,11 +61,13 @@ def save(record: gbpk.Record, folder: Path, *, game: str, trade: int, stamp: str
 @dataclass
 class VcTrade:
     station: Station
-    offer: gbpk.Record                  # as the user gave it (.pk1 or .pk2)
+    offer: gbpk.Record                  # as the user gave it (.pk1 or .pk2): the first in the queue
     output: Path
-    trades: int = 1
+    trades: int | None = None           # default: one per queued Pokemon
     trainer_name: str = "POKEUDS"
     offer_mail: bytes = b""
+    queue: list[gbpk.Record] = field(default_factory=list)       # the Pokemon offered after it, same format
+    queue_mail: list[bytes] = field(default_factory=list)
     saved: list[Path] = field(default_factory=list)
     mode: link.LinkMode | None = None
     session: Session | None = None
@@ -104,9 +107,16 @@ class VcTrade:
 
     def _open(self, role: Role, application_data: bytes) -> None:
         self.mode = choose_mode(self.offer, self.partner_generation)
+        offers = [self.offer, *self.queue]
+        if len(offers) > MAX_QUEUE:
+            raise ValueError(f"a Game Boy party holds {MAX_QUEUE} Pokemon: queue at most {MAX_QUEUE} for one session")
+        if any(m.generation != self.offer.generation for m in offers):
+            raise ValueError("a Virtual Console queue is all .pk1 or all .pk2 (they trade in different rooms)")
         sent = wire_offer(self.offer, self.mode)
-        party = link.Party(gbpk.encode_name(self.trainer_name), self.offer.ot_id, [sent],
-                           [self.offer_mail] if self.mode is link.GEN2 else [])
+        mails = [self.offer_mail, *self.queue_mail] + [b""] * len(offers)
+        party = link.Party(gbpk.encode_name(self.trainer_name), self.offer.ot_id,
+                           [wire_offer(m, self.mode) for m in offers],
+                           mails[:len(offers)] if self.mode is link.GEN2 else [])
         self.engine = link.TradeEngine(self.mode, party, trades=self.trades, on_trade=self._on_trade)
         peer_node = 1 if role is Role.JOINER else 2
 
@@ -119,7 +129,8 @@ class VcTrade:
         self.session = Session(role, send, Config(name=self.trainer_name, application_data=application_data))
         self._role = role
         self._first_sent = False
-        log.info("VC %s trade, %s, offering %s", self.mode.key, role.value, sent.describe())
+        log.info("VC %s trade, %s, offering %s", self.mode.key, role.value,
+                 ", then ".join(m.describe() for m in party.mons))
 
     # -- the game part --------------------------------------------------------------------------
 

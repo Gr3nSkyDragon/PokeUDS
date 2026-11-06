@@ -26,7 +26,7 @@ python -m pokeuds vc trade --radio esp32 --keys aes_keys.txt --offer my.pk1
 ```
 
 ```bash
-python -m pokeuds vc trade --radio esp32 --keys aes_keys.txt --offer my.pk2 --trades 2
+python -m pokeuds vc trade --radio esp32 --keys aes_keys.txt --offer cyndaquil.pk2 --offer totodile.pk2
 ```
 
 ```bash
@@ -36,6 +36,12 @@ python -m pokeuds vc trade --role host --as gold --radio esp32 --keys aes_keys.t
 ```bash
 python -m pokeuds vc convert my.pk2
 ```
+
+**The trade queue:** `--offer` repeats, up to six (a Game Boy party), all `.pk1` or all `.pk2`. The queue is
+PokeUDS's party in the Trade Center, and each trade offers the next one in order: as in the ROM, the Pokemon sent
+leaves the party and the one received joins its end, so the console sees the party a real game would hold.
+PokeUDS chooses Cancel after the last. `--trades N` (default: one per `--offer`) above the queue offers the first
+slot again, for testing.
 
 On the 3DS: choose Host in the VC link menu (or Join when PokeUDS hosts), then the Pokemon Center
 receptionist, then the Trade Center (or the Time Capsule) and the table. PokeUDS answers the link menu

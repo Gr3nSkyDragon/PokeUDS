@@ -17,6 +17,7 @@ from pokeuds.app.progress import STEP_LABELS, STEPS
 from .. import theme as t
 from .builder import BuilderPanel
 from .common import View, log_box, open_folder
+from .sprite import sprite
 
 CONNECTIONS = (("esp32", "ESP32 board"), ("ldnd", "USB Wi-Fi adapter"))
 LDND_PIPE = r"\\.\pipe\ldnd"
@@ -31,8 +32,7 @@ class TradeView(View):
         self.entry = catalog.BY_KEY[key]
         self.role = "join"
         self.host_title = ""
-        self.trades = 1
-        self.offer: catalog.Offer | None = None
+        self.queue: list[catalog.Offer] = []        # the trade queue: offered in order, one per trade
         self.show_log = False
         self.building = False                # the "Build one" panel is open
         self.note, self.note_color = "", t.GOOD
@@ -43,9 +43,137 @@ class TradeView(View):
 
     # -- state ----------------------------------------------------------------------------------
 
+    @property
+    def offer(self) -> catalog.Offer | None:
+        """The first Pokemon in the queue."""
+        return self.queue[0] if self.queue else None
+
     def _load_offer(self) -> None:
-        path = self.app.settings.offers.get(self.entry.key, "")
-        self.offer = catalog.describe_offer(self.entry, path) if path and Path(path).exists() else None
+        self.queue = [catalog.describe_offer(self.entry, p) for p in self.app.settings.offer_queue(self.entry.key)
+                      if Path(p).exists()]
+
+    def _keep_queue(self) -> None:
+        self.app.settings.set_offer_queue(self.entry.key, [o.path for o in self.queue])
+
+    def add_offer(self, path: str) -> str:
+        """Put a file at the end of the queue; the reason it was not, or ""."""
+        if any(Path(o.path) == Path(path) for o in self.queue):
+            return f"{Path(path).name} is in the queue already"
+        if len(self.queue) >= self.entry.max_queue:
+            return f"{self.entry.name} trades at most {self.entry.max_queue} Pokemon in one session"
+        self.queue.append(catalog.describe_offer(self.entry, path))
+        self._keep_queue()
+        return ""
+
+    def _add_and_say(self, paths: list[str], done: str = "") -> None:
+        added, refused = 0, []
+        for path in paths:
+            why = self.add_offer(path)
+            if why:
+                refused.append(why)
+            else:
+                added += 1
+        if refused:
+            self.note, self.note_color = "; ".join(refused[:2]) + ".", t.WARN
+        elif done:
+            self.note, self.note_color = done, t.GOOD
+        else:
+            self.note = ""                       # the queue itself shows what was added
+
+    def _move(self, index: int, by: int) -> None:
+        other = index + by
+        if 0 <= other < len(self.queue):
+            self.queue[index], self.queue[other] = self.queue[other], self.queue[index]
+            self.note = ""
+            self._keep_queue()
+            self.save()
+
+    def _remove(self, index: int) -> None:
+        del self.queue[index]
+        self.note = ""
+        self._keep_queue()
+        self.save()
+
+    def _clear(self, e=None) -> None:
+        self.queue = []
+        self.note = ""
+        self._keep_queue()
+        self.save()
+
+    # -- choosing from the bank, without leaving the page -----------------------------------------
+
+    def pick_from_bank(self, e=None) -> None:
+        """A list of the bank's Pokemon this game takes: a click queues one, and the list stays open for more."""
+        from pokeuds.app import bank as banking
+
+        page, game = self.app.page, self.entry.key
+        entries = banking.Bank(self.app.settings.bank or None).entries()
+        takes = [x for x in entries if game in banking.games_for(x)]
+        migrates = [x for x in entries if game in banking.migrates_to(x)]
+        state = {"query": ""}
+        listing = ft.Column(spacing=2, scroll=ft.ScrollMode.AUTO, height=420)
+
+        def queued(x) -> bool:
+            return any(Path(o.path) == x.path for o in self.queue)
+
+        def row(x, migrate: bool) -> ft.Control:
+            done = queued(x)
+            tag = (t.pill("in the queue", t.GOOD) if done else
+                   t.pill(f"migrates to .pk{banking.migration_target(x)}", t.WARN) if migrate else ft.Container())
+            return ft.Container(ft.Row([
+                sprite(self.app, x.dex, form=x.form, shiny=x.shiny, size=40, on_ready=lambda: fill()),
+                t.pill(x.extension.upper(), t.ACCENT),
+                ft.Column([ft.Text(x.describe(), size=14, color=t.TEXT),
+                           t.label(" · ".join(v for v in (banking.SOURCES.get(x.source, x.source), x.note) if v), size=12)],
+                          spacing=1, expand=True),
+                *([ft.Icon(ft.Icons.AUTO_AWESOME, color=t.WARN, size=16)] if x.shiny else []),
+                tag,
+            ], spacing=10), padding=ft.Padding(8, 6, 8, 6), border_radius=8, ink=not done,
+                on_click=None if done else (lambda _, y=x, m=migrate: choose(y, m)))
+
+        def fill() -> None:
+            q = state["query"].lower()
+            hit = lambda x: not q or q in x.describe().lower()
+            shown = takes
+            if game in ("rby", "gsc") and self.queue:   # a VC queue is all .pk1 or all .pk2 (different rooms)
+                suffix = Path(self.queue[0].path).suffix.lower()
+                shown = [x for x in takes if x.path.suffix.lower() == suffix]
+            rows = [row(x, False) for x in shown if hit(x)]
+            if migrates and any(hit(x) for x in migrates):
+                rows.append(t.label("Migrated to Gen 7 first (Poke Transporter, Pokemon Bank):", size=12))
+                rows += [row(x, True) for x in migrates if hit(x)]
+            listing.controls = rows or [t.label("Nothing in the bank that this game takes." if not q else
+                                                "Nothing matches.", size=13)]
+            try:
+                listing.update()
+            except RuntimeError:
+                pass                             # not on the page (yet, or any more)
+
+        def choose(x, migrate: bool) -> None:
+            if migrate:                          # asks first, migrates, and queues the copy (the Bank page's flow)
+                page.pop_dialog()
+                self.app.views["bank"]._offer_migrated(x, game)
+                return
+            self._add_and_say([str(x.path)])
+            self.save()
+            fill()
+
+        def search(ev) -> None:
+            state["query"] = (ev.control.value or "").strip()
+            fill()
+
+        def browse(_) -> None:
+            page.pop_dialog()
+            self.from_bank()
+
+        fill()
+        page.show_dialog(ft.AlertDialog(
+            title=ft.Text(f"Add to the {self.entry.name} queue"),
+            content=ft.Column([ft.TextField(hint_text="Search the bank", dense=True, prefix_icon=ft.Icons.SEARCH,
+                                            on_change=search, autofocus=True), listing],
+                              tight=True, spacing=8, width=560),
+            actions=[ft.TextButton("Open the Bank page", icon=ft.Icons.INVENTORY_2_OUTLINED, on_click=browse),
+                     ft.FilledButton("Done", on_click=lambda _: page.pop_dialog())]))
 
     def pick_game(self, key: str) -> None:
         if self.app.busy():
@@ -61,12 +189,12 @@ class TradeView(View):
         self.save()
 
     async def choose_offer(self, e=None) -> None:
-        files = await self.app.picker.pick_files(dialog_title="Choose the Pokemon to offer",
+        files = await self.app.picker.pick_files(dialog_title="Add Pokemon to the trade queue", allow_multiple=True,
                                                  file_type=ft.FilePickerFileType.CUSTOM,
                                                  allowed_extensions=list(self.entry.extensions))
-        if files and files[0].path:
-            self.app.settings.offers[self.entry.key] = files[0].path
-            self.offer = catalog.describe_offer(self.entry, files[0].path)
+        paths = [f.path for f in files or [] if f.path]
+        if paths:
+            self._add_and_say(paths)
             self.save()
 
     def toggle_builder(self, e=None) -> None:
@@ -74,11 +202,9 @@ class TradeView(View):
         self.refresh()
 
     def _built(self, entry, text: str) -> None:
-        """The builder kept a Pokemon in the bank: it is the offer now."""
-        self.app.settings.offers[self.entry.key] = str(entry.path)
-        self.offer = catalog.describe_offer(self.entry, str(entry.path))
+        """The builder kept a Pokemon in the bank: it joins the queue."""
         self.building = False
-        self.note, self.note_color = text, t.GOOD
+        self._add_and_say([str(entry.path)], text)
         self.save()
 
     def from_bank(self, e=None) -> None:
@@ -86,11 +212,11 @@ class TradeView(View):
         self.app.navigate("bank")
 
     def problems(self) -> list[str]:
-        return catalog.missing_for_start(self.entry, self.app.settings, self.offer)
+        return catalog.missing_for_start(self.entry, self.app.settings, self.queue)
 
     def command(self) -> list[str]:
-        return catalog.command(self.entry, self.app.settings, offer=self.offer.path if self.offer else "",
-                               role=self.role, host_title=self.host_title, trades=self.trades, verbose=True)
+        return catalog.command(self.entry, self.app.settings, offer=[o.path for o in self.queue] or [""],
+                               role=self.role, host_title=self.host_title, verbose=True)
 
     def start(self, e=None) -> None:
         if self.app.busy() or self.problems():
@@ -241,19 +367,13 @@ class TradeView(View):
             controls.append(t.notice(f"{entry.name} is session-only for now: PokeUDS joins or hosts and records what the "
                                      "3DS sends, but cannot offer its Pokemon until the trade messages are mapped from "
                                      "captures.", t.INFO))
-        offer_text = self.offer.summary if self.offer and self.offer.summary else "No Pokemon chosen"
+        controls.append(self.queue_control())
         controls.append(ft.Row([
-            ft.Icon(ft.Icons.CATCHING_POKEMON, color=t.ACCENT if self.offer else t.MUTED),
-            ft.Column([ft.Text(offer_text, size=14, color=t.TEXT),
-                       t.label(Path(self.offer.path).name if self.offer else
-                               "Accepts " + ", ".join(f".{x}" for x in entry.extensions))],
-                      spacing=2, expand=True),
-        ], spacing=12))
-        controls.append(ft.Row([
-            t.secondary("From the bank", self.from_bank, ft.Icons.INVENTORY_2_OUTLINED, disabled=busy),
             (t.primary if self.building else t.secondary)("Build one", self.toggle_builder, ft.Icons.AUTO_FIX_HIGH,
                                                          disabled=busy),
-            t.secondary("Choose file", self.choose_offer, ft.Icons.FOLDER_OPEN, disabled=busy),
+            t.secondary("Add a file", self.choose_offer, ft.Icons.FOLDER_OPEN, disabled=busy),
+            *([ft.TextButton("Clear the queue", icon=ft.Icons.CLEAR_ALL, on_click=self._clear, disabled=busy)]
+              if len(self.queue) > 1 else []),
         ], spacing=10, wrap=True))
         if self.building:
             controls.append(self.builder.control())
@@ -261,12 +381,6 @@ class TradeView(View):
             controls.append(t.notice(self.note, self.note_color, ft.Icons.CHECK_CIRCLE_OUTLINE))
         if self.offer and not self.offer.problem:
             controls.append(t.label(catalog.trade_mode(entry, self.offer), color=t.TEXT))
-        if entry.complete:
-            controls.append(ft.Row([
-                t.label("Trades before PokeUDS cancels"),
-                ft.Dropdown(value=str(self.trades), width=90, disabled=busy,
-                            options=[ft.DropdownOption(key=str(n), text=str(n)) for n in range(1, 7)],
-                            on_select=self._trades_changed)], spacing=12))
         for problem in self.problems():
             controls.append(t.notice(problem, t.WARN, ft.Icons.WARNING_AMBER_ROUNDED))
         button = (t.secondary("Stop", lambda e: self.app.stop(), ft.Icons.STOP_ROUNDED) if busy and self.app.run_kind == "trade"
@@ -366,8 +480,42 @@ class TradeView(View):
         self.host_title = e.control.value
         self.refresh()
 
-    def _trades_changed(self, e) -> None:
-        self.trades = int(e.control.value)
+    def queue_control(self) -> ft.Control:
+        """The trade queue: what PokeUDS offers, one Pokemon per trade, in this order."""
+        entry, busy = self.entry, self.app.busy()
+        many = len(self.queue) > 1
+        limit = f"up to {entry.max_queue}, a Game Boy party" if entry.key in ("rby", "gsc") else \
+            f"up to {entry.max_queue}"
+        kinds = ", ".join(f".{x}" for x in entry.extensions)
+        head = (f"Trade queue: {len(self.queue)} Pokemon, offered in this order, one per trade; PokeUDS leaves "
+                f"after the last ({limit})." if many else
+                f"The Pokemon to offer. Add more to trade them one after another, {limit}." if self.queue else
+                f"Choose the Pokemon to offer: {kinds}. Add more to trade them one after another, {limit}.")
+        rows: list[ft.Control] = [t.label(head, color=t.TEXT)]
+        last = len(self.queue) - 1
+        for i, o in enumerate(self.queue):
+            rows.append(ft.Row([
+                ft.Container(ft.Text(str(i + 1), size=13, color=t.MUTED), width=18),
+                sprite(self.app, o.dex, form=o.form, shiny=o.shiny, size=48, on_ready=self.refresh),
+                ft.Column([ft.Text(o.summary or Path(o.path).name, size=14, color=t.TEXT),
+                           t.label(Path(o.path).name, size=12),
+                           *([t.label(o.problem, size=12, color=t.WARN)] if o.problem else [])], spacing=2, expand=True),
+                *([ft.IconButton(ft.Icons.ARROW_UPWARD, icon_size=16, tooltip="Earlier", disabled=busy or i == 0,
+                                 on_click=lambda e, x=i: self._move(x, -1)),
+                   ft.IconButton(ft.Icons.ARROW_DOWNWARD, icon_size=16, tooltip="Later", disabled=busy or i == last,
+                                 on_click=lambda e, x=i: self._move(x, 1))] if many else []),
+                ft.IconButton(ft.Icons.CLOSE, icon_size=16, tooltip="Take out of the queue", disabled=busy,
+                              on_click=lambda e, x=i: self._remove(x)),
+            ], spacing=8))
+        if len(self.queue) < entry.max_queue:
+            rows.append(ft.Container(
+                ft.Row([ft.Container(width=18),
+                        ft.Container(ft.Icon(ft.Icons.ADD, color=t.ACCENT, size=26), width=48, height=48,
+                                     border=ft.Border.all(1, t.LINE), border_radius=10, alignment=ft.Alignment.CENTER),
+                        ft.Text("Add a Pokemon from the bank", size=14, color=t.ACCENT)], spacing=8),
+                padding=ft.Padding(0, 2, 8, 2), border_radius=10, ink=True, disabled=busy,
+                on_click=self.pick_from_bank, tooltip="Choose from the bank"))
+        return ft.Column(rows, spacing=4, tight=True)
 
     def _toggle_log(self, e) -> None:
         self.show_log = not self.show_log

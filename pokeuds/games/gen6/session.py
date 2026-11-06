@@ -61,6 +61,7 @@ class Gen6Session:
     offer: bytes                         # The Pokemon we offer: 260 bytes, decrypted, party format.
     partner_id: bytes = bytes(8)
     trades: int = 1                      # How many trades before PokeUDS leaves the trade screen.
+    queue: list[bytes] = field(default_factory=list)   # Offered after ``offer``, one per trade, the same form.
     on_received: Callable[[bytes], None] | None = None
     clock: Callable[[], float] = time.monotonic
     step_timeout: float = 300.0          # Longest wait for the console (a human picks and confirms).
@@ -68,8 +69,10 @@ class Gen6Session:
     received: list[bytes] = field(default_factory=list)
 
     def __post_init__(self) -> None:
-        if len(self.offer) != pkx.PARTY_SIZE or not pkx.checksum_valid(self.offer):
+        if any(len(o) != pkx.PARTY_SIZE or not pkx.checksum_valid(o) for o in (self.offer, *self.queue)):
             raise ValueError("the offer must be a decrypted 260-byte party record")
+        self._offers = [self.offer, *self.queue]
+        self._trade_no = 0
         self.node = self.station.node_id
         self.peer = 2 if self.node == 1 else 1
         self.host = self.node == 1
@@ -381,6 +384,7 @@ class Gen6Session:
         self._command(wire.TRADE, wire.CMD_DONE, wire.DONE)
         self.take(wire.TRADE, wire.CMD_DONE, "the swap")
         self.received.append(record)
+        self._trade_no += 1
         if self.on_received:
             self.on_received(record)
         self._emit("phase", phase="swapped")
@@ -402,7 +406,8 @@ class Gen6Session:
         self._emit("phase", phase="offer")
         if not self._peer_sent(wire.TRADE, wire.CMD_POKEMON):
             self._command(wire.TRADE, wire.CMD_STATE, wire.STATE_OFFERING)
-        self._command(wire.TRADE, wire.CMD_POKEMON, pkx.encrypt(self.offer))
+        # The queue in order (round again past its end, when asked for more trades than it holds).
+        self._command(wire.TRADE, wire.CMD_POKEMON, pkx.encrypt(self._offers[self._trade_no % len(self._offers)]))
         self._command(wire.TRADE, wire.CMD_OFFERED, wire.OFFERED)
         while True:
             body = self.take(wire.TRADE, wire.CMD_POKEMON, "the console's offer", also=(wire.CMD_QUIT,))

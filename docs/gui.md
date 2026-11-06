@@ -30,6 +30,13 @@ other chips can join the firmware list later without renaming anything.
 
 On the Trade page:
 
+- **The trade queue** is what PokeUDS offers, one Pokemon per trade, in order; it leaves after the last. The **+**
+  row opens a list of the bank's Pokemon the game takes (a search, sprites; Gen 7 lists the Gen 1, 2 and 6 ones it
+  migrates first): a click queues one and the list stays open for more. Its Open the Bank page shows the whole
+  bank, where a double click queues a Pokemon and comes back. Build one and Add a file (several at once) queue
+  too; each row moves up or down or comes out, and Clear the queue empties it. A Virtual Console session trades up to six (a Game Boy party), all `.pk1` or all `.pk2`; a
+  3DS game as many as its boxes and party hold. Each game keeps its own queue (Settings' `offers` and `queued`).
+
 - **The offer** comes from the bank, from a file, or from **Build one**: the builder opens under the
   buttons, for the chosen game; PKHeX builds a legal Pokemon from your wishes (species, level, nickname,
   shiny, gender, nature, ability, item, ball, moves) and the trainer, it is kept in the bank and becomes
@@ -81,9 +88,9 @@ The bank is a folder (`<data folder>/bank`, or Settings' `bank`) holding one fil
 - **One copy each:** a Pokemon already banked is not added again, whatever its file name, and also after a trade there and back: what a trade writes into a record (Gen 6/7: the handling trainer, geolocations, memories, friendship and affection, the checksum; Gen 2: friendship) does not count. Anything else does, so a Pokemon that levelled up, learned a move or evolved is a new entry. Copies banked before this check existed show a **Remove duplicates** button, which keeps the oldest copy of each and moves an offer on a removed copy to it.
 - **Import** takes `.pk1`, `.pk2`, `.pk6`, `.pk7`, `.ek6` and `.ek7` (encrypted records are stored decrypted),
   with a `.pk2`'s `.mail` beside it.
-- **Offer in a trade** lists the games that take the record (a `.pk1` or `.pk2` reaches both VC games,
+- **Add to a trade queue** lists the games that take the record (a `.pk1` or `.pk2` reaches both VC games,
   the Time Capsule converting it on the way; a `.pk6` X/Y and ORAS; a `.pk7` Sun/Moon and Ultra Sun/Ultra
-  Moon) and sets it as that game's offer. On the Trade page, **From the bank** opens the bank showing only
+  Moon) and adds it to that game's trade queue. On the Trade page, **From the bank** opens the bank showing only
   what the chosen game takes.
 - **Time Capsule copy** banks the `.pk2` a Gen 1 Pokemon becomes in Gen 2, or the `.pk1` a Gen 2 one
   becomes in Gen 1 (a Gen 1 species with Gen 1 moves only; its item and mail stay behind).

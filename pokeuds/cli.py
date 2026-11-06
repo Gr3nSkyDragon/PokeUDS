@@ -246,17 +246,23 @@ def cmd_trade(args) -> int:
     from .uds import Station
 
     game = get(args.game)
-    offer = pkx.load(args.offer)
     from . import plugins
 
-    try:
-        offer = plugins.edit_offer(game.key, offer, game.key, game.record.extension)
-    except ValueError as exc:
-        raise SystemExit(str(exc))
-    try:
-        pkx.check_format(offer, game.record)
-    except ValueError as exc:
-        raise SystemExit(f"{args.offer}: {exc}; {game.name} cannot receive it")
+    offers = []
+    for path in args.offer:                       # the trade queue, in order
+        offer = pkx.load(path)
+        try:
+            offer = plugins.edit_offer(game.key, offer, game.key, game.record.extension)
+        except ValueError as exc:
+            raise SystemExit(str(exc))
+        try:
+            pkx.check_format(offer, game.record)
+        except ValueError as exc:
+            raise SystemExit(f"{path}: {exc}; {game.name} cannot receive it")
+        offers.append(offer)
+    offer = offers[0]
+    if args.trades is None:
+        args.trades = len(offers)
     prof = profile.load(game.key, args.profile)
     if missing := prof.missing():
         raise SystemExit(f"{prof.source} is missing {', '.join(missing)}; these come from captures "
@@ -265,7 +271,7 @@ def cmd_trade(args) -> int:
     station.start(args.channel)
     status.emit("radio", description=station.radio.describe())
     if game.generation == 6:
-        return _trade_gen6(args, station, game, prof, offer)
+        return _trade_gen6(args, station, game, prof, offer, offers[1:])
     trade = LocalTrade(station, game, prof, offer, Path(args.output))
     try:
         if args.role == "host":
@@ -330,12 +336,14 @@ def _gen6_trainer(game, offer: bytes, args):
     return session.trainer_from_offer(pkx.decrypt(offer) if not pkx.checksum_valid(offer) else offer, version, chosen)
 
 
-def _trade_gen6(args, station, game, prof, offer: bytes) -> int:
+def _trade_gen6(args, station, game, prof, offer: bytes, queue: list[bytes]) -> int:
     from .games.gen6.trade import Gen6Trade
     from .games.gen6.session import TradeEnded
 
     trainer = _gen6_trainer(game, offer, args)
-    trade = Gen6Trade(station, game, prof, offer, Path(args.output), trainer, trades=args.trades, partner=args.partner)
+    queue = [pkx.decrypt(q) if not pkx.checksum_valid(q) else q for q in queue]
+    trade = Gen6Trade(station, game, prof, offer, Path(args.output), trainer, trades=args.trades, partner=args.partner,
+                      queue=queue)
     try:
         trade.run(args.role, args.seconds)
     except (TimeoutError, TradeEnded) as exc:
@@ -380,17 +388,26 @@ def cmd_vc_trade(args) -> int:
     from .uds import Station
     from .vc.trade import VcTrade
 
-    offer = gbpk.load(args.offer)
     from . import plugins
+    from .vc.trade import MAX_QUEUE
 
-    edit_game = {"gen1": "rby", "gen2": "gsc"}.get(args.partner or "", "rby" if offer.generation == 1 else "gsc")
-    try:
-        raw = plugins.edit_offer(edit_game, offer.to_file(), "rby" if offer.generation == 1 else "gsc", offer.extension)
-    except ValueError as exc:
-        raise SystemExit(str(exc))
-    offer = gbpk.Record.from_file(raw)
-    mail_file = Path(args.offer).with_suffix(".mail")
-    mail = mail_file.read_bytes()[:47] if offer.generation == 2 and mail_file.exists() else b""
+    if len(args.offer) > MAX_QUEUE:
+        raise SystemExit(f"a Game Boy party holds {MAX_QUEUE} Pokemon: queue at most {MAX_QUEUE} per session")
+    offers, mails = [], []
+    for path in args.offer:                       # the trade queue, in order
+        offer = gbpk.load(path)
+        edit_game = {"gen1": "rby", "gen2": "gsc"}.get(args.partner or "", "rby" if offer.generation == 1 else "gsc")
+        try:
+            raw = plugins.edit_offer(edit_game, offer.to_file(), "rby" if offer.generation == 1 else "gsc", offer.extension)
+        except ValueError as exc:
+            raise SystemExit(str(exc))
+        offer = gbpk.Record.from_file(raw)
+        mail_file = Path(path).with_suffix(".mail")
+        offers.append(offer)
+        mails.append(mail_file.read_bytes()[:47] if offer.generation == 2 and mail_file.exists() else b"")
+    if any(o.generation != offers[0].generation for o in offers):
+        raise SystemExit("a Virtual Console queue is all .pk1 or all .pk2 (they trade in different rooms)")
+    offer, mail = offers[0], mails[0]
     if args.role == "host" and not args.as_title:
         raise SystemExit("hosting needs --as TITLE (the VC title PokeUDS stands in for)")
     if not args.keys and not args.radio.startswith("demo"):
@@ -398,7 +415,8 @@ def cmd_vc_trade(args) -> int:
     station = Station(open_radio(args.radio), args.mac or random_mac(), _uds_key(args.keys, args.radio), name=args.name)
     station.start(titles.CHANNEL if args.role == "host" else args.channel)
     status.emit("radio", description=station.radio.describe())
-    trade = VcTrade(station, offer, Path(args.output), trades=args.trades, trainer_name=args.name, offer_mail=mail)
+    trade = VcTrade(station, offer, Path(args.output), trades=args.trades, trainer_name=args.name, offer_mail=mail,
+                    queue=offers[1:], queue_mail=mails[1:])
     try:
         if args.role == "host":
             title = titles.TITLES[args.as_title]
@@ -747,7 +765,9 @@ def main(argv: list[str] | None = None) -> int:
     p = vsub.add_parser("trade", help="trade through the VC link menu (Gen 1, Gen 2, or the Time Capsule)")
     _add_radio(p)
     _add_keys(p, required=False)
-    p.add_argument("--offer", required=True, help=".pk1 or .pk2 to send (a .pk2 may have a .mail beside it)")
+    p.add_argument("--offer", required=True, action="append",
+                   help=".pk1 or .pk2 to send (a .pk2 may have a .mail beside it); repeat it to queue up to six, "
+                        "traded in order")
     p.add_argument("--output", default="received", help="folder for the Pokemon received (default: received/)")
     p.add_argument("--role", choices=["join", "host"], default="join",
                    help="join the 3DS's network (default; the 3DS chooses Host) or host one (experimental)")
@@ -755,7 +775,7 @@ def main(argv: list[str] | None = None) -> int:
                    help="as host: the title PokeUDS stands in for (its comm id)")
     p.add_argument("--partner", choices=["gen1", "gen2"],
                    help="the 3DS's generation; join finds it from the beacon, host defaults to --as's")
-    p.add_argument("--trades", type=int, default=1, help="how many trades before PokeUDS chooses Cancel")
+    p.add_argument("--trades", type=int, help="how many trades before PokeUDS chooses Cancel (default: one per --offer)")
     p.add_argument("--name", default="POKEUDS", help="trainer name the 3DS sees (Game Boy text, up to 7)")
     p.add_argument("--seconds", type=float, default=120.0, help="how long to wait for the 3DS")
     p.add_argument("--run-seconds", type=float, help="stop after this long (default: when the session ends)")
@@ -880,7 +900,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("game", choices=GAME_KEYS)
     _add_radio(p)
     _add_keys(p)
-    p.add_argument("--offer", required=True, help="the .pk6 (X/Y, ORAS) or .pk7 (SM, USUM) to send")
+    p.add_argument("--offer", required=True, action="append",
+                   help="the .pk6 (X/Y, ORAS) or .pk7 (SM, USUM) to send; repeat it to queue more, traded in order")
     p.add_argument("--output", default="received", help="folder for the Pokemon received (default: received/)")
     p.add_argument("--role", choices=["join", "host"], default="join",
                    help="join the console's network (default) or host one for it to join")
@@ -891,7 +912,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--seconds", type=float, default=60.0,
                    help="how long to look for the console (join) or wait for it to join (host)")
     p.add_argument("--listen", type=float, default=20.0, help="Gen 7: how long to record the console once connected")
-    p.add_argument("--trades", type=int, default=1, help="Gen 6: trades before PokeUDS leaves the trade screen")
+    p.add_argument("--trades", type=int, help="Gen 6: trades before PokeUDS leaves the trade screen "
+                                               "(default: one per --offer; more go round the queue again)")
     p.add_argument("--partner", help="Gen 6, --role host: the trainer to ask in the PSS (default: the first heard)")
     p.add_argument("--trainer", help="Gen 6: the trainer name shown in the PSS (default: the app's trainer, else the offer's OT)")
     p.add_argument("--tid", type=int, help="Gen 6: trainer ID shown on the trade screen")

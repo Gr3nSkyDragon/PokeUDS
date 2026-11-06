@@ -27,8 +27,11 @@ python -m pokeuds trade xy --radio demo:x --keys none --offer my.pk6
   3DS, tap it and ask for a trade. PokeUDS answers, joins the console's trade network and trades.
 - `--role host` ("PokeUDS asks"): PokeUDS asks the first trainer it hears in the PSS (or `--partner`);
   accept on the 3DS.
-- `--trades N`: trades before PokeUDS leaves the trade screen. PokeUDS offers as soon as the screen
-  opens and confirms as soon as the console has offered; the player on the 3DS decides.
+- `--offer` repeats: the trade queue, one Pokemon per trade in order, as many as the game's boxes and party
+  hold. PokeUDS offers as soon as the screen opens and confirms as soon as the console has offered; the player
+  on the 3DS decides. A declined trade offers the same Pokemon again.
+- `--trades N`: trades before PokeUDS leaves the trade screen (default: one per `--offer`; more go round the
+  queue again, for testing).
 - The trainer shown is `--trainer/--tid/--sid`, else the app's trainer (Settings, also the Builder's),
   else the offered Pokemon's original trainer. A PSS id is made once and kept in the app settings.
 - A box `.pk6` (232 bytes) is sent in party form with its battle stats filled in by the PKHeX helper

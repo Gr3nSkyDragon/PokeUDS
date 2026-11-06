@@ -74,11 +74,12 @@ class BankView(View):
         choosing = self.app.bank_for
         if choosing:
             entry = catalog.BY_KEY[choosing]
-            takes = f"Choosing a Pokemon to offer in {entry.name}: showing what it takes "                     f"({', '.join('.' + x for x in entry.extensions)})"
+            takes = (f"Adding to the {entry.name} trade queue: showing what it takes "
+                     f"({', '.join('.' + x for x in entry.extensions)})")
             if "pk7" in entry.extensions:
                 takes += ", and the Gen 1, 2 and 6 Pokemon PokeUDS can migrate to .pk7 first"
             controls.append(ft.Row([
-                t.notice(takes + ".", t.INFO),
+                t.notice(takes + ". Double-click one to queue it and go back.", t.INFO),
                 t.secondary("Show everything", self._stop_choosing, ft.Icons.CLOSE)], spacing=8))
         else:
             controls.append(ft.SegmentedButton(
@@ -107,6 +108,18 @@ class BankView(View):
                 or (self.filter == "illegal" and e.legal is False) or self.filter == str(e.generation))
 
     def _row(self, e: bank.Entry) -> ft.Control:
+        row = self._row_box(e)
+        game = self.app.bank_for
+        if not game:
+            return row
+        # Choosing for the Trade page: a double click queues it there (migrating it first if it must) and goes back.
+        if game in bank.games_for(e):
+            add = lambda _, x=e: self._offer(x, game)
+        else:
+            add = lambda _, x=e: self._offer_migrated(x, game)
+        return ft.GestureDetector(row, on_double_tap=add)
+
+    def _row_box(self, e: bank.Entry) -> ft.Control:
         chosen = e.id == self.selected
         legal = {True: ft.Icon(ft.Icons.VERIFIED_OUTLINED, color=t.GOOD, size=16, tooltip="Legal (PKHeX)"),
                  False: ft.Icon(ft.Icons.REPORT_GMAILERRORRED, color=t.BAD, size=16, tooltip="Not legal (PKHeX)")}
@@ -163,7 +176,7 @@ class BankView(View):
 
         rows.append(ft.Divider(color=t.LINE))
         games = bank.games_for(e)
-        rows.append(t.label("Offer in a trade", color=t.TEXT))
+        rows.append(t.label("Add to a trade queue", color=t.TEXT))
         target = bank.migration_target(e)
         offers = [t.primary(f"Offer in {catalog.BY_KEY[g].name}", lambda _, x=e, k=g: self._offer(x, k),
                             ft.Icons.SWAP_HORIZ, disabled=busy) for g in games]
@@ -294,10 +307,10 @@ class BankView(View):
             page.pop_dialog()
             removed = self.bank.remove_duplicates()
             kept = {str(d.path): str(k.path) for d, k in removed}
-            offers = self.app.settings.offers
-            for game, path in list(offers.items()):      # an offer on a removed copy moves to the one kept
-                if path in kept:
-                    offers[game] = kept[path]
+            s = self.app.settings
+            for game in list(s.offers) + list(s.queued):  # an offer on a removed copy moves to the one kept
+                queue = [kept.get(p, p) for p in s.offer_queue(game)]
+                s.set_offer_queue(game, list(dict.fromkeys(queue)))
             self.app.settings.save()
             if self.selected in {d.id for d, _ in removed}:
                 self.selected = ""
@@ -314,9 +327,12 @@ class BankView(View):
                      ft.FilledButton("Remove", on_click=remove, style=ft.ButtonStyle(bgcolor=t.BAD, color="#FFFFFF"))]))
 
     def _offer(self, entry: bank.Entry, game: str) -> None:
-        self.app.settings.offers[game] = str(entry.path)
+        """Add the record to the game's trade queue and show the Trade page."""
+        trade = self.app.views["trade"]
         self.app.bank_for = ""
-        self.app.views["trade"].pick_game(game)      # loads the offer from the settings and saves them
+        trade.pick_game(game)                        # loads the game's queue from the settings
+        trade._add_and_say([str(entry.path)])
+        trade.save()
         self.app.navigate("trade")
 
     # -- the whole bank's legality --------------------------------------------------------------

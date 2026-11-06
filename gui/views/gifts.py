@@ -314,8 +314,10 @@ class GiftsView(View):
 
     def _offer(self, game: str) -> None:
         if self.saved:
-            self.app.settings.offers[game] = str(self.saved.path)
-            self.app.views["trade"].pick_game(game)
+            trade = self.app.views["trade"]
+            trade.pick_game(game)
+            trade._add_and_say([str(self.saved.path)])
+            trade.save()
             self.app.navigate("trade")
 
     async def _save(self, full: bool) -> None:
