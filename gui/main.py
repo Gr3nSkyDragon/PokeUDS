@@ -14,6 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import flet as ft  # noqa: E402
 
 from gui import theme as t  # noqa: E402
+from gui import window  # noqa: E402
 from gui.translate import translate  # noqa: E402
 from pokeuds.app import i18n  # noqa: E402
 from gui.app import App  # noqa: E402
@@ -100,10 +101,10 @@ def main(page: ft.Page) -> None:
     page.theme = page.dark_theme = t.app_theme()
     page.bgcolor = t.BG
     page.padding = 0
-    if not page.web:
-        page.window.min_width, page.window.min_height = 900, 600
-        page.window.width, page.window.height = 1280, 820
     app = App(page)
+    if not page.web:
+        window.restore(page, app.settings.window)
+        window.remember(page, app.settings)
     i18n.select(app.settings.language)          # a language pack, or English
     if i18n.current().font_family:
         page.theme.font_family = page.dark_theme.font_family = i18n.current().font_family

@@ -151,10 +151,19 @@ def from_app(tree) -> set[str]:
     return found
 
 
+def _docstrings(tree) -> set[str]:
+    """Module, class and function docstrings: for whoever reads the code, never shown."""
+    return {n.body[0].value.value for n in ast.walk(tree)
+            if isinstance(n, (ast.Module, ast.FunctionDef, ast.ClassDef, ast.AsyncFunctionDef))
+            and n.body and isinstance(n.body[0], ast.Expr) and isinstance(n.body[0].value, ast.Constant)
+            and isinstance(n.body[0].value.value, str)}
+
+
 def collect() -> dict[str, str]:
     strings: set[str] = set()
     for path in GUI_FILES:
-        strings |= from_gui(ast.parse(path.read_text(encoding="utf-8")))
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        strings |= from_gui(tree) - _docstrings(tree)
     for path in APP_FILES:
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for parent in ast.walk(tree):                                       # f-string parts are not strings of their own

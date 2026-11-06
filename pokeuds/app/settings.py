@@ -35,6 +35,7 @@ class Settings:
     pss: dict = field(default_factory=dict)         # Gen 6 PSS identity, made once: {id, key} (hex)
     language: str = ""                              # a language pack's plugin id; "" is English
     sprites: bool = True                            # download Pokemon sprites from PokeAPI (pokeuds.app.sprites)
+    window: dict = field(default_factory=dict)      # the app window's last place and size (gui/window.py)
 
     def offer_queue(self, game: str) -> list[str]:
         """The game's trade queue: the offer, then what is queued after it."""
