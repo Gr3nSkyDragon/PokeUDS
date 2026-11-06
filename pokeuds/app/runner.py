@@ -15,6 +15,7 @@ import threading
 from typing import Callable
 
 from .. import status
+from ..util import NO_WINDOW
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -28,11 +29,10 @@ class Run:
                  on_exit: Callable[[int], None], env: dict | None = None) -> None:
         child_env = {**os.environ, **(env or {}), "POKEUDS_STATUS": "1", "POKEUDS_MANAGED": "1",
                      "PYTHONUNBUFFERED": "1", "PYTHONIOENCODING": "utf-8"}
-        flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
         self.args = args
         self.proc = subprocess.Popen(command(*args), cwd=ROOT, env=child_env, stdin=subprocess.PIPE,
                                      stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-                                     encoding="utf-8", errors="replace", bufsize=1, creationflags=flags)
+                                     encoding="utf-8", errors="replace", bufsize=1, **NO_WINDOW)
         self.on_line, self.on_event, self.on_exit = on_line, on_event, on_exit
         self.lines: list[str] = []
         self._reader = threading.Thread(target=self._pump, daemon=True, name="pokeuds-child")

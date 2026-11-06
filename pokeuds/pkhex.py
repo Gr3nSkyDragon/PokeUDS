@@ -30,6 +30,8 @@ import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 
+from .util import NO_WINDOW
+
 ROOT = Path(__file__).resolve().parents[1]
 PROJECT = ROOT / "services" / "pkhex"
 GAMES = ("rby", "gsc", "xy", "oras", "sm", "usum")
@@ -73,16 +75,25 @@ def helper_path() -> Path | None:
     return max(found, key=lambda p: p.stat().st_mtime) if found else None
 
 
-def dotnet_sdks() -> list[str]:
-    """The .NET SDK versions installed, or [] when there is no dotnet."""
+_sdks: list[str] | None = None
+
+
+def dotnet_sdks(again: bool = False) -> list[str]:
+    """The .NET SDK versions installed, or [] when there is no dotnet. Asked once per run (``again`` asks anew):
+    the pages that show the helper's state are drawn often, and each ask starts dotnet."""
+    global _sdks
+    if _sdks is not None and not again:
+        return list(_sdks)
     dotnet = shutil.which("dotnet")
-    if not dotnet:
-        return []
-    try:
-        out = subprocess.run([dotnet, "--list-sdks"], capture_output=True, text=True, timeout=30).stdout
-    except (OSError, subprocess.SubprocessError):
-        return []
-    return [line.split()[0] for line in out.splitlines() if line.strip()]
+    found: list[str] = []
+    if dotnet:
+        try:
+            out = subprocess.run([dotnet, "--list-sdks"], capture_output=True, text=True, timeout=30, **NO_WINDOW).stdout
+            found = [line.split()[0] for line in out.splitlines() if line.strip()]
+        except (OSError, subprocess.SubprocessError):
+            pass
+    _sdks = found
+    return list(found)
 
 
 def can_build() -> bool:
@@ -112,7 +123,8 @@ def build_helper() -> subprocess.CompletedProcess:
         raise HelperMissing("the .NET SDK is not installed (dotnet not found); get the helper as a download instead")
     if not can_build():
         raise HelperMissing(f"the helper needs the .NET 10 SDK; this computer has {', '.join(dotnet_sdks()) or 'none'}")
-    return subprocess.run([dotnet, "build", "-c", "Release", "-nologo", str(PROJECT)], capture_output=True, text=True)
+    return subprocess.run([dotnet, "build", "-c", "Release", "-nologo", str(PROJECT)], capture_output=True, text=True,
+                          **NO_WINDOW)
 
 
 def build_problem(done: subprocess.CompletedProcess) -> str:
@@ -159,7 +171,8 @@ def download_helper(say=print) -> Path:
         part.write_bytes(data)
         part.chmod(part.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
         part.replace(target)
-        check = subprocess.run([str(target)], input='{"cmd":"ping"}\n', capture_output=True, text=True, timeout=60)
+        check = subprocess.run([str(target)], input='{"cmd":"ping"}\n', capture_output=True, text=True, timeout=60,
+                               **NO_WINDOW)
         if '"ok":true' not in check.stdout:
             raise OSError(f"the downloaded helper does not start: {(check.stderr or check.stdout).strip()[:300]}")
         say(f"Saved {target}")
@@ -194,6 +207,7 @@ class Helper:
         if path is None:
             raise HelperMissing("the PKHeX helper is not built: run `dotnet build -c Release services/pkhex`")
         self.proc = subprocess.Popen([str(path)], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                     **NO_WINDOW,
                                      text=True, encoding="utf-8", bufsize=1)
         self._lock = threading.Lock()
         self._next = 0

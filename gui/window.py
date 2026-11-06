@@ -37,19 +37,30 @@ def on_a_screen(left: float, top: float, width: float) -> bool:
 
 
 def restore(page: ft.Page, saved: dict) -> None:
-    """Size and place the window as ``saved`` says, before it shows."""
+    """Size and place the window as ``saved`` says, then show it, once.
+
+    The app starts with its window hidden (gui.main: ``AppView.FLET_APP_HIDDEN``): a window shown first and then
+    resized, moved, centered and maximized step by step flashes on screen, which must never happen to someone with
+    photosensitive epilepsy. Everything is set while it is hidden, and it appears already in place."""
     window = page.window
     window.min_width, window.min_height = MIN_WIDTH, MIN_HEIGHT
     width = max(MIN_WIDTH, _number(saved.get("width"), DEFAULT_WIDTH))
     height = max(MIN_HEIGHT, _number(saved.get("height"), DEFAULT_HEIGHT))
     window.width, window.height = width, height
     left, top = saved.get("left"), saved.get("top")
-    if isinstance(left, (int, float)) and isinstance(top, (int, float)) and on_a_screen(left, top, width):
+    placed = isinstance(left, (int, float)) and isinstance(top, (int, float)) and on_a_screen(left, top, width)
+    if placed:
         window.left, window.top = left, top
-    else:
-        page.run_task(window.center)
     if saved.get("maximized"):
         window.maximized = True
+
+    async def reveal() -> None:
+        if not placed:
+            await window.center()
+        window.visible = True
+        page.update()
+
+    page.run_task(reveal)
 
 
 def remember(page: ft.Page, settings, also=None) -> None:

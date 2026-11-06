@@ -102,14 +102,15 @@ def main(page: ft.Page) -> None:
     page.bgcolor = t.BG
     page.padding = 0
     app = App(page)
-    if not page.web:
-        window.restore(page, app.settings.window)
-        window.remember(page, app.settings)
     i18n.select(app.settings.language)          # a language pack, or English
     if i18n.current().font_family:
         page.theme.font_family = page.dark_theme.font_family = i18n.current().font_family
     shell = Shell(page, app)
     page.add(shell.build())
+    if not page.web:
+        # The window starts hidden (run) and shows once, in place and drawn: no flashing (gui/window.py).
+        window.restore(page, app.settings.window)
+        window.remember(page, app.settings)
 
     def closing(e) -> None:
         app.stop()
@@ -121,7 +122,7 @@ def run() -> None:
         # POKEUDS_GUI_HOST=0.0.0.0 also serves other machines (a preview pane, a phone on the LAN).
         ft.run(main, view=ft.AppView.WEB_BROWSER, no_cdn=True, port=int(port), host=os.environ.get("POKEUDS_GUI_HOST") or None)
     else:
-        ft.run(main)
+        ft.run(main, view=ft.AppView.FLET_APP_HIDDEN)      # gui/window.py shows it once it is in place
 
 
 if __name__ == "__main__":

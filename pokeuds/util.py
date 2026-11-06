@@ -4,8 +4,15 @@ from __future__ import annotations
 
 import os
 import random
+import subprocess
+import sys
 
 BROADCAST = b"\xff" * 6
+
+# Every program PokeUDS starts is a console program (the PKHeX helper, dotnet, the CLI behind the app). Started
+# from the app, which has no console of its own, Windows would open a console window for each, flashing on screen
+# for an instant; every launch passes this, so none ever shows. tests/test_util.py holds every launch to it.
+NO_WINDOW: dict = {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}
 
 
 def mac_str(mac: bytes) -> str:
