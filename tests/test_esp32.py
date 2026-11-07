@@ -135,10 +135,10 @@ def test_survives_the_switch_to_3ds_mode_restart(monkeypatch):
 def test_vcadapter_build_is_named(board, monkeypatch):
     def hello(self, data):
         for frame in self.decoder.feed(data):
-            self._reply(wire.Type.HELLO_ACK, frame.seq, bytes([1, 1, 9]) + bytes(6) + bytes([wire.FEATURE_LINK_PORT]))
+            self._reply(wire.Type.HELLO_ACK, frame.seq, bytes([1, 2, 0]) + bytes(6) + bytes([wire.FEATURE_LINK_PORT]))
     monkeypatch.setattr(FakeBoard, "write", hello)
     radio = Esp32Radio("FAKE")
     radio.open()
-    assert radio.firmware == "1.9 (protocol 1), VC-Adapter board build"
+    assert radio.firmware == "2.0 (protocol 1), VC-Adapter board build"
     radio._hello_event.clear()       # no STOP round trip on close
     radio.close()

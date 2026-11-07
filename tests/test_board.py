@@ -1,7 +1,6 @@
-"""Boards and firmware images: release picking, download checks, image checks, update choice."""
+"""Boards and firmware: the image PokeUDS carries, image checks, what to install on which board."""
 
 import hashlib
-import json
 
 import pytest
 
@@ -30,21 +29,30 @@ def s3_image() -> bytes:
             return f.read()
 
 
-def test_image_names():
-    assert board.image_info("esp32-uds-bridge-fw1.8-esp32s3-gblink.bin").build == "gblink"
-    assert board.image_info("esp32-uds-bridge-fw1.7-esp32s3.bin").version == "1.7"
-    assert board.image_info("pokeldn-esp32s3.bin") is None
+def test_the_included_firmware_is_1_8_gblink():
+    path = board.firmware()
+    assert path.name == "esp32-uds-bridge-fw1.8-esp32s3-gblink.bin" and board.FIRMWARE == "1.8"
+    assert hashlib.sha256(path.read_bytes()).hexdigest() == board.FIRMWARE_SHA256
+    board.check_image(path)                     # a real merged ESP32-S3 image
 
 
-def test_recommended_and_update(tmp_path):
-    for name in ("esp32-uds-bridge-fw1.7-esp32s3.bin", "esp32-uds-bridge-fw1.8-esp32s3-gblink.bin",
-                 "esp32-uds-bridge-fw1.9-esp32s3-vcadapter.bin"):
-        (tmp_path / name).write_bytes(b"x")
-    assert board.recommended(tmp_path).name.endswith("fw1.8-esp32s3-gblink.bin")   # not the newer link-port build
-    old = board.Identity("COM4", (1, 7), "1.7", "", "")
-    assert board.update_for(old, tmp_path).version == "1.8"
-    assert board.update_for(board.Identity("COM4", (1, 8), "1.8", "", "gblink"), tmp_path) is None
-    assert board.update_for(board.Identity("COM4", (1, 8), "1.8", "", "vcadapter"), tmp_path).version == "1.9"
+def test_a_changed_firmware_file_is_refused(tmp_path, monkeypatch):
+    fake = tmp_path / board.FIRMWARE_NAME
+    fake.write_bytes(s3_image())
+    monkeypatch.setattr(board, "firmware_path", lambda: fake)
+    with pytest.raises(OSError, match="SHA-256"):
+        board.firmware()
+    monkeypatch.setattr(board, "firmware_path", lambda: tmp_path / "gone.bin")
+    with pytest.raises(FileNotFoundError):
+        board.firmware()
+
+
+def test_what_to_install():
+    assert board.advice(board.Identity("COM4", (1, 8), "1.8", "", "gblink")) == ""
+    assert "newer" in board.advice(board.Identity("COM4", (1, 7), "1.7", "", ""))
+    for version in ((1, 9), (2, 0)):              # VC-Adapter's standalone firmware: PokeUDS offers 1.8 instead
+        text = board.advice(board.Identity("COM4", version, f"{version[0]}.{version[1]}", "", "vcadapter"))
+        assert "standalone" in text and "1.8" in text
 
 
 def test_image_check(tmp_path):
@@ -61,33 +69,3 @@ def test_image_check(tmp_path):
     (tmp_path / "corrupt.bin").write_bytes(bytes(bad))
     with pytest.raises(esptool.FatalError, match="checksum"):
         board.check_image(tmp_path / "corrupt.bin")
-
-
-def _release(tag, names, draft=False):
-    return {"tag_name": tag, "draft": draft, "assets": [
-        {"name": n, "browser_download_url": f"https://github.com/Gr3nSkyDragon/VC-Adapter/releases/download/{tag}/{n}"}
-        for n in names]}
-
-
-def test_download_checks_sums(tmp_path, monkeypatch):
-    image = s3_image()
-    name = "esp32-uds-bridge-fw1.8-esp32s3-gblink.bin"
-    releases = [_release("v2.0", [name], draft=True), _release("v1.8", [name, "SHA256SUMS", "uds-esp32-setup.exe"])]
-    files = {"SHA256SUMS": f"{hashlib.sha256(image).hexdigest()}  {name}\n".encode(), name: image}
-
-    def get(url, limit):
-        return json.dumps(releases).encode() if url == board.RELEASES else files[url.rsplit("/", 1)[1]]
-
-    monkeypatch.setattr(board, "_get", get)
-    written = board.download(say=lambda _: None, folder=tmp_path)
-    assert [p.name for p in written] == [name] and (tmp_path / name).read_bytes() == image
-    files[name] = image[:-1] + b"\x00"
-    (tmp_path / name).unlink()
-    with pytest.raises(OSError, match="SHA256SUMS"):
-        board.download(say=lambda _: None, folder=tmp_path)
-    assert not (tmp_path / name).exists()
-
-
-def test_no_release_with_images():
-    with pytest.raises(OSError, match="no published release"):
-        board.pick_release([_release("v1", ["README.md"])])

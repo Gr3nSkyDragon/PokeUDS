@@ -20,11 +20,15 @@ drops the duplicates.
 
 ### Which firmware
 
-| image | firmware | use it? |
+PokeUDS comes with the firmware it uses, as pokeldn does: `esp32-uds-bridge-fw1.8-esp32s3-gblink.bin`
+(`pokeuds/app/data/firmware/`, from VC-Adapter's release `POC_v2`, pinned by its SHA-256). Nothing is
+downloaded.
+
+| firmware | what it is | with PokeUDS |
 |---|---|---|
-| `esp32-uds-bridge-fw1.8-esp32s3-gblink.bin` | 1.8, GB-Link build | **yes**: the 3DS raw radio (every generation, Gen 6, Gen 7 and VC, trades over it), the optional screen, and a Switch side PokeUDS does not use |
-| `esp32-uds-bridge-fw1.7-esp32s3.bin` | 1.7 | works: the 3DS side alone, with the screen |
-| `esp32-uds-bridge-fw1.9-esp32s3-vcadapter.bin` | 1.9 beta, VC-Adapter board build | for that board on a console's link port; the 3DS radio is the same, but a plain board wants the GB-Link build |
+| 1.8, GB-Link build | the build for a board on a computer (Azahar, mGBA, PokeUDS): the 3DS raw radio every generation trades over, the optional screen, and a Switch side PokeUDS does not use | **included**: the one to install |
+| 1.7 and older | the 3DS side alone | works; the Board page offers 1.8 |
+| 2.0 (and its 1.9 beta) | VC-Adapter's standalone firmware, for that board on a console's link port | not for a PC-hosted board; the Board page offers 1.8 in its place |
 
 Nothing in the firmware needs changing for PokeUDS: it only uses the raw radio (START with a twin
 address, TX_FRAME, SET_BEACON, SET_WATCH, PING), never the board-side Game Boy wrapper (`GB_*`) or the
@@ -46,9 +50,8 @@ minute idle and turns off after ten; BOOT wakes it.
 
 ### Installing the firmware
 
-The app's **Board** page lists boards, reads their firmware, downloads the released images from
-VC-Adapter's releases into the data folder (`firmware/`; checked against the release's `SHA256SUMS`
-when it has one), and installs one, or a `.bin` you choose. The same steps from the command line:
+The app's **Board** page lists boards, reads their firmware and installs the included 1.8. The same
+steps from the command line:
 
 ```bash
 python -m pokeuds board list
@@ -59,14 +62,11 @@ python -m pokeuds board check
 ```
 
 ```bash
-python -m pokeuds board download
-```
-
-```bash
 python -m pokeuds board flash --port COM4
 ```
 
-`flash` takes the newest downloaded GB-Link image (or `--firmware FILE.bin`), checks it is a merged
+`flash` takes the included 1.8 image (checked against its SHA-256; `--firmware FILE.bin` writes another image,
+for firmware development), checks it is a merged
 ESP32-S3 image (its bootloader at 0x0 with the S3's chip id, esptool's checksum and digest) and writes it
 at `0x0` with esptool 5.6.0 (`pip install -r requirements-gui.txt`), at 460800 baud. Writing at 0x0
 erases the keys a board stores; PokeUDS stores none there, Azahar users store theirs again. If the board

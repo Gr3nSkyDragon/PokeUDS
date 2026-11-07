@@ -12,6 +12,14 @@ from .. import theme as t
 from ..translate import translate
 
 
+def awaiting(coroutine_function, *args):
+    """An event handler that awaits ``coroutine_function(*args)``. Flet awaits a handler only when it is itself async:
+    ``lambda e: self._save(x)`` would make the coroutine and drop it, and the button would do nothing."""
+    async def handler(e=None) -> None:
+        await coroutine_function(*args)
+    return handler
+
+
 class View:
     """A page: ``build`` returns its controls; ``refresh`` rebuilds them in place."""
 

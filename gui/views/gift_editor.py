@@ -18,7 +18,7 @@ from pokeuds.app import giftfile
 from pokeuds.app.giftfile import CONTEST, RIBBONS, STATS
 
 from .. import theme as t
-from .common import View
+from .common import View, awaiting
 from .picker import name_field
 
 KINDS = {6: (("pokemon", "Pokemon"), ("egg", "Pokemon egg"), ("item", "Item")),
@@ -350,8 +350,8 @@ class GiftEditor(View):
                     ft.ProgressRing(width=18, height=18, visible=self.working),
                     t.secondary("Save gift...", self._save, ft.Icons.SAVE),
                     t.secondary("Open...", self._open, ft.Icons.FOLDER_OPEN),
-                    t.secondary(f"Export .{ext}", lambda e: self._export(False), ft.Icons.FILE_DOWNLOAD_OUTLINED),
-                    t.secondary(f"Export .{ext}full", lambda e: self._export(True), ft.Icons.FILE_DOWNLOAD_OUTLINED),
+                    t.secondary(f"Export .{ext}", awaiting(self._export, False), ft.Icons.FILE_DOWNLOAD_OUTLINED),
+                    t.secondary(f"Export .{ext}full", awaiting(self._export, True), ft.Icons.FILE_DOWNLOAD_OUTLINED),
                     ft.TextButton("Start over", on_click=self._reset)], wrap=True, spacing=8),
             t.label("Save gift keeps everything you set in a .udsgift to open and change later. Export writes the card "
                     f"itself: .{ext} (264 bytes, as PKHeX and the event galleries keep them) or the 784-byte full file."

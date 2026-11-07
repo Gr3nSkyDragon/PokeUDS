@@ -16,7 +16,7 @@ from pokeuds.app.progress import STEP_LABELS, STEPS
 
 from .. import theme as t
 from .builder import BuilderPanel
-from .common import View, log_box, open_folder
+from .common import View, awaiting, log_box, open_folder
 from .sprite import sprite
 
 CONNECTIONS = (("esp32", "ESP32 board"), ("ldnd", "USB Wi-Fi adapter"))
@@ -309,7 +309,7 @@ class TradeView(View):
                                           on_select=lambda e, k=f.flag: values.__setitem__(k, e.control.value)))
             elif f.kind == "file":
                 fields.append(ft.Row([ft.TextField(label=f.label, value=str(value or ""), width=320, dense=True, read_only=True),
-                                      t.secondary("Choose...", lambda e, x=f: self._tool_file(x), ft.Icons.FOLDER_OPEN,
+                                      t.secondary("Choose...", awaiting(self._tool_file, f), ft.Icons.FOLDER_OPEN,
                                                   disabled=busy)], spacing=8))
             else:
                 fields.append(ft.TextField(label=f.label, value=str(value), width=220 if f.kind == "text" else 140,

@@ -29,7 +29,7 @@ Poke Transporter and Pokemon Bank do.
 - **Build** a legal Pokemon to offer when you have no file (PKHeX.Core, through a small helper program).
 - **Mystery Gift**: PKHeX's official Gen 6/7 cards, `.wc6`/`.wc7` and full files, and a card editor; the card's
   Pokemon goes into the bank and a trade.
-- **Board**: install and update the ESP32 firmware from the app.
+- **Board**: install the ESP32 firmware (included, nothing to download) from the app.
 - **Plugins and language packs**, with an install screen that shows what a plugin's code does.
 
 ## Getting it
@@ -63,7 +63,7 @@ On macOS or Linux, activate with `. .venv/bin/activate`. `requirements.txt` alon
 
 - **A radio** ([docs/hardware.md](docs/hardware.md)):
   - an **ESP32-S3** with [esp32-uds-bridge](https://github.com/Gr3nSkyDragon/VC-Adapter/tree/main/firmware/esp32-uds-bridge)
-    firmware 1.8, on its native USB port (the app's Board page installs it); any OS; or
+    firmware 1.8, on its native USB port (PokeUDS includes it: the Board page installs it); any OS; or
   - a **USB Wi-Fi adapter** through legacy **ldnd.exe 0.0.5** (Windows; not the ldnrs revision).
 - **`aes_keys.txt`** holding the keyslot 0x2D key (`slot0x2DKeyN`, or `slot0x2DKeyX`, `slot0x2DKeyY` and
   `generatorConstant`): the same file Azahar uses. Set it once in Settings. Only scanning works without it.

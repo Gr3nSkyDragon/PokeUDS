@@ -16,7 +16,7 @@ import flet as ft
 from pokeuds.app import bank, catalog
 
 from .. import theme as t
-from .common import View, open_folder
+from .common import View, awaiting, open_folder
 from .sprite import sprite
 
 FILTERS = (("all", "All"), ("gb", "Game Boy"), ("6", "Gen 6"), ("7", "Gen 7"), ("illegal", "Not legal"))
@@ -187,7 +187,7 @@ class BankView(View):
         rows.append(ft.Column(offers or [t.label("No game here takes this record.", size=12)], spacing=6, tight=True))
         if target:
             rows += [ft.Divider(color=t.LINE), *self._migration(e, target, pkhex_ok)]
-        actions = [t.secondary("Export...", lambda _, x=e: self._export(x), ft.Icons.FILE_DOWNLOAD_OUTLINED)]
+        actions = [t.secondary("Export...", awaiting(self._export, e), ft.Icons.FILE_DOWNLOAD_OUTLINED)]
         if e.generation <= 2:
             actions.insert(0, t.secondary(f"Time Capsule copy (.pk{3 - e.generation})", lambda _, x=e: self._convert(x),
                                           ft.Icons.HISTORY))

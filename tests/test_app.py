@@ -143,3 +143,21 @@ def test_the_packaged_app_runs_trades_through_its_own_exe(monkeypatch):
     monkeypatch.setattr(runner.sys, "frozen", True, raising=False)
     monkeypatch.setattr(runner.sys, "executable", r"C:\PokeUDS\PokeUDS.exe")
     assert runner.command("trade", "sm") == [r"C:\PokeUDS\PokeUDS.exe", "--cli", "trade", "sm"]
+
+
+def test_no_handler_drops_a_coroutine():
+    """Flet awaits a handler only when it is async itself: a lambda calling an async method makes the coroutine and
+    drops it, and the button does nothing (the bank's Export did). Such handlers go through ``common.awaiting``."""
+    import ast
+    from pathlib import Path
+
+    found = []
+    for path in sorted((Path(__file__).resolve().parents[1] / "gui").rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        asyncs = {n.name for n in ast.walk(tree) if isinstance(n, ast.AsyncFunctionDef)}
+        for node in ast.walk(tree):
+            call = node.body if isinstance(node, ast.Lambda) else None
+            if (isinstance(call, ast.Call) and isinstance(call.func, ast.Attribute) and call.func.attr in asyncs
+                    and isinstance(call.func.value, ast.Name) and call.func.value.id == "self"):
+                found.append(f"{path.name}:{node.lineno} self.{call.func.attr}")
+    assert found == []

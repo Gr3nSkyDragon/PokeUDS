@@ -23,7 +23,7 @@ from pokeuds.app import bank, catalog, giftfile
 from pokeuds.app.builder import Trainer
 
 from .. import theme as t
-from .common import View
+from .common import View, awaiting
 from .gift_editor import GiftEditor
 from .sprite import sprite
 
@@ -213,8 +213,8 @@ class GiftsView(View):
             else:
                 rows.append(t.primary("Keep its Pokemon in the bank", self._keep, ft.Icons.INVENTORY_2_OUTLINED))
         rows.append(ft.Divider(color=t.LINE))
-        rows.append(ft.Row([t.secondary(f"Save .{g.extension}", lambda e: self._save(False), ft.Icons.SAVE_ALT),
-                            t.secondary(f"Save .{g.extension}full", lambda e: self._save(True), ft.Icons.SAVE_ALT),
+        rows.append(ft.Row([t.secondary(f"Save .{g.extension}", awaiting(self._save, False), ft.Icons.SAVE_ALT),
+                            t.secondary(f"Save .{g.extension}full", awaiting(self._save, True), ft.Icons.SAVE_ALT),
                             *([t.secondary("Customize", self._customize, ft.Icons.EDIT)] if self.mode != "custom" else [])],
                            wrap=True, spacing=8))
         return t.card(*rows, spacing=8)
