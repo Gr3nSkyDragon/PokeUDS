@@ -2,8 +2,8 @@
 
 What each game PokeUDS covers can receive as a Mystery Gift, over which link, and whether PokeUDS could
 stand in for the distributor; how pokeldn does it for the Switch; and what PokeUDS does today: cards
-read, made and checked (the Gifts page and `pokeuds gift`), their Pokemon sent by trade. Handing a card
-to a game over local wireless is not done yet: its protocol is unknown.
+read, made and checked (the Gifts page and `pokeuds gift`), their Pokemon sent by trade, and Gen 6 cards
+sent over local wireless as a distributor sends them (`pokeuds gift distribute`, not yet tried on a console).
 
 ## Summary
 
@@ -47,7 +47,8 @@ worth pursuing**; Gen 2 trades already deliver any Pokemon or held item.
   in range, 2026-11-05): it starts UDS and only scans, never hosts, polling the beacons every 0.3 s for
   **comm id 0x00055D10**, the PSS's own (profiles/xy.toml), with **network id 255** (any) and no MAC
   filter. So a distribution is a network of the Gen 6 comm id, told apart from the PSS presence (id 2) and
-  the trade network (id 1) by its network id or beacon data, neither seen yet. Gen 7 not looked at yet.
+  the trade network (id 1) by its beacon data (below, "The Gen 6 distribution, on the air"). Gen 7 not
+  looked at yet.
 
 
 ### The full file
@@ -105,43 +106,40 @@ only.** A UDS beacon carries at most 200 (0xC8) bytes of application data, so a 
 take at least four fragments. The guess is cheap to test (next sections) and, if it holds, a distributor
 in PokeUDS is mostly beacons, which both radios already send.
 
+### The Gen 6 distribution, on the air
+
+Read off a real local distribution of card 165 (an Omega Ruby / Alpha Sapphire card); the reassembled message
+matched that event's `.wc6full` byte for byte. `pokeuds/games/gen6/delivery.py` has it, with the capture as its test.
+
+- **The network.** The distributor hosts a UDS network of the Gen 6 comm id **0x00055D10** (X/Y and ORAS alike),
+  network id **2**, room for 2, on channel 11, and never needs anyone to join: the game scans. The gift is in the
+  beacons' **184 bytes of application data**, one fragment per beacon, the fragments taking turns.
+- **A fragment:**
+
+  | Offset | Size | Holds |
+  |---|---|---|
+  | 0x00 | 2 | CRC-16/CCITT-FALSE (init 0xFFFF) of bytes 0x02-0xB7, little-endian |
+  | 0x02 | 6 | `07 01 18 01 02 41` (0x18: the header's size) |
+  | 0x08 | 8 | a distribution id (meaning unknown; PokeUDS sends the one seen) |
+  | 0x10 | 4 | 0x5A8 (meaning unknown; the same) |
+  | 0x14 | 2 | the card's id |
+  | 0x16 | 1 | the number of fragments |
+  | 0x17 | 1 | this fragment's index |
+  | 0x18 | 160 | this fragment's slice of the message, the last one padded with zeros |
+
+- **The message:** u32 the full file's size (784), u32 the compressed size, then the `.wc6full` compressed with
+  Nintendo's **LZ10** (0x10, a 24-bit size, flag bytes most significant bit first; a reference is a 4-bit length
+  less 3 and a 12-bit distance less 1). A typical card compresses to about 300 bytes: two fragments.
+- **No signature.** CRCs only, as on the Switch. Whether the game also checks the two unknown header words is
+  for a live test to show.
+
+`pokeuds gift distribute xy CARD` (or `oras`) sends a gift this way: a `.wc6full`, a `.wc6`, or a card from
+`gift list`. On the 3DS: Mystery Gift, Receive Gift, Get via Local Wireless.
+
 ### What is not known
 
-None of this is documented, and no capture is known to be public:
-
-1. **The network the game looks for:** the comm id is known for Gen 6 (above); not the network id or
-   beacon application data that mark a distribution, nor whether the game joins at all (a passphrase for
-   the CCMP key) or reads the gifts from beacons alone.
-2. **The exchange:** what the game sends once joined, how the distributor offers its gifts (a list,
-   then one full file, or several), in what framing (a transport like the VC's Pia, or the game's own), and
-   what acknowledges a received gift.
-3. **The checks** the game makes on what it receives (beyond the header's restrictions), such as a
-   signature. If distributions were signed, no stand-in could send a gift the game accepts. Nothing
-   points either way yet; this is the question that decides feasibility.
-
-### How to find out
-
-In order of cost, each step reusing what PokeUDS already has:
-
-1. **Azahar, receive mode.** Run X/Y (or Sun/Moon) in azahar_uds, open the local-wireless receive menu,
-   and keep the log. No distributor is needed; the game shows what it is looking for:
-   - every beacon scan is logged as `UDS Real: game beacon scan #N, filterMac=..., wlanCommId=0x........,
-     id=..., queuedReplyCount=..., firstFrameBytes=..., outputCapacity=...` (`RecvBeaconBroadcastData`):
-     the comm ID it filters on, and the buffer it reads beacons into;
-   - a `ConnectToNetwork` (or `Initialize`/`Bind` for a data channel) on that screen means a session;
-     none, while the scans go on, means the beacon design above.
-2. **Host what the game wants.** With step 1's values in a profile (`profiles/<game>.local.toml`: comm ID,
-   passphrase, application data), `pokeuds trade xy --role host` can already offer a matching network. Whatever the game sends after joining (sniffed and decrypted with
-   `pokeuds sniff`, summarised with `pokeuds analyze`) starts step 2.
-3. **The game's code.** From your own dumped game, the receive routine shows the message layout and
-   any signature check (step 3), which a capture alone cannot prove.
-4. **A real distribution**, if one is ever on the air again (a store or tournament event): `pokeuds
-   sniff` with the game's passphrase records the whole exchange between the distributor and a console.
-
-If step 3 finds no signature, a distributor in PokeUDS is a few hundred lines on top of the host mode:
-beacon as a distribution, offer one `.wc6full` / `.wc7full` from the user's own files (or one the Gifts
-page made), and, for a session design, send it to the console that asks. If it finds one, local Mystery
-Gift is not feasible and the next section is the way.
+1. **Whether the game takes PokeUDS's beacons** (above: the two unknown header words, the beacon's timing).
+2. **Gen 7's distribution**: its comm id and whether its format is Gen 6's.
 
 PokeUDS will not use or point to leaked copies of Nintendo's distribution software.
 

@@ -26,7 +26,7 @@ class App:
             show = page.show_dialog
             page.show_dialog = lambda dialog: show(translate(dialog))
         self.run: Run | None = None
-        self.run_kind = ""                       # "trade", "probe", "scan", "analyze", "board"
+        self.run_kind = ""                       # "trade", "probe", "scan", "analyze", "board", "gift"
         self.progress = Progress()
         self.log: list[str] = []
         self.listeners: list[Callable[[], None]] = []

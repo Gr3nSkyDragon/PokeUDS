@@ -161,3 +161,68 @@ def test_no_handler_drops_a_coroutine():
                     and isinstance(call.func.value, ast.Name) and call.func.value.id == "self"):
                 found.append(f"{path.name}:{node.lineno} self.{call.func.attr}")
     assert found == []
+
+
+def test_gifts_page_sends_gen6_cards_over_local_wireless(data, tmp_path, monkeypatch):
+    """A Gen 6 card gets Start sending (`gift distribute`); a Gen 7 card says it goes by trade."""
+    pytest.importorskip("flet")
+    from types import SimpleNamespace
+
+    from gui.app import App
+    from gui.views.gifts import GiftsView
+
+    keys = tmp_path / "aes_keys.txt"
+    keys.write_text("slot0x2DKeyN=" + "00" * 16 + "\n")
+    app = App(None, Settings(radio="esp32", port="COM9", keys=str(keys), output=str(tmp_path / "received")))
+    started = []
+    monkeypatch.setattr(app, "start", lambda kind, args, **kw: started.append((kind, args)))
+    view = GiftsView(app)
+    full = bytes(784)
+    view.game = "xy"
+    view.gift = SimpleNamespace(card={"title": "Item", "card_id": 1, "games": ["X", "Y"], "kind": "item", "item": "Rare Candy",
+                                      "quantity": 1}, pokemon=None, extension="wc6", custom=False, full_data=full,
+                                card_data=bytes(264))
+    view.control()
+    assert view.generation == 6 and any(getattr(c, 'value', None) == 'Send over local wireless' for c in view._wireless())
+    view._distribute()
+    kind, args = started[0]
+    assert kind == "gift" and args[:3] == ["gift", "distribute", "xy"]
+    assert args[args.index("--radio") + 1] == "esp32:COM9" and args[args.index("--keys") + 1] == str(keys)
+    from pathlib import Path
+    assert Path(args[3]).read_bytes() == full
+    view.game = "sm"
+    view.control()                                       # the Gen 7 note, no Start button
+    assert view.generation == 7
+
+
+def test_send_over_local_wireless_sits_between_legal_and_the_bank(data, tmp_path):
+    pytest.importorskip("flet")
+    from types import SimpleNamespace
+
+    import flet as ft
+
+    from gui.app import App
+    from gui.views.gifts import GiftsView
+
+    app = App(None, Settings(radio="esp32", output=str(tmp_path / "received")))
+    view = GiftsView(app)
+    view.game = "xy"
+    summary = {"species": 25, "species_name": "Pikachu", "level": 10, "shiny": False, "ot_name": "ASH", "tid": 1,
+               "moves": ["Thunder Shock"]}
+    view.gift = SimpleNamespace(card={"title": "Pikachu", "card_id": 2, "games": ["X"], "kind": "pokemon"},
+                                pokemon=SimpleNamespace(summary=summary, legal=True, report=""), extension="wc6",
+                                custom=False, full_data=bytes(784), card_data=bytes(264))
+    texts: list[str] = []
+
+    def walk(c):
+        for attr in ("value", "text", "content"):
+            v = getattr(c, attr, None)
+            if isinstance(v, str):
+                texts.append(v)
+        for attr in ("content", "controls"):
+            v = getattr(c, attr, None)
+            for child in (v if isinstance(v, list) else [v] if isinstance(v, ft.Control) else []):
+                walk(child)
+    walk(view._result())
+    order = [texts.index(x) for x in ("Legal", "Send over local wireless", "Start sending", "Keep its Pokemon in the bank")]
+    assert order == sorted(order), texts

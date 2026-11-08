@@ -20,10 +20,11 @@ import flet as ft
 
 from pokeuds import pkx
 from pokeuds.app import bank, catalog, giftfile
+from pokeuds.app.settings import data_dir
 from pokeuds.app.builder import Trainer
 
 from .. import theme as t
-from .common import View, awaiting
+from .common import View, awaiting, log_box
 from .gift_editor import GiftEditor
 from .sprite import sprite
 
@@ -186,6 +187,8 @@ class GiftsView(View):
             what = c.get("item") or c["kind"]
             rows.append(t.label(f"Gives {what} x{c.get('quantity', 1)}. Only a Mystery Gift can deliver this, not a trade.",
                                 color=t.TEXT))
+            rows.append(ft.Divider(color=t.LINE))
+            rows += self._wireless()
         else:
             s = p.summary
             facts = [("Pokemon", f"{s['species_name']} Lv {s['level']}" + (" (shiny)" if s["shiny"] else "")
@@ -206,6 +209,8 @@ class GiftsView(View):
             if not p.legal:
                 rows.append(ft.Text(p.report, size=12, color=t.MUTED, selectable=True))
             rows.append(ft.Divider(color=t.LINE))
+            rows += self._wireless()
+            rows.append(ft.Divider(color=t.LINE))
             if self.saved:
                 rows.append(t.label("In the bank.", color=t.GOOD))
                 rows += [t.primary(f"Offer in {catalog.BY_KEY[k].name}", lambda e, k=k: self._offer(k), ft.Icons.SWAP_HORIZ,
@@ -218,6 +223,49 @@ class GiftsView(View):
                             *([t.secondary("Customize", self._customize, ft.Icons.EDIT)] if self.mode != "custom" else [])],
                            wrap=True, spacing=8))
         return t.card(*rows, spacing=8)
+
+    # -- local wireless distribution ------------------------------------------------------------
+
+    def _wireless(self) -> list[ft.Control]:
+        """The result card's "Send over local wireless" rows: a Gen 6 card sent as an official distribution did
+        (`pokeuds gift distribute`); for a Gen 7 card, not yet implemented."""
+        if self.generation != 6:
+            return [t.heading("Send over local wireless"), t.label("Feature not yet implemented")]
+        s = self.app.settings
+        sending = self.app.busy() and self.app.run_kind == "gift"
+        problem = ("Choose an ESP32 board or a USB Wi-Fi adapter on the Trade page (the demo radio cannot send gifts)."
+                   if s.radio_spec().startswith("demo") else s.keys_problem())
+        if sending:
+            button = t.secondary("Stop sending", lambda e: self.app.stop(), ft.Icons.STOP_ROUNDED)
+        else:
+            button = t.primary("Start sending", lambda e: self._distribute(), ft.Icons.WIFI_TETHERING,
+                               disabled=bool(problem) or self.app.busy() or self.gift is None)
+        rows: list[ft.Control] = [
+            t.heading("Send over local wireless"),
+            ft.Row([button, *([ft.ProgressRing(width=18, height=18)] if sending else [])], spacing=12),
+        ]
+        if problem and not sending:
+            rows.append(t.notice(problem, t.WARN))
+        rows.append(t.label("PokeUDS sends this card the way a store or event distribution did. On the 3DS: Mystery "
+                            "Gift, Receive Gift, Get via Local Wireless. Any number of consoles can take it while it runs.",
+                            size=12))
+        if self.app.run_kind == "gift":
+            rows.append(log_box(self.app.log, height=140))
+        return rows
+
+    def _distribute(self) -> None:
+        g, s = self.gift, self.app.settings
+        if g is None or self.app.busy():
+            return
+        folder = data_dir() / "gifts"
+        folder.mkdir(parents=True, exist_ok=True)
+        path = folder / "sending.wc6full"
+        path.write_bytes(g.full_data)
+        args = ["gift", "distribute", self.game, str(path), "--radio", s.radio_spec(), "--seconds", "3600"]
+        if s.keys:
+            args += ["--keys", s.keys]
+        self.app.start("gift", args, on_exit=lambda code: self.app.ui(self.refresh))
+        self.refresh()
 
     # -- work on the helper ---------------------------------------------------------------------
 

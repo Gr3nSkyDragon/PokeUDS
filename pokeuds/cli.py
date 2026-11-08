@@ -132,11 +132,14 @@ def cmd_scan(args) -> int:
 
     station = Station(open_radio(args.radio), args.mac or random_mac(), None)
     seen: dict = {}
+    first: dict = {}
+    began = time.monotonic()
 
     def heard(b):
         key = (b.host, b.info.network_id, b.info.total_nodes, b.info.application_data)
         if key not in seen:
             seen[key] = b
+            first[key] = round(time.monotonic() - began, 3)
             _print_beacon(b)
 
     station.on_beacon = heard
@@ -152,9 +155,10 @@ def cmd_scan(args) -> int:
         Path(args.json).write_text(json.dumps([
             {"host": mac_str(b.host), "channel": b.channel, "wlan_comm_id": b.info.wlan_comm_id, "id": b.info.id,
              "network_id": b.info.network_id, "total_nodes": b.info.total_nodes, "max_nodes": b.info.max_nodes,
+             "update_counter": b.info.update_counter, "attributes": b.info.attributes, "first_heard_s": first[k],
              "application_data": b.info.application_data.hex(),
              "nodes": [{"node": n.network_node_id, "name": n.name, "fcs": n.friend_code_seed} for n in (b.nodes or [])]}
-            for b in seen.values()], indent=2))
+            for k, b in seen.items()], indent=2))
     print(f"{len({k[0] for k in seen})} host(s) heard")
     return 0
 
@@ -730,6 +734,55 @@ def cmd_gift(args) -> int:
     return 0
 
 
+def _full_file(game: str, source: str) -> bytes:
+    """Full files to distribute: the file as given when it is whole 784-byte full files (one .wc6full, or an event's
+    several back to back), else the PKHeX helper's full file of a card (key, .wc6)."""
+    path = Path(source)
+    if path.is_file() and path.stat().st_size and path.stat().st_size % 784 == 0:
+        return path.read_bytes()
+    from . import pkhex
+
+    helper = pkhex.shared()
+    gift = helper.gift(game, data=path.read_bytes()) if path.is_file() else helper.gift(game, key=source)
+    print(_gift_line(gift.card))
+    return gift.full_data
+
+
+def cmd_gift_distribute(args) -> int:
+    """Send a Gen 6 gift as an official distribution does: beacons on the game's comm id, the gift in fragments."""
+    from .games import profile
+    from .games.gen6 import delivery
+    from .radio import open_radio
+    from .uds import Station
+
+    full = _full_file(args.game, args.source)
+    parts = delivery.fragments(full)
+    prof = profile.load(args.game, None)
+    station = Station(open_radio(args.radio), args.mac or random_mac(), _uds_key(args.keys, args.radio), name=args.name)
+    station.start(args.channel)
+    status.emit("radio", description=station.radio.describe())
+    station.host(wlan_comm_id=prof.wlan_comm_id, passphrase=prof.passphrase, channel=args.channel,
+                 max_nodes=delivery.MAX_NODES, application_data=parts[0], id_=delivery.NETWORK_ID8)
+    print(f"distributing card {delivery.card_id(full)} in {len(parts)} beacon fragment(s) on channel {args.channel} "
+          f"(comm id {prof.wlan_comm_id:08X}) for {args.seconds:.0f} s: on the 3DS, Mystery Gift > Receive Gift > "
+          "Get via Local Wireless")
+    status.emit("distributing", card_id=delivery.card_id(full), fragments=len(parts), channel=args.channel)
+    deadline = time.monotonic() + args.seconds
+    i = 0
+    try:
+        while time.monotonic() < deadline:
+            time.sleep(args.dwell)
+            i = (i + 1) % len(parts)
+            if len(parts) > 1:
+                station.set_application_data(parts[i])
+    except KeyboardInterrupt:
+        pass
+    finally:
+        station.close()
+    print("stopped distributing")
+    return 0
+
+
 def cmd_plugins(args) -> int:
     from . import plugins
     from .app import plugin_store as store
@@ -937,6 +990,16 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("source", help="a key from `gift list`, or a card file")
     p.add_argument("--save", required=True, help="the .udsgift to write")
     p.set_defaults(func=cmd_gift)
+    p = gsub.add_parser("distribute", help="send a Gen 6 gift over local wireless, as an official distribution does "
+                        "(the 3DS: Mystery Gift > Get via Local Wireless)")
+    p.add_argument("game", choices=["xy", "oras"], help="the receiving game (both listen on X/Y's comm id)")
+    p.add_argument("source", help="a .wc6full (784 bytes, or several back to back), a .wc6, or a key from `gift list`")
+    _add_radio(p)
+    _add_keys(p)
+    p.add_argument("--name", default="PokeUDS", help="the name in the beacon's node list")
+    p.add_argument("--seconds", type=float, default=600.0)
+    p.add_argument("--dwell", type=float, default=0.25, help="seconds each fragment stays in the beacon")
+    p.set_defaults(func=cmd_gift_distribute)
     p = gsub.add_parser("card", help="build a custom card (its Pokemon matches no real event: PKHeX flags it)")
     p.add_argument("game", choices=GAME_KEYS)
     p.add_argument("--out", required=True, help="the card file: .wc6/.wc7, or .wc6full/.wc7full")

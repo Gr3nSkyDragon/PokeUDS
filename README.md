@@ -28,7 +28,7 @@ Poke Transporter and Pokemon Bank do.
   Capsule copies, migration to Gen 7, duplicates caught, sprites.
 - **Build** a legal Pokemon to offer when you have no file (PKHeX.Core, through a small helper program).
 - **Mystery Gift**: PKHeX's official Gen 6/7 cards, `.wc6`/`.wc7` and full files, and a card editor; the card's
-  Pokemon goes into the bank and a trade.
+  Pokemon goes into the bank and a trade, and Gen 6 cards go out over local wireless as an event distribution did.
 - **Board**: install the ESP32 firmware (included, nothing to download) from the app.
 - **Plugins and language packs**, with an install screen that shows what a plugin's code does.
 
