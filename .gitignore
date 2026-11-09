@@ -33,3 +33,4 @@ scripts/replay_gen7_beacon.py
 
 # The distributor app's private OPSSR exponent; the public key and verifier stay in delivery.py.
 pokeuds/games/gen7/delivery_key.py
+gen7_delivery_key.txt

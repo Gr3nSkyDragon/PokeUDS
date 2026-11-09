@@ -762,6 +762,9 @@ def cmd_gift_distribute(args) -> int:
         from .games.gen7 import delivery
 
     full = _full_file(args.game, args.source)
+    if game.generation == 7 and getattr(args, "keys", None):
+        # A per-user signing key may sit next to aes_keys.txt, written by scripts/extract_gen7_key.py.
+        delivery.use_key_file(Path(args.keys).with_name("gen7_delivery_key.txt"))
     parts = delivery.fragments(full)
     prof = profile.load(args.game, None)
     station = Station(open_radio(args.radio), args.mac or random_mac(), _uds_key(args.keys, args.radio), name=args.name)

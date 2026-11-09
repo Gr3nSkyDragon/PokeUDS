@@ -132,7 +132,9 @@ matched that event's `.wc6full` byte for byte. `pokeuds/games/gen6/delivery.py` 
   Nintendo's **LZ10** (0x10, a 24-bit size, flag bytes most significant bit first; a reference is a 4-bit length
   less 3 and a 12-bit distance less 1). A typical card compresses to about 300 bytes: two fragments.
 - **No signature.** CRCs only, as on the Switch. Whether the game also checks the two unknown header words is
-  for a live test to show.
+  for a live test to show. The gift data is not encrypted either: the UDS link has AES-CCMP (the keyslot
+  0x2D key), but the beacon's application data is the plain LZ10 message, which is why PokeUDS can send a
+  Gen 6 gift without any extra key.
 
 `pokeuds gift distribute xy CARD` (or `oras`) sends a gift this way: a `.wc6full`, a `.wc6`, or a card from
 `gift list`. On the 3DS: Mystery Gift, Receive Gift, Get via Local Wireless.
@@ -193,10 +195,15 @@ distributor's captured message **byte for byte**, including the tail `66 33 d7 7
 key before decompressing, so PokeUDS now signs every Gen 7 message.
 
 **Where the private key lives.** The 126-byte public key is embedded in `gen7/delivery.py` (it is public).
-The RSA private exponent is **not** in the repository: it is the distributor app's own key, kept in the
-gitignored `pokeuds/games/gen7/delivery_key.py`. Without that file the verifier still works, but
-`fragments` raises a clear error instead of sending an unsigned message.
+The RSA private exponent is **not** in the repository: it is the distributor app's own key, kept in a
+gitignored local file — `gen7_delivery_key.txt` next to your `aes_keys.txt`, or the legacy
+`pokeuds/games/gen7/delivery_key.py`. Without it the verifier still works, but `fragments` raises a clear
+error instead of sending an unsigned message.
 
+- **Easiest:** run `python scripts/extract_gen7_key.py "Gen 7 Local Distributor.cxi" --keys aes_keys.txt`.
+  It writes `gen7_delivery_key.txt` next to `aes_keys.txt`, and PokeUDS reads it there. Retail
+  Sun/Moon/USUM (and their CIAs/CCIs) contain only the public key — point the script at the distributor
+  (00040000001A8900), not at a retail game.
 - **It is not in `aes_keys.txt`.** That file holds the console's UDS AES key (keyslot 0x2D) for the
   local-wireless encryption. The OPSSR key is data inside the distributor app.
 - **In the app:** the private key is the 461-byte PKCS#1 `RSAPrivateKey` DER at VA `0x66B2F7` in the app's `.code`
@@ -206,8 +213,9 @@ gitignored `pokeuds/games/gen7/delivery_key.py`. Without that file the verifier 
 - **With GodMode9:** dump the installed title's decrypted ExeFS/`code.bin` (title 00040000001A8900) and
   read `0x56B2F7..0x56B4C4`; GM9 has no named "extract RSA key" function. The public key is
   `0x56B279..0x56B2F7`. If you already have the decrypted CXI, reading those offsets is enough.
-- **Install it:** parse the DER's RSA private exponent `d` and set `RSA_D` in
-  `pokeuds/games/gen7/delivery_key.py` (the file's docstring has the steps).
+- **Install it:** the extractor writes `d=<hex>` to `gen7_delivery_key.txt`; PokeUDS loads that file
+  automatically from beside `aes_keys.txt`, from the working directory, or from `POKEUDS_GEN7_KEY`. The
+  legacy `delivery_key.py` (a module with `RSA_D`) still works if you prefer it.
 
 **Verified on a retail 3DS** (Sun): the real distributor's captured Shaymin message, replayed through
 PokeUDS's own beacons, completes and shows the card. PokeUDS's own message for the same card is now the
