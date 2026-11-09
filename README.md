@@ -43,14 +43,25 @@ Poke Transporter and Pokemon Bank do.
 
 ## Getting it
 
-**Windows:** download `PokeUDS-windows.zip` from the [releases](https://github.com/Gr3nSkyDragon/PokeUDS/releases),
-unzip it anywhere and run `PokeUDS/PokeUDS.exe`. Nothing else to install: the pages that use PKHeX (Build, legality,
-Mystery Gift) offer to download its helper, about 20 MB, once.
+Download the app for your computer from the [releases](https://github.com/Gr3nSkyDragon/PokeUDS/releases). The
+apps carry everything, the PKHeX helper included: nothing else to install. (The `pokeuds-pkhex-...` files in a
+release are that helper for each kind of computer, for the app to download when it has none of its own; they are not
+meant to be opened.)
+
+**Windows:** download `PokeUDS-windows.zip`, unzip it anywhere and run `PokeUDS/PokeUDS.exe`.
 
 Your Pokemon are kept in `PokeUDS/Bank`, beside the exe (a bank from an earlier version in
 `%APPDATA%\PokeUDS\bank` is copied there on the first start). The zip holds no `Bank` folder, so to update,
 unzip the new version over the old `PokeUDS` folder: the app is replaced and the bank is left as it is. If you
 delete the old folder instead, move `Bank` into the new one first.
+
+**Mac:** download `PokeUDS-macos-arm64.zip` for Apple Silicon (M1 or newer) or `PokeUDS-macos-x64.zip` for an Intel
+Mac (Apple menu, About This Mac, says which), unzip it and move `PokeUDS.app` to Applications. The app is not
+notarized by Apple, so the first time it is refused: open it once, then System Settings, Privacy & Security,
+**Open Anyway**. Your Pokemon are kept in `~/Library/Application Support/PokeUDS/bank`, outside the app, so replacing
+`PokeUDS.app` with a newer one leaves them alone (Settings can point the bank somewhere else).
+
+**Linux:** there is no packaged app; run PokeUDS from source, below.
 
 **From source** (any OS, Python 3.11 or newer):
 

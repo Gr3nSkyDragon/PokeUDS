@@ -1,6 +1,7 @@
 """The bank: deposits, de-duplication, the received folder, Time Capsule copies, export, games."""
 
 import struct
+import sys
 from dataclasses import replace
 
 import pytest
@@ -193,6 +194,7 @@ def _packaged(monkeypatch, tmp_path):
     app.mkdir()
     monkeypatch.setattr("sys.frozen", True, raising=False)
     monkeypatch.setattr("sys.executable", str(app / "PokeUDS.exe"))
+    monkeypatch.setattr(bank, "PORTABLE_ON", (sys.platform,))      # the Windows app's behaviour, on any test machine
     monkeypatch.delenv("POKEUDS_DATA", raising=False)
     # The old data folder: %APPDATA%\PokeUDS on Windows, elsewhere on Linux and macOS, so set it outright.
     monkeypatch.setattr(bank, "data_dir", lambda: tmp_path / "appdata" / "PokeUDS")
@@ -224,6 +226,14 @@ def test_packaged_app_falls_back_when_its_folder_is_read_only(monkeypatch, tmp_p
         raise PermissionError("read-only")
     monkeypatch.setattr(bank.Path, "mkdir", refuse)
     assert bank.default_folder() == tmp_path / "appdata" / "PokeUDS" / "bank"
+
+
+def test_the_mac_app_banks_in_its_data_folder(monkeypatch, tmp_path):
+    app = _packaged(monkeypatch, tmp_path)
+    monkeypatch.setattr(bank, "PORTABLE_ON", ("win32",))
+    monkeypatch.setattr("sys.platform", "darwin")
+    assert bank.default_folder() == tmp_path / "appdata" / "PokeUDS" / "bank"
+    assert not (app / "Bank").exists()
 
 
 def test_from_source_the_bank_stays_in_the_data_folder(monkeypatch, tmp_path):

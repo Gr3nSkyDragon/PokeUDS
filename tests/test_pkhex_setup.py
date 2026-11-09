@@ -81,11 +81,28 @@ def test_the_newest_helper_wins(tmp_path, monkeypatch):
     for path in (old, new):
         path.parent.mkdir()
         path.write_text("x")
+        path.chmod(0o755)
     os.utime(old, (time.time() - 100, time.time() - 100))
     monkeypatch.setattr(pkhex, "candidates", lambda: [old, new, tmp_path / "missing" / pkhex.EXE])
     assert pkhex.helper_path() == new
     monkeypatch.setenv("POKEUDS_PKHEX", str(old))
     assert pkhex.helper_path() == old
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="Windows has no executable bit")
+def test_a_helper_that_cannot_run_is_skipped(tmp_path, monkeypatch):
+    """A bundled helper that lost its executable bit (copied into a Mac app) gives way to the download."""
+    monkeypatch.delenv("POKEUDS_PKHEX", raising=False)
+    bundled, downloaded = tmp_path / "bundled" / pkhex.EXE, tmp_path / "downloaded" / pkhex.EXE
+    for path, mode in ((bundled, 0o644), (downloaded, 0o755)):
+        path.parent.mkdir()
+        path.write_text("x")
+        path.chmod(mode)
+    os.utime(downloaded, (time.time() - 100, time.time() - 100))      # older, yet the only one that runs
+    monkeypatch.setattr(pkhex, "candidates", lambda: [bundled, downloaded])
+    assert pkhex.helper_path() == downloaded
+    downloaded.chmod(0o644)
+    assert pkhex.helper_path() is None
 
 
 def test_sdk_detection_and_status(monkeypatch):

@@ -1,5 +1,5 @@
-"""Make the app's icon files from the artwork: gui/assets/icon.ico (the exe, the taskbar, the window) and
-gui/assets/icon.png (the rail's mark).
+"""Make the app's icon files from the artwork: gui/assets/icon.ico (the Windows exe, taskbar and window),
+gui/assets/icon.icns (the macOS app) and gui/assets/icon.png (the rail's mark).
 
     python scripts/make_icon.py [--art packaging/icon.jpg]
 
@@ -23,6 +23,7 @@ sys.path.insert(0, str(ROOT))
 ART = ROOT / "packaging" / "icon.jpg"
 ASSETS = ROOT / "gui" / "assets"
 ICO_SIZES = (16, 20, 24, 32, 40, 48, 64, 128, 256)
+ICNS_SIZE = 1024            # Pillow writes the 16 to 1024 px images a Mac uses from this one
 PNG_SIZE = 128
 
 
@@ -52,13 +53,14 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--art", type=Path, default=ART)
     a = parser.parse_args(argv)
-    # Work at 512 px: well above the largest icon size and quick to recolour pixel by pixel.
-    art = Image.open(a.art).convert("RGB").resize((512, 512), Image.LANCZOS)
+    # Work at 1024 px: the largest size a Mac shows, and still quick to recolour pixel by pixel.
+    art = Image.open(a.art).convert("RGB").resize((ICNS_SIZE, ICNS_SIZE), Image.LANCZOS)
     icon = recolour(art, accent())
     ASSETS.mkdir(parents=True, exist_ok=True)
     icon.resize((256, 256), Image.LANCZOS).save(ASSETS / "icon.ico", sizes=[(s, s) for s in ICO_SIZES])
+    icon.save(ASSETS / "icon.icns")
     icon.resize((PNG_SIZE, PNG_SIZE), Image.LANCZOS).save(ASSETS / "icon.png", optimize=True)
-    print(f"wrote {ASSETS / 'icon.ico'} and {ASSETS / 'icon.png'} from {a.art}, red -> #{'%02X%02X%02X' % accent()}")
+    print(f"wrote icon.ico, icon.icns and icon.png in {ASSETS} from {a.art}, red -> #{'%02X%02X%02X' % accent()}")
     return 0
 
 

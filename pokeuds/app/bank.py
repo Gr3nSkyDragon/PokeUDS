@@ -39,7 +39,8 @@ SOURCES = {"received": "Received", "imported": "Imported", "built": "Built", "co
 _UNSAFE = re.compile(r"[^\w\-]+", re.UNICODE)
 
 
-PORTABLE = "Bank"           # the packaged app's bank, beside PokeUDS.exe
+PORTABLE = "Bank"           # the packaged Windows app's bank, beside PokeUDS.exe
+PORTABLE_ON = ("win32",)    # a Mac app bundle is replaced whole by an update and is often read-only
 INFO = ".info"              # inside a bank: the records' .json and received.json, hidden
 SEEN = "received.json"
 _portable: dict[Path, Path | None] = {}
@@ -49,10 +50,11 @@ _tidied: set[Path] = set()
 def default_folder() -> Path:
     """Where the bank lives when Settings names no folder.
 
-    The packaged app keeps it in ``Bank`` beside PokeUDS.exe: the release zip holds no such folder, so an update
-    unzipped over the app's folder leaves it as it is. From source, with ``POKEUDS_DATA`` set, or when the exe's
-    folder cannot be written (Program Files), it is ``<data>/bank``."""
-    if getattr(sys, "frozen", False) and not os.environ.get("POKEUDS_DATA"):
+    The packaged Windows app keeps it in ``Bank`` beside PokeUDS.exe: the release zip holds no such folder, so an
+    update unzipped over the app's folder leaves it as it is. From source, in the Mac app (whose bundle an update
+    replaces), with ``POKEUDS_DATA`` set, or when the exe's folder cannot be written (Program Files), it is
+    ``<data>/bank`` (on a Mac, ``~/Library/Application Support/PokeUDS/bank``)."""
+    if getattr(sys, "frozen", False) and sys.platform in PORTABLE_ON and not os.environ.get("POKEUDS_DATA"):
         if (folder := portable_folder(Path(sys.executable).resolve().parent)) is not None:
             return folder
     return data_dir() / "bank"

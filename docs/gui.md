@@ -79,10 +79,12 @@ at a time, since one radio serves one process.
 
 The bank is a folder holding one file per Pokemon (`pokeuds/app/bank.py`). What the app knows about each one is a
 `.json` of the same name in the hidden `.info` folder inside, so the folder itself shows only Pokemon (and a Gen 2
-Pokemon's `.mail`, which trades read beside its `.pk2`); a bank from before `.info` is tidied into it when opened. The packaged app keeps it in `Bank` beside PokeUDS.exe, which the release zip never
-contains, so an update unzipped over the app's folder leaves it alone; on its first start it copies the records of
-an older `<data folder>/bank` there (the old folder stays). From source, or when the exe's folder cannot be written,
-it is `<data folder>/bank`. Settings' `bank` overrides both.
+Pokemon's `.mail`, which trades read beside its `.pk2`); a bank from before `.info` is tidied into it when opened.
+The packaged Windows app keeps it in `Bank` beside PokeUDS.exe, which the release zip never contains, so an update
+unzipped over the app's folder leaves it alone; on its first start it copies the records of an older `<data
+folder>/bank` there (the old folder stays). The Mac app, whose bundle an update replaces whole, keeps it in
+`~/Library/Application Support/PokeUDS/bank`. From source, or when the exe's folder cannot be written, it is `<data
+folder>/bank`. Settings' `bank` overrides both.
 
 ```
 20261104-153012_025_Sparky_1a2b3c4d.pk6          the record: .pk1/.pk2 as PokeUDS writes them, .pk6/.pk7 decrypted and stored, as PKHeX opens them

@@ -1,6 +1,9 @@
-# A release of PokeUDS: the Windows app (PokeUDS-windows.zip) and the PKHeX helper's self-contained executables for
-# each computer, which the app downloads (Settings, PKHeX helper; `pokeuds pkhex get`) so players need no .NET SDK.
-# Push a tag like v0.1.0, or run it by hand from the Actions tab with a tag name. docs/release.md has the checklist.
+# A release of PokeUDS: the Windows app (PokeUDS-windows.zip), the Mac app (PokeUDS-macos-arm64.zip for Apple Silicon,
+# PokeUDS-macos-x64.zip for Intel), and the PKHeX helper's self-contained executables for each computer, which an app
+# without its own copy downloads (Settings, PKHeX helper; `pokeuds pkhex get`) so players need no .NET SDK.
+# Push a tag like v0.1.0 (push main first, or with it: git push --atomic origin main v0.1.0), or run it by hand from
+# the Actions tab: with a tag name it makes that release, with none it only builds the apps, kept as the run's
+# artifacts (a test build, no release). docs/release.md has the checklist.
 # The release is created as a draft: publish it from the Releases page once the files are checked.
 name: release
 
@@ -10,8 +13,9 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "The release tag to create or add the helpers to (e.g. v0.2.0)"
-        required: true
+        description: "The release tag to create or add the files to (e.g. v0.2.0); empty: only build the apps"
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -60,8 +64,42 @@ jobs:
           name: app-windows
           path: dist/PokeUDS-windows.zip
 
+  app-macos:
+    strategy:
+      matrix:
+        include:
+          - os: macos-latest            # Apple Silicon: PokeUDS-macos-arm64.zip
+            arch: arm64
+          - os: macos-15-intel          # Intel Macs: PokeUDS-macos-x64.zip
+            arch: x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - uses: actions/setup-dotnet@v4          # build_exe.py publishes the PKHeX helper to bundle it in the app
+        with:
+          dotnet-version: "10.0.x"
+      - run: pip install -r requirements-gui.txt pyinstaller
+      - run: python scripts/build_exe.py
+      - name: Check the app
+        run: |
+          APP=dist/PokeUDS.app
+          file "$APP/Contents/MacOS/PokeUDS"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          HELPER=$(find "$APP" -name pokeuds-pkhex -type f | head -1)
+          echo "bundled helper: $HELPER"
+          echo '{"cmd":"ping"}' | "$HELPER"
+          "$APP/Contents/MacOS/PokeUDS" --cli --help >/dev/null && echo "the app's command line starts"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: app-macos-${{ matrix.arch }}
+          path: dist/PokeUDS-macos-${{ matrix.arch }}.zip
+
   release:
-    needs: [helper, app]
+    if: github.event_name == 'push' || inputs.tag != ''
+    needs: [helper, app, app-macos]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -72,14 +110,16 @@ jobs:
           path: assets
           merge-multiple: true
       - name: SHA256SUMS
-        run: cd assets && sha256sum PokeUDS-windows.zip pokeuds-pkhex-* > SHA256SUMS && cat SHA256SUMS
+        run: cd assets && sha256sum PokeUDS-*.zip pokeuds-pkhex-* > SHA256SUMS && cat SHA256SUMS
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.event.inputs.tag || github.ref_name }}
         run: |
-          NOTES="src/docs/releases/$TAG.md"
-          [ -f "$NOTES" ] || { echo "PokeUDS $TAG" > notes.md; NOTES=notes.md; }
+          # The tag's own notes (or a title), then which file to download (docs/releases/downloads.md).
+          if [ -f "src/docs/releases/$TAG.md" ]; then cp "src/docs/releases/$TAG.md" notes.md; else echo "PokeUDS $TAG" > notes.md; fi
+          [ -f src/docs/releases/downloads.md ] && { echo; cat src/docs/releases/downloads.md; } >> notes.md
+          NOTES=notes.md
           PRE=""; case "$TAG" in v0.*) PRE="--prerelease";; esac
           gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 || \
             gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "PokeUDS $TAG" \

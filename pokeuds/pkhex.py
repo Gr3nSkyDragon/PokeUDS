@@ -78,7 +78,9 @@ def candidates() -> list[Path]:
 def helper_path() -> Path | None:
     if override := os.environ.get("POKEUDS_PKHEX"):
         return Path(override) if Path(override).exists() else None
-    found = [p for p in candidates() if p.is_file()]
+    # On macOS and Linux a helper that lost its executable bit (a copy into an app bundle can drop it) would only
+    # fail when started; skip it, so the app offers the download instead.
+    found = [p for p in candidates() if p.is_file() and (os.name == "nt" or os.access(p, os.X_OK))]
     return max(found, key=lambda p: p.stat().st_mtime) if found else None
 
 
