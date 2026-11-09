@@ -134,3 +134,5 @@ cards and migration come from [PKHeX](https://github.com/kwsch/PKHeX). The Virtu
 Gr3nSkyDragon's VC link measurements ([mgba_LDN](https://github.com/Gr3nSkyDragon/mgba_LDN)) and
 [pret](https://github.com/pret)'s pokered and pokecrystal. Sprites: [PokeAPI](https://github.com/PokeAPI/sprites).
 The overall shape follows pokeldn. ESP32 firmware: Gr3nSkyDragon's VC-Adapter. ldnd: unlimitedcoder2.
+The Gen 7 Mystery Gift support was developed with **DeepSeek Harness** (DeepSeek); see
+[CONTRIBUTORS.md](CONTRIBUTORS.md).
