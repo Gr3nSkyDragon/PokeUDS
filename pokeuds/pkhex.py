@@ -25,6 +25,7 @@ import shutil
 import stat
 import subprocess
 import sys
+import tempfile
 import threading
 import urllib.request
 from dataclasses import dataclass
@@ -64,8 +65,14 @@ def downloaded_path() -> Path:
     return data_dir() / "pkhex" / EXE
 
 
+def bundled_path() -> Path:
+    """The self-contained helper a PokeUDS release carries inside itself (scripts/build_exe.py puts it here, the way
+    the ESP32 firmware rides in ``pokeuds/app/data``). Present in a packaged build, absent when running from source."""
+    return ROOT / "pokeuds" / "app" / "data" / "pkhex" / EXE
+
+
 def candidates() -> list[Path]:
-    return [downloaded_path(), PROJECT / "dist" / EXE, PROJECT / "bin" / "Release" / "net10.0" / EXE]
+    return [bundled_path(), downloaded_path(), PROJECT / "dist" / EXE, PROJECT / "bin" / "Release" / "net10.0" / EXE]
 
 
 def helper_path() -> Path | None:
@@ -96,14 +103,20 @@ def dotnet_sdks(again: bool = False) -> list[str]:
     return list(found)
 
 
+def has_source() -> bool:
+    """The helper's C# project is here to build (it ships with the source tree, not with the packaged app)."""
+    return (PROJECT / "pokeuds-pkhex.csproj").is_file()
+
+
 def can_build() -> bool:
-    return any(v.split(".")[0].isdigit() and int(v.split(".")[0]) >= 10 for v in dotnet_sdks())
+    return has_source() and any(v.split(".")[0].isdigit() and int(v.split(".")[0]) >= 10 for v in dotnet_sdks())
 
 
 def status() -> str:
     """What the app says about the helper, in a sentence."""
     if path := helper_path():
-        how = ("downloaded" if path == downloaded_path() else "published" if path.parent.name == "dist"
+        how = ("bundled with PokeUDS" if path == bundled_path() else "downloaded" if path == downloaded_path()
+               else "published" if path.parent.name == "dist"
                else "built from source" if "bin" in path.parts else "set by POKEUDS_PKHEX")
         return f"The PKHeX helper is ready ({how}: {path})."
     sdks = dotnet_sdks()
@@ -117,14 +130,35 @@ def status() -> str:
 
 
 def build_helper() -> subprocess.CompletedProcess:
-    """``dotnet build`` the helper (needs the .NET 10 SDK)."""
+    """``dotnet build`` the helper (needs the .NET 10 SDK and the C# source tree)."""
     dotnet = shutil.which("dotnet")
     if not dotnet:
         raise HelperMissing("the .NET SDK is not installed (dotnet not found); get the helper as a download instead")
+    if not has_source():
+        raise HelperMissing(f"the helper's C# source is not here to build ({PROJECT / 'pokeuds-pkhex.csproj'} is "
+                            "missing); a packaged PokeUDS already carries the helper, so reinstall it or get it as a "
+                            "download instead of building")
     if not can_build():
         raise HelperMissing(f"the helper needs the .NET 10 SDK; this computer has {', '.join(dotnet_sdks()) or 'none'}")
     return subprocess.run([dotnet, "build", "-c", "Release", "-nologo", str(PROJECT)], capture_output=True, text=True,
                           **NO_WINDOW)
+
+
+def publish(rid: str, out: Path) -> Path:
+    """Publish the helper as one self-contained file at ``out`` (nothing to install where it runs). Needs the .NET 10
+    SDK and the C# source; used by scripts/publish_pkhex.py and scripts/build_exe.py (which bundles it)."""
+    dotnet = shutil.which("dotnet")
+    if not dotnet:
+        raise HelperMissing("dotnet not found: install the .NET 10 SDK to publish the helper")
+    if not has_source():
+        raise HelperMissing(f"the helper's C# source is not here to publish ({PROJECT / 'pokeuds-pkhex.csproj'} is missing)")
+    out.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory() as stage:
+        subprocess.run([dotnet, "publish", str(PROJECT), "-c", "Release", "-r", rid, "-o", stage, "-nologo"],
+                       check=True, **NO_WINDOW)
+        name = "pokeuds-pkhex.exe" if rid.startswith("win") else "pokeuds-pkhex"
+        shutil.copy2(Path(stage) / name, out)
+    return out
 
 
 def build_problem(done: subprocess.CompletedProcess) -> str:

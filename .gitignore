@@ -21,6 +21,9 @@ services/pkhex/obj/
 services/pkhex/publish/
 services/pkhex/dist/
 
+# The self-contained PKHeX helper that scripts/build_exe.py publishes into the app to bundle it (big, per-computer).
+pokeuds/app/data/pkhex/
+
 # Reverse-engineering scratch (the extracted distributor, its code.bin and RomFS) and test scratch.
 .re/
 pytest-tmp/

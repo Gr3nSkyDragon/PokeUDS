@@ -9,10 +9,7 @@ ones must be published on a Mac, where the SDK signs them (Apple Silicon refuses
 
 import argparse
 import hashlib
-import shutil
-import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -22,14 +19,7 @@ from pokeuds import pkhex  # noqa: E402
 
 
 def publish(rid: str, out: Path) -> Path:
-    dotnet = shutil.which("dotnet") or sys.exit("dotnet not found: install the .NET 10 SDK")
-    with tempfile.TemporaryDirectory() as stage:
-        subprocess.run([dotnet, "publish", str(pkhex.PROJECT), "-c", "Release", "-r", rid, "-o", stage, "-nologo"],
-                       check=True)
-        name = "pokeuds-pkhex.exe" if rid.startswith("win") else "pokeuds-pkhex"
-        out.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(Path(stage) / name, out)
-    return out
+    return pkhex.publish(rid, out)
 
 
 def main() -> int:

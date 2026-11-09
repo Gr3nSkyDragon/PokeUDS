@@ -40,7 +40,7 @@ def card(app, head: list[ft.Control] | None = None, compact: bool = False) -> ft
         rows.append(t.label("Building Pokemon, checking legality and Mystery Gift cards use PKHeX.Core through a small "
                             "helper program. " + pkhex.status(), color=t.TEXT))
     sdks = _sdks()
-    can_build = any(v.split(".")[0].isdigit() and int(v.split(".")[0]) >= 10 for v in sdks)
+    can_build = pkhex.can_build()           # needs both the .NET 10 SDK and the C# source (absent in a packaged app)
     buttons = [t.primary("Get the PKHeX helper" if path is None else "Get it again", lambda e: _run(app, "get"),
                          ft.Icons.DOWNLOAD, disabled=bool(working))]
     if can_build:
@@ -52,9 +52,10 @@ def card(app, head: list[ft.Control] | None = None, compact: bool = False) -> ft
     rows.append(ft.Row(buttons, spacing=10, wrap=True))
     if path is None:
         rows.append(t.label(
-            "Get it downloads the helper for this computer from PokeUDS's releases (about 20 MB, checked against the "
-            "release's SHA256SUMS); nothing else to install. "
+            "Get it downloads the helper for this computer from PokeUDS's releases (checked against the release's "
+            "SHA256SUMS); nothing else to install. "
             + (f"Build it uses the .NET SDK here ({', '.join(sdks)})." if can_build else
+               "" if not pkhex.has_source() else
                f"The .NET SDK here ({', '.join(sdks)}) is older than the .NET 10 the build needs." if sdks else
                "Building instead needs the .NET 10 SDK: dotnet build -c Release services/pkhex."), size=12))
     if _state["message"]:

@@ -8,8 +8,10 @@ window. Flet ships its window as a zip that it unpacks into ``%USERPROFILE%\.fle
 script unpacks it into the app's own folder instead (``_internal/flet_view``, found through ``FLET_VIEW_PATH`` by
 packaging/pokeuds_app.py), so the app writes nothing there and runs wherever it is unzipped. The icon is ``--icon``,
 else ``gui/assets/icon.ico`` (made from ``packaging/icon.jpg`` by scripts/make_icon.py), else Flet's own. The PKHeX
-helper is not inside: the app downloads it from the release when a page needs it. The app keeps its bank in
-``PokeUDS/Bank``; a rebuild keeps that folder and the zip never holds it, so an update never replaces a bank.
+helper rides inside: this script first publishes the self-contained helper into ``pokeuds/app/data/pkhex`` (needs the
+.NET 10 SDK on the build machine), so the packaged app needs no download and no SDK of its own; ``--no-helper`` leaves
+it out. The app keeps its bank in ``PokeUDS/Bank``; a rebuild keeps that folder and the zip never holds it, so an
+update never replaces a bank.
 """
 
 from __future__ import annotations
@@ -25,7 +27,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from pokeuds import __version__  # noqa: E402
+from pokeuds import __version__, pkhex  # noqa: E402
 from pokeuds.util import NO_WINDOW  # noqa: E402
 
 NAME = "PokeUDS"
@@ -39,6 +41,17 @@ VIEW = "flet_view"          # the unpacked window, beside the app's Python in _i
 def file_version(version: str) -> str:
     parts = [p for p in version.split(".") if p.isdigit()][:4]
     return ".".join(parts + ["0"] * (4 - len(parts)))
+
+
+def bundle_helper() -> Path:
+    """Publish the self-contained PKHeX helper into pokeuds/app/data/pkhex so flet pack ships it (DATA already covers
+    that folder). The player then needs neither a download nor the .NET SDK; this build machine needs the .NET 10 SDK."""
+    dest = pkhex.bundled_path()
+    rid = pkhex.runtime_id()
+    print(f"publishing the PKHeX helper ({rid}) into {dest} ...", flush=True)
+    pkhex.publish(rid, dest)
+    print(f"bundled helper: {dest} ({dest.stat().st_size >> 20} MB)", flush=True)
+    return dest
 
 
 def pack(icon: Path | None, dist: Path) -> Path:
@@ -96,11 +109,15 @@ def main(argv: list[str] | None = None) -> int:
                                                   "when it exists)")
     parser.add_argument("--dist", type=Path, default=ROOT / "dist")
     parser.add_argument("--no-zip", action="store_true")
+    parser.add_argument("--no-helper", action="store_true",
+                        help="do not publish and bundle the PKHeX helper (the app will fall back to a download)")
     a = parser.parse_args(argv)
     icon = a.icon or (DEFAULT_ICON if DEFAULT_ICON.is_file() else None)
     if icon and not icon.is_file():
         sys.exit(f"{icon} does not exist")
     print(f"PokeUDS {__version__}, icon: {icon or 'none (Flet default)'}", flush=True)
+    if not a.no_helper:
+        bundle_helper()
     # A bank made by running the built exe here survives the rebuild: moved aside, then put back. Not into dist/ or
     # build/: flet pack --yes deletes both whole before it starts.
     kept = ROOT / ".bank-kept"
