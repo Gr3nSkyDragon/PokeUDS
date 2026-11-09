@@ -194,16 +194,17 @@ distributor's captured message **byte for byte**, including the tail `66 33 d7 7
 `opssr_verify` recovers the compressed stream. The retail game verifies/recoveres the block with the public
 key before decompressing, so PokeUDS now signs every Gen 7 message.
 
-**Where the private key lives.** The 126-byte public key is embedded in `gen7/delivery.py` (it is public).
+**Where the private key lives.** The 126-byte public key is embedded in `gen7/keys.py` (it is public).
 The RSA private exponent is **not** in the repository: it is the distributor app's own key, kept in a
-gitignored local file — `gen7_delivery_key.txt` next to your `aes_keys.txt`, or the legacy
+gitignored local file — `rsa_d_key.txt` next to your `aes_keys.txt`, or the legacy
 `pokeuds/games/gen7/delivery_key.py`. Without it the verifier still works, but `fragments` raises a clear
 error instead of sending an unsigned message.
 
 - **Easiest:** run `python scripts/extract_gen7_key.py "Gen 7 Local Distributor.cxi" --keys aes_keys.txt`.
-  It writes `gen7_delivery_key.txt` next to `aes_keys.txt`, and PokeUDS reads it there. Retail
-  Sun/Moon/USUM (and their CIAs/CCIs) contain only the public key — point the script at the distributor
-  (00040000001A8900), not at a retail game.
+  It writes `rsa_d_key.txt` next to `aes_keys.txt`, and PokeUDS reads it there. The GUI's Settings page has
+  a **Gen 7 Mystery Gift Key** section below Console keys that asks for the distributor, runs the same
+  extraction, and remembers the key file. Retail Sun/Moon/USUM (and their CIAs/CCIs) contain only the
+  public key — point the script at the distributor (00040000001A8900), not at a retail game.
 - **It is not in `aes_keys.txt`.** That file holds the console's UDS AES key (keyslot 0x2D) for the
   local-wireless encryption. The OPSSR key is data inside the distributor app.
 - **In the app:** the private key is the 461-byte PKCS#1 `RSAPrivateKey` DER at VA `0x66B2F7` in the app's `.code`
@@ -213,7 +214,7 @@ error instead of sending an unsigned message.
 - **With GodMode9:** dump the installed title's decrypted ExeFS/`code.bin` (title 00040000001A8900) and
   read `0x56B2F7..0x56B4C4`; GM9 has no named "extract RSA key" function. The public key is
   `0x56B279..0x56B2F7`. If you already have the decrypted CXI, reading those offsets is enough.
-- **Install it:** the extractor writes `d=<hex>` to `gen7_delivery_key.txt`; PokeUDS loads that file
+- **Install it:** the extractor writes `d=<hex>` to `rsa_d_key.txt`; PokeUDS loads that file
   automatically from beside `aes_keys.txt`, from the working directory, or from `POKEUDS_GEN7_KEY`. The
   legacy `delivery_key.py` (a module with `RSA_D`) still works if you prefer it.
 

@@ -762,9 +762,16 @@ def cmd_gift_distribute(args) -> int:
         from .games.gen7 import delivery
 
     full = _full_file(args.game, args.source)
-    if game.generation == 7 and getattr(args, "keys", None):
-        # A per-user signing key may sit next to aes_keys.txt, written by scripts/extract_gen7_key.py.
-        delivery.use_key_file(Path(args.keys).with_name("gen7_delivery_key.txt"))
+    if game.generation == 7:
+        explicit = getattr(args, "gen7_key", None)
+        if explicit:
+            delivery.use_key_file(explicit)
+        elif getattr(args, "keys", None):
+            # The key may sit next to aes_keys.txt, written by scripts/extract_gen7_key.py or the Settings page.
+            folder = Path(args.keys).parent
+            for name in ("rsa_d_key.txt", "gen7_delivery_key.txt"):
+                if delivery.use_key_file(folder / name):
+                    break
     parts = delivery.fragments(full)
     prof = profile.load(args.game, None)
     station = Station(open_radio(args.radio), args.mac or random_mac(), _uds_key(args.keys, args.radio), name=args.name)
@@ -1013,6 +1020,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--name", default="PokeUDS", help="the name in the beacon's node list")
     p.add_argument("--seconds", type=float, default=600.0)
     p.add_argument("--dwell", type=float, default=0.25, help="seconds each fragment stays in the beacon")
+    p.add_argument("--gen7-key", help="Gen 7: an rsa_d_key.txt with the distributor's OPSSR signing key")
     p.set_defaults(func=cmd_gift_distribute)
     p = gsub.add_parser("card", help="build a custom card (its Pokemon matches no real event: PKHeX flags it)")
     p.add_argument("game", choices=GAME_KEYS)

@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
+import asyncio
+from pathlib import Path
+
 import flet as ft
 
 from pokeuds import __version__
+from pokeuds.app.settings import data_dir
 
 from .. import theme as t
 from .common import View
+
+_gen7 = {"message": "", "color": t.INFO}
 
 
 def name_problem(name: str) -> str:
@@ -39,6 +45,23 @@ class SettingsView(View):
                     ft.Text(s.keys or "No file chosen", color=t.TEXT, size=14, expand=True),
                     t.secondary("Choose", self._pick_keys, ft.Icons.KEY)], spacing=10),
             *([t.label(keys_problem, color=t.WARN)] if keys_problem and s.keys else []))
+        gen7_problem = s.gen7_key_problem()
+        gen7_path = s.gen7_key_path()
+        gen7_ok = bool(gen7_path) and not gen7_problem
+        gen7 = t.card(
+            t.heading("Gen 7 Mystery Gift Key"),
+            t.label("The Gen 7 distributor signs its gifts with an OPSSR key. PokeUDS can read it from your own "
+                    "Gen 7 Local Distributor (CXI, CCI or code.bin); retail Sun/Moon/USUM only carry the public "
+                    "key. The extracted file stays on this computer."),
+            ft.Row([ft.Icon(ft.Icons.CHECK_CIRCLE if gen7_ok else ft.Icons.ERROR_OUTLINE,
+                            color=t.GOOD if gen7_ok else t.WARN, size=18),
+                    ft.Text(gen7_path or "No key installed", color=t.TEXT, size=14, expand=True),
+                    t.primary("Choose distributor..." if not gen7_path else "Replace distributor...",
+                              self._pick_distributor, ft.Icons.KEY),
+                    t.secondary("Choose key file...", self._pick_gen7_key, ft.Icons.FOLDER_OPEN)],
+                   spacing=10, wrap=True),
+            *([t.label(gen7_problem, color=t.WARN)] if gen7_problem and gen7_path else []),
+            *([t.label(_gen7["message"], color=_gen7["color"])] if _gen7["message"] else []))
         output = t.card(
             t.heading("Received Pokemon"),
             ft.Row([ft.Text(s.output, color=t.TEXT, size=14, expand=True),
@@ -75,7 +98,8 @@ class SettingsView(View):
                                t.label("Adds a Debug page: the demo radio, a network scan and capture analysis.")],
                               spacing=4, expand=True),
                     ft.Switch(value=s.debug, on_change=self._debug)]))
-        return ft.Column([t.title("Settings"), keys, output, trainer, language, helper, art, debug, t.label(f"PokeUDS {__version__}", size=12)],
+        return ft.Column([t.title("Settings"), keys, gen7, output, trainer, language, helper, art, debug,
+                          t.label(f"PokeUDS {__version__}", size=12)],
                          spacing=t.GAP, scroll=ft.ScrollMode.AUTO)
 
     async def _pick_keys(self, e) -> None:
@@ -85,6 +109,56 @@ class SettingsView(View):
             self.app.settings.keys = files[0].path
             self.save()
             self.app.changed()
+
+    async def _pick_distributor(self, e) -> None:
+        """Let the user point at their own distributor; extract rsa_d_key.txt and remember it."""
+        files = await self.app.picker.pick_files(
+            dialog_title="Choose your Gen 7 Local Distributor (CXI, CCI or code.bin)",
+            file_type=ft.FilePickerFileType.ANY)
+        if not files or not files[0].path:
+            return
+        path = Path(files[0].path)
+        _gen7.update(message="Reading the distributor...", color=t.INFO)
+        self.app.changed()
+        try:
+            from pokeuds.games.gen7 import keyextract
+
+            data = await asyncio.to_thread(path.read_bytes)
+            offset, private = await asyncio.to_thread(keyextract.extract, data)
+            s = self.app.settings
+            out = Path(s.keys).with_name("rsa_d_key.txt") if s.keys else data_dir() / "rsa_d_key.txt"
+            await asyncio.to_thread(keyextract.write_key, out, private, str(path), offset)
+            s.gen7_key = str(out)
+            self.save()
+            _gen7.update(message=f"Installed {out.name} from {path.name}.", color=t.GOOD)
+        except ValueError as exc:
+            _gen7.update(message=str(exc), color=t.BAD)
+        except OSError as exc:
+            _gen7.update(message=f"Could not read or write the key: {exc}", color=t.BAD)
+        self.app.changed()
+
+    async def _pick_gen7_key(self, e) -> None:
+        """Choose an already extracted rsa_d_key.txt."""
+        files = await self.app.picker.pick_files(dialog_title="Choose rsa_d_key.txt",
+                                                 file_type=ft.FilePickerFileType.CUSTOM,
+                                                 allowed_extensions=["txt"])
+        if not files or not files[0].path:
+            return
+        from pokeuds.games.gen7 import keyextract
+
+        try:
+            key = keyextract.read_text_key(files[0].path)
+        except (OSError, ValueError) as exc:
+            _gen7.update(message=str(exc), color=t.BAD)
+            self.app.changed()
+            return
+        if key is None:
+            _gen7.update(message=f"{Path(files[0].path).name} has no d= line", color=t.BAD)
+        else:
+            self.app.settings.gen7_key = files[0].path
+            self.save()
+            _gen7.update(message=f"Using {Path(files[0].path).name}.", color=t.GOOD)
+        self.app.changed()
 
     async def _pick_output(self, e) -> None:
         folder = await self.app.picker.get_directory_path(dialog_title="Where received Pokemon go")

@@ -233,6 +233,8 @@ class GiftsView(View):
         sending = self.app.busy() and self.app.run_kind == "gift"
         problem = ("Choose an ESP32 board or a USB Wi-Fi adapter on the Trade page (the demo radio cannot send gifts)."
                    if s.radio_spec().startswith("demo") else s.keys_problem())
+        if self.generation == 7 and s.gen7_key_problem():
+            problem = problem or "No Gen 7 signing key installed: add one in Settings, Gen 7 Mystery Gift Key."
         if sending:
             button = t.secondary("Stop sending", lambda e: self.app.stop(), ft.Icons.STOP_ROUNDED)
         else:
@@ -266,6 +268,8 @@ class GiftsView(View):
         args = ["gift", "distribute", self.game, str(path), "--radio", s.radio_spec(), "--seconds", "3600"]
         if s.keys:
             args += ["--keys", s.keys]
+        if self.generation == 7 and (gen7_key := s.gen7_key_path()) and not gen7_key.endswith(".py"):
+            args += ["--gen7-key", gen7_key]
         self.app.start("gift", args, on_exit=lambda code: self.app.ui(self.refresh))
         self.refresh()
 

@@ -27,11 +27,13 @@ def offers(tmp_path):
 
 
 def test_settings_round_trip(data):
-    s = Settings(keys="k.txt", radio="ldnd", port=r"\\.\pipe\x", debug=True, offers={"rby": "a.pk1"})
+    s = Settings(keys="k.txt", gen7_key="rsa_d_key.txt", radio="ldnd", port=r"\\.\pipe\x", debug=True,
+                 offers={"rby": "a.pk1"})
     s.save()
     back = Settings.load()
     assert back == s and back.radio_spec() == r"ldnd:\\.\pipe\x"
     assert Settings().keys_problem() == "No aes_keys.txt chosen"
+    assert "does not exist" in Settings(gen7_key="missing.rsa").gen7_key_problem()
 
 
 def test_catalog_commands_and_modes(data, offers):
@@ -173,7 +175,10 @@ def test_gifts_page_sends_gen6_and_gen7_cards_over_local_wireless(data, tmp_path
 
     keys = tmp_path / "aes_keys.txt"
     keys.write_text("slot0x2DKeyN=" + "00" * 16 + "\n")
-    app = App(None, Settings(radio="esp32", port="COM9", keys=str(keys), output=str(tmp_path / "received")))
+    gen7_key = tmp_path / "rsa_d_key.txt"
+    gen7_key.write_text("d=1\n")
+    app = App(None, Settings(radio="esp32", port="COM9", keys=str(keys), gen7_key=str(gen7_key),
+                             output=str(tmp_path / "received")))
     started = []
     monkeypatch.setattr(app, "start", lambda kind, args, **kw: started.append((kind, args)))
     view = GiftsView(app)
@@ -198,6 +203,7 @@ def test_gifts_page_sends_gen6_and_gen7_cards_over_local_wireless(data, tmp_path
     kind, sm_args = started[1]
     assert kind == "gift" and sm_args[:3] == ["gift", "distribute", "sm"]
     assert sm_args[3].endswith("sending.wc7full")
+    assert sm_args[sm_args.index("--gen7-key") + 1] == str(gen7_key)
 
 
 def test_send_over_local_wireless_sits_between_legal_and_the_bank(data, tmp_path):

@@ -22,8 +22,8 @@ signature keeps the first ``len(compressed) - 88`` bytes clear and replaces the 
 96-byte RSA block that recovers them; that is why the message is 8 bytes longer than the LZ10
 stream and why the stream stops looking like LZ10 at about offset 210.  The receiving game
 verifies/recoveres it before decompressing.  Two fragments carry a typical card.  The public key is
-embedded (it is public); the private exponent is the distributor app's key at 0x66B2F7 and lives in
-the local, gitignored ``delivery_key.py`` — see docs/mystery_gift.md.
+embedded (it is public); the private exponent is the distributor app's key at 0x66B2F7 and lives in a
+local, gitignored file (``rsa_d_key.txt``, or the legacy ``delivery_key.py``) — see docs/mystery_gift.md.
 """
 
 from __future__ import annotations
@@ -38,6 +38,8 @@ from pathlib import Path
 from Crypto.Cipher import AES
 
 from ..gen6.delivery import lz10_compress, lz10_decompress
+from .keyextract import read_text_key
+from .keys import MODULUS_SIZE, OVERHEAD, PUBLIC_KEY, RSA_E, RSA_N, SIGNATURE_SIZE
 
 APPDATA_SIZE = 0xC8
 HEADER_SIZE = 0x18
@@ -100,28 +102,6 @@ def sanitized(full: bytes) -> bytes:
     return bytes(out)
 
 
-# The distributor's Zorro/OPSSR keys: the 126-byte SubjectPublicKeyInfo and the RSA-768 private
-# exponent.  These are the app's own keys (NetStatic/NetLib DeliveryKeys.cpp).
-PUBLIC_KEY = bytes.fromhex(
-    "307c300d06092a864886f70d0101010500036b003068026100b756e1dcd8cece78e148107b1bac115fdb17de843453"
-    "cab7d4e6df8dd21f5a3d17b4477a8a531d97d57eb558f0d58a4af5bfaddda4a0bc1dc22ff87576c7268b942819d4c8"
-    "3f78e1ee92d406662f4e68471e4de833e5126c32eb63a868345d1d0203010001")
-RSA_N = int.from_bytes(bytes.fromhex(
-    "b756e1dcd8cece78e148107b1bac115fdb17de843453cab7d4e6df8dd21f5a3d17b4477a8a531d97d57eb558f0d5"
-    "8a4af5bfaddda4a0bc1dc22ff87576c7268b942819d4c83f78e1ee92d406662f4e68471e4de833e5126c32eb63a8"
-    "68345d1d"), "big")
-def _read_text_key(path: Path) -> int | None:
-    """A `d=<hex>` line from a key file written by scripts/extract_gen7_key.py."""
-    for line in path.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-        if line.lower().startswith(("d=", "rsa_d=")):
-            value = line.split("=", 1)[1].strip().replace("0x", "").replace(":", "").replace(" ", "")
-            return int(value, 16)
-    return None
-
-
 def _load_rsa_d() -> int | None:
     try:
         from .delivery_key import RSA_D as key      # a local module (legacy/advanced)
@@ -132,11 +112,13 @@ def _load_rsa_d() -> int | None:
     env = os.environ.get("POKEUDS_GEN7_KEY")
     if env:
         candidates.append(Path(env))
-    candidates += [Path(__file__).with_name("gen7_delivery_key.txt"), Path.cwd() / "gen7_delivery_key.txt"]
+    here = Path(__file__).resolve().parent
+    candidates += [here / "rsa_d_key.txt", here / "gen7_delivery_key.txt",
+                   Path.cwd() / "rsa_d_key.txt", Path.cwd() / "gen7_delivery_key.txt"]
     for path in candidates:
         try:
-            key = _read_text_key(path)
-        except OSError:
+            key = read_text_key(path)
+        except (OSError, ValueError):
             continue
         if key is not None:
             return key
@@ -144,23 +126,19 @@ def _load_rsa_d() -> int | None:
 
 
 RSA_D = _load_rsa_d()                   # the distributor app's private exponent; local, never committed
-RSA_E = 65537
 
 
 def use_key_file(path: str | os.PathLike) -> bool:
-    """Point the signer at a `gen7_delivery_key.txt` (e.g. next to aes_keys.txt); False if it is absent."""
+    """Point the signer at an `rsa_d_key.txt` (e.g. next to aes_keys.txt); False if it is absent."""
     global RSA_D
     try:
-        key = _read_text_key(Path(path))
-    except OSError:
+        key = read_text_key(Path(path))
+    except (OSError, ValueError):
         return False
     if key is None:
         return False
     RSA_D = key
     return True
-MODULUS_SIZE = 96               # RSA-768
-OVERHEAD = 8                    # OPSSR's digest bytes kept in the signature
-SIGNATURE_SIZE = MODULUS_SIZE   # the signed block replacing the compressed stream's last 88 bytes
 
 
 def _opssr_mask(xored: bytes) -> bytes:

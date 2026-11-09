@@ -87,7 +87,8 @@ def test_the_pages_are_translated(monkeypatch, tmp_path):
     from gui.views.trade import TradeView
     from pokeuds.app.settings import Settings
 
-    app = App(None, Settings(output=str(tmp_path / "received")))
+    settings = Settings(output=str(tmp_path / "received"))
+    app = App(None, settings)
     seen, english = 0, []
 
     def walk(o, done):
@@ -110,7 +111,7 @@ def test_the_pages_are_translated(monkeypatch, tmp_path):
 
     for cls in (TradeView, BankView, GiftsView, BoardView, SettingsView, PluginsView):
         walk(cls(app).control(), set())
-    data = {"Pseudo", "Pseudo (qps-ploc)", str(tmp_path / "received")}
+    data = {"Pseudo", "Pseudo (qps-ploc)", str(tmp_path / "received"), settings.gen7_key_path()}
     assert seen > 100 and [e for e in english if e not in data and not e.startswith("by PokeUDS")] == []
 
 

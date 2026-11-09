@@ -22,6 +22,7 @@ def data_dir() -> Path:
 @dataclass
 class Settings:
     keys: str = ""                     # aes_keys.txt
+    gen7_key: str = ""                 # rsa_d_key.txt (the Gen 7 distributor's OPSSR signing key)
     radio: str = "esp32"               # "esp32" or "ldnd"
     port: str = ""                     # ESP32 serial port or ldnd pipe; "" finds it
     output: str = str(Path.home() / "PokeUDS" / "received")
@@ -76,6 +77,42 @@ class Settings:
         tmp = path.with_suffix(".tmp")
         tmp.write_text(json.dumps(asdict(self), indent=2), encoding="utf-8")
         tmp.replace(path)
+
+    def gen7_key_path(self) -> str:
+        """The chosen rsa_d_key.txt, one beside aes_keys.txt, or the legacy local delivery_key.py."""
+        if self.gen7_key:
+            return self.gen7_key
+        if self.keys:
+            for name in ("rsa_d_key.txt", "gen7_delivery_key.txt"):
+                path = Path(self.keys).with_name(name)
+                if path.exists():
+                    return str(path)
+        from ..games.gen7 import delivery
+
+        legacy = Path(delivery.__file__).with_name("delivery_key.py")
+        if delivery.RSA_D is not None and legacy.exists():
+            return str(legacy)
+        return ""
+
+    def gen7_key_problem(self) -> str:
+        """Why the Gen 7 signing key cannot be used; "" when it is installed and readable."""
+        from ..games.gen7 import delivery
+
+        path = self.gen7_key_path()
+        if not path:
+            return "" if delivery.RSA_D is not None else "No Gen 7 signing key installed"
+        legacy = Path(delivery.__file__).with_name("delivery_key.py")
+        if Path(path).resolve() == legacy.resolve():
+            return "" if delivery.RSA_D is not None else f"{path} has no RSA_D"
+        from ..games.gen7 import keyextract
+
+        try:
+            key = keyextract.read_text_key(path)
+        except FileNotFoundError:
+            return f"{path} does not exist"
+        except (OSError, ValueError) as exc:
+            return str(exc)
+        return "" if key is not None else f"{path} has no d= line"
 
     def keys_problem(self) -> str:
         if not self.keys:
