@@ -55,11 +55,11 @@ class SettingsView(View):
                     "key. The extracted file stays on this computer."),
             ft.Row([ft.Icon(ft.Icons.CHECK_CIRCLE if gen7_ok else ft.Icons.ERROR_OUTLINE,
                             color=t.GOOD if gen7_ok else t.WARN, size=18),
-                    ft.Text(gen7_path or "No key installed", color=t.TEXT, size=14, expand=True),
-                    t.primary("Choose distributor..." if not gen7_path else "Replace distributor...",
+                    ft.Text(gen7_path or "No key installed", color=t.TEXT, size=14, expand=True)], spacing=8),
+            ft.Row([t.primary("Choose distributor..." if not gen7_path else "Replace distributor...",
                               self._pick_distributor, ft.Icons.KEY),
                     t.secondary("Choose key file...", self._pick_gen7_key, ft.Icons.FOLDER_OPEN)],
-                   spacing=10, wrap=True),
+                   spacing=8, wrap=True),
             *([t.label(gen7_problem, color=t.WARN)] if gen7_problem and gen7_path else []),
             *([t.label(_gen7["message"], color=_gen7["color"])] if _gen7["message"] else []))
         output = t.card(
