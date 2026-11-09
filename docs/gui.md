@@ -105,7 +105,7 @@ folder>/bank`. Settings' `bank` overrides both.
   what the chosen game takes.
 - **Time Capsule copy** banks the `.pk2` a Gen 1 Pokemon becomes in Gen 2, or the `.pk1` a Gen 2 one
   becomes in Gen 1 (a Gen 1 species with Gen 1 moves only; its item and mail stay behind).
-- **Check** asks the PKHeX helper (docs/pkhex.md), when it is built, and keeps the answer with the record.
+- **Check** asks PKHeX (docs/pkhex.md) and keeps the answer with the record.
 - **Check all** (the header) checks every record in turn, with a Stop button; the illegal ones are then shown
   through the **Not legal** filter.
 - **Migrate to .pk7** makes the copy Poke Transporter (a `.pk1`/`.pk2`) or Pokemon Bank (a `.pk6`) would bring

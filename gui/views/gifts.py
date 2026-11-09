@@ -69,13 +69,13 @@ class GiftsView(View):
     def build(self) -> ft.Control:
         controls: list[ft.Control] = [
             t.title("Gifts"),
-            t.label("Mystery Gift cards for X/Y, ORAS, Sun/Moon and Ultra Sun/Ultra Moon. PokeUDS cannot hand a card to "
-                    "a game yet (how local distribution works is still unknown), but a card's Pokemon can go by trade."),
+            t.label("Mystery Gift cards for X/Y, ORAS, Sun/Moon and Ultra Sun/Ultra Moon: send a card over local wireless "
+                    "as an event distribution did, or send its Pokemon by trade."),
         ]
         if not _helper_ready():
             from . import pkhex_setup
 
-            controls.append(pkhex_setup.card(self.app, [t.heading("Gifts need the PKHeX helper")]))
+            controls.append(pkhex_setup.card(self.app, [t.heading("Gifts need PKHeX")]))
             return ft.Column(controls, spacing=t.GAP, scroll=ft.ScrollMode.AUTO)
         controls.append(ft.Row([
             ft.Dropdown(label="Game", value=self.game, width=280, dense=True, on_select=self._game,
@@ -285,7 +285,7 @@ class GiftsView(View):
             except ValueError as exc:           # the helper refused: say why
                 self._say(str(exc), t.BAD)
             except Exception as exc:
-                self._say(f"The PKHeX helper failed: {exc}", t.BAD)
+                self._say(f"PKHeX failed: {exc}", t.BAD)
             self.working = self.loading = False
             self.app.ui(self.refresh)
 

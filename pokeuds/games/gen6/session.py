@@ -510,9 +510,9 @@ def party_record(offer: bytes, game: str = "xy") -> bytes:
         if (len(data) == pkx.PARTY_SIZE and pkx.checksum_valid(data) and data[PARTY_LEVEL]
                 and data[PARTY_MAX_HP] | data[PARTY_MAX_HP + 1]):
             return data
-        log.warning("the PKHeX helper returned no party stats for the offer; update it, or offer a party .pk6")
+        log.warning("PKHeX returned no party stats for the offer; offer a party .pk6 instead")
     except Exception as exc:  # The helper is optional.
-        log.warning("no party stats for the offer (%s); get the PKHeX helper or offer a party .pk6", exc)
+        log.warning("no party stats for the offer (%s); offer a party .pk6 instead", exc)
     return offer + bytes(pkx.PARTY_SIZE - len(offer))
 
 

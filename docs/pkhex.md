@@ -1,39 +1,45 @@
-# The PKHeX helper
+# PKHeX
 
 PokeUDS builds and checks Pokemon with [PKHeX.Core](https://github.com/kwsch/PKHeX) (26.10.18, GPL-3.0),
-so a trade does not need a `.pk*` file made elsewhere: pick a species, a level and a few wishes, and the
-helper returns a record PKHeX's legality checker accepts.
+so a trade does not need a `.pk*` file made elsewhere: pick a species, a level and a few wishes, and PKHeX
+returns a record its legality checker accepts. Building Pokemon, legality checks, Mystery Gift cards and
+migration to Gen 7 use it; everything else in PokeUDS works without it.
 
-PKHeX.Core is a .NET library, so the helper is a small .NET program (`services/pkhex`) that Python runs
-as one long-lived child process. Without it, everything else in PokeUDS works; building Pokemon, legality
-checks and Mystery Gift cards are what need it.
+PKHeX.Core is a .NET library, so it runs in a small .NET program (`services/pkhex`, `pokeuds-pkhex`) that Python
+starts as one long-lived child process, as pokeldn runs its own. A crash in it fails one request, not the app.
+Players never see it: there is nothing to download, install or set up.
 
-## Getting the helper
+## Where it comes from
 
-| way | needs | where it goes |
+| running | PKHeX | needs |
 |---|---|---|
-| **Get the PKHeX helper** (the app: Settings, or any page that needs it), or `python -m pokeuds pkhex get` | nothing: the self-contained executable for this computer, from PokeUDS's GitHub releases, checked against the release's `SHA256SUMS` and started once before it is kept | `<data>/pkhex/` |
-| `python scripts/publish_pkhex.py` | the .NET 10 SDK, once | `services/pkhex/dist/` (self-contained, as the release's) |
-| `dotnet build -c Release services/pkhex`, the app's **Build it with .NET**, or `python -m pokeuds pkhex build` | the .NET 10 SDK, to build and to run | `services/pkhex/bin/Release/net10.0/` |
+| the packaged app (Windows, Mac) | inside the app: `scripts/build_exe.py` publishes it self-contained into `pokeuds/app/data/pkhex/` before packing | nothing |
+| from source | `dotnet build -c Release services/pkhex` (or `python -m pokeuds pkhex build`; the app offers **Build it with .NET** where PKHeX would be) into `services/pkhex/bin/Release/net10.0/` | the .NET 10 SDK, to build and to run |
+| from source, self-contained | `python scripts/publish_pkhex.py` into `services/pkhex/dist/` | the .NET 10 SDK, once |
 
-The newest one found is used; `POKEUDS_PKHEX` points at one elsewhere and wins. `python -m pokeuds pkhex status`
+The packaged app always uses its own copy. On a Mac, should that copy have lost its executable bit inside the app
+bundle, it is copied to `<data>/pkhex/` and made executable there, with no network. From source the newest build
+found is used. `POKEUDS_PKHEX` points at one elsewhere and wins over everything. `python -m pokeuds pkhex status`
 says which one, or what is missing: no .NET SDK, or one older than .NET 10 (an older SDK fails with
 `NETSDK1045: The current .NET SDK does not support targeting .NET 10.0`; the app says so before trying).
 
-The self-contained helper is one file of 16 to 19 MB with the .NET runtime inside, as pokeldn ships its own:
-published single-file, compressed and trimmed. PKHeX.Core, the C# runtime binder and the helper itself are kept
+The self-contained program is one file of 16 to 19 MB with the .NET runtime inside, as pokeldn ships its own:
+published single-file, compressed and trimmed. PKHeX.Core, the C# runtime binder and the program itself are kept
 whole, since the card editor reaches card fields through `dynamic` and reflection that full trimming would cut
 (`services/pkhex/pokeuds-pkhex.csproj`). The published file passes the whole test suite and every official card
 (`scripts/check_gifts.py`) with no .NET installed.
 
+Why a child process and not PKHeX.Core inside Python: a native library compiled ahead of time cannot run the card
+editor's `dynamic` code, and loading .NET into Python needs the .NET runtime installed (or 70 MB more in the app);
+either way a crash in PKHeX would close the window. pokeldn makes the same choice on the desktop (its library build
+is only for iOS, which starts no second process).
+
 ### Releases
 
-`.github/workflows/release.yml` publishes the helper for Windows (x64, arm64), Linux (x64, arm64) and macOS
-(Apple Silicon, Intel) and attaches them, with `SHA256SUMS`, to a GitHub release: push a tag like `v0.2.0`, or
-run the workflow from the Actions tab with a tag name. The macOS files are published on a Mac runner, where the
-SDK signs them (Apple Silicon refuses unsigned programs). The app's Get finds the newest release carrying an
-asset for this computer (`pokeuds-pkhex-<rid>`, e.g. `pokeuds-pkhex-win-x64.exe`). `.github/workflows/check.yml`
-runs the tests, the PKHeX ones included, on every push.
+`.github/workflows/release.yml` builds the Windows and Mac apps, each publishing PKHeX for its own computer into
+itself (macOS on a Mac runner, where the SDK signs it: Apple Silicon refuses unsigned programs). A release carries
+only the apps and `SHA256SUMS`. `.github/workflows/check.yml` builds PKHeX and runs the tests, the PKHeX ones
+included, on every push.
 
 ## Games
 

@@ -488,7 +488,7 @@ class GiftEditor(View):
             except ValueError as exc:
                 self.message, self.message_color = f"The card cannot be made: {exc}", t.BAD
             except Exception as exc:
-                self.message, self.message_color = f"The PKHeX helper failed: {exc}", t.BAD
+                self.message, self.message_color = f"PKHeX failed: {exc}", t.BAD
             self.working = False
             self.app.ui(self.refresh)
 

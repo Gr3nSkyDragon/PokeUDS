@@ -45,7 +45,7 @@ def test_trade_page_builder_headless(tmp_path, monkeypatch):
     trade.toggle_builder()
     assert trade.building and trade.builder.wish.game == "gsc"
     monkeypatch.setattr(panel, "_helper_ready", lambda: False)
-    trade.control()                                     # the "build the helper" card inside the Trade page
+    trade.control()                                     # the "PKHeX is missing" notice inside the Trade page
     monkeypatch.setattr(panel, "_helper_ready", lambda: True)
     for game in builder.GAMES:
         trade.builder.lists[game] = {"species": [[25, "Pikachu"], [1, "Bulbasaur"]], "moves": [[84, "Thunder Shock"]],

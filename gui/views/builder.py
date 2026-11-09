@@ -207,7 +207,7 @@ class BuilderPanel(View):
                 self.message, self.message_color = f"PKHeX could not build it: {exc}", t.BAD
             except Exception as exc:
                 self.result, self.saved = None, None
-                self.message, self.message_color = f"The PKHeX helper failed: {exc}", t.BAD
+                self.message, self.message_color = f"PKHeX failed: {exc}", t.BAD
             self.building = False
             self.app.ui(self.refresh)
 

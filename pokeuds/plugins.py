@@ -442,8 +442,8 @@ def edit_offer(game: str, record: bytes, check_game: str, extension: str, say: C
     from . import pkhex
 
     if pkhex.helper_path() is None:
-        raise ValueError(f"{', '.join(edited)} edited the offer, and an edited offer must pass PKHeX's check: build "
-                         "the helper (dotnet build -c Release services/pkhex) or turn the plugin off")
+        raise ValueError(f"{', '.join(edited)} edited the offer, and an edited offer must pass PKHeX's check, and PKHeX "
+                         f"is missing ({pkhex.BUILD_COMMAND}), so turn the plugin off or build PKHeX")
     result = pkhex.shared().check(check_game, edited_record)
     if not result.legal:
         raise ValueError(f"PKHeX refused the offer {', '.join(edited)} edited: " + "; ".join(

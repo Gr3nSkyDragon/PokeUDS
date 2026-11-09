@@ -8,8 +8,8 @@
     vc       Virtual Console Gen 1/2: trade, show or convert a .pk1/.pk2
     trade    trade with a retail console (xy, oras, sm, usum), joining or hosting
     board    ESP32-S3 boards: list, check, or install esp32-uds-bridge 1.8 (included)
-    build    build a legal Pokemon with the PKHeX helper (docs/pkhex.md)
-    pkhex    the PKHeX helper: status, get (download, nothing to install), build
+    build    build a legal Pokemon with PKHeX (docs/pkhex.md)
+    pkhex    PKHeX in a source tree: status, build
     plugins  installed plugins: list, install, remove, enable, disable; plugin run TOOL -- ARGS
     gift     Gen 6/7 Mystery Gift cards: list PKHeX's, show a .wc6/.wc7, make its Pokemon, build a custom card
 """
@@ -850,13 +850,6 @@ def cmd_pkhex(args) -> int:
         sdks = pkhex.dotnet_sdks()
         print(f".NET SDKs: {', '.join(sdks) or 'none'}; this computer is {pkhex.runtime_id()}")
         return 0 if pkhex.helper_path() else 1
-    if args.pkhex_command == "get":
-        try:
-            pkhex.download_helper()
-        except OSError as exc:
-            print(f"Could not get the helper: {exc}")
-            return 1
-        return 0
     if args.pkhex_command == "build":
         try:
             done = pkhex.build_helper()
@@ -961,7 +954,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--firmware", help="another merged ESP32-S3 .bin instead (for developers)")
     p.set_defaults(func=cmd_board)
 
-    p = sub.add_parser("build", help="build a legal Pokemon with the PKHeX helper")
+    p = sub.add_parser("build", help="build a legal Pokemon with PKHeX")
     p.add_argument("game", choices=["rby", "gsc", "xy", "oras", "sm", "usum"])
     p.add_argument("species", help="National Dex number or name")
     p.add_argument("--level", type=int, default=50)
@@ -1041,11 +1034,9 @@ def main(argv: list[str] | None = None) -> int:
     _gift_trainer(p)
     p.set_defaults(func=cmd_gift)
 
-    ph = sub.add_parser("pkhex", help="the PKHeX helper: whether it is here, get it (download) or build it")
+    ph = sub.add_parser("pkhex", help="PKHeX, for a source tree: whether it is here, or build it")
     phsub = ph.add_subparsers(dest="pkhex_command", required=True)
-    phsub.add_parser("status", help="where the helper is, or what is missing").set_defaults(func=cmd_pkhex)
-    phsub.add_parser("get", help="download the self-contained helper for this computer from PokeUDS's releases"
-                     ).set_defaults(func=cmd_pkhex)
+    phsub.add_parser("status", help="where PKHeX is, or what is missing").set_defaults(func=cmd_pkhex)
     phsub.add_parser("build", help="dotnet build it (needs the .NET 10 SDK)").set_defaults(func=cmd_pkhex)
 
     pl = sub.add_parser("plugins", help="installed plugins (docs/plugins.md)")

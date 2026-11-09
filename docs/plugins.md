@@ -277,7 +277,7 @@ PokeUDS writes it, or the decrypted Gen 6/7 record. Return the record unchanged 
 
 PKHeX's check is always last, and no plugin can turn it off. If PKHeX refuses the result, the trade stops with
 PKHeX's reason. If an edit raises or returns nothing, the trade stops with the plugin's label. An edited offer
-needs the PKHeX helper built ([docs/pkhex.md](pkhex.md)).
+needs PKHeX (part of the packaged app; from source, built once: [docs/pkhex.md](pkhex.md)).
 
 ### What a plugin keeps
 
@@ -341,7 +341,7 @@ Start with `python -m pokeuds plugins list` (with `POKEUDS_PLUGINS` set, if you 
 | `plugin.py has no register(api)` | the module named by `module` has no `register` function |
 | an import picks up another plugin's module | every plugin's folder is on `sys.path`; give helper modules unique names, such as `myplugin_common.py` |
 | `PermissionError: PokeUDS's plugin guardrails stopped ...` | the code tried something the [guardrails](#guardrails) refuse; write inside `api.data` instead |
-| `... edited the offer, and an edited offer must pass PKHeX's check` | build the PKHeX helper ([docs/pkhex.md](pkhex.md)) or turn the offer edit off |
+| `... edited the offer, and an edited offer must pass PKHeX's check` | from source, build PKHeX ([docs/pkhex.md](pkhex.md)), or turn the offer edit off |
 | `PKHeX refused the offer ...` | the offer edit made an illegal Pokemon; the reason follows |
 
 A plugin that raises in `register`, needs another API or reuses a key adds nothing at all, so one mistake

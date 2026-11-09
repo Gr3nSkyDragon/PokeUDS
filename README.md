@@ -29,7 +29,7 @@ Poke Transporter and Pokemon Bank do.
   (up to six for the Game Boy games, a box's worth and more for the 3DS games).
 - **Bank** every Pokemon received, imported or built: legality checks with PKHeX (one or the whole bank), Time
   Capsule copies, migration to Gen 7, duplicates caught, sprites.
-- **Build** a legal Pokemon to offer when you have no file (PKHeX.Core, through a small helper program).
+- **Build** a legal Pokemon to offer when you have no file (PKHeX.Core, built into the app).
 - **Mystery Gift**: PKHeX's official Gen 6/7 cards, `.wc6`/`.wc7` and full files, and a card editor (every field,
   saved as `.udsgift`, exported as `.wc6`/`.wc7`). A card's Pokemon can go into the bank and a trade, or the card
   itself goes out over local wireless as an event distribution did:
@@ -44,9 +44,7 @@ Poke Transporter and Pokemon Bank do.
 ## Getting it
 
 Download the app for your computer from the [releases](https://github.com/Gr3nSkyDragon/PokeUDS/releases). The
-apps carry everything, the PKHeX helper included: nothing else to install. (The `pokeuds-pkhex-...` files in a
-release are that helper for each kind of computer, for the app to download when it has none of its own; they are not
-meant to be opened.)
+apps carry everything, PKHeX included: nothing else to install or download.
 
 **Windows:** download `PokeUDS-windows.zip`, unzip it anywhere and run `PokeUDS/PokeUDS.exe`.
 
@@ -137,7 +135,7 @@ python -m pokeuds gift distribute sm my.wc7 --radio esp32
 `--offer` repeats for a queue; `--keys` defaults to the app's Settings; `-v` (before the command) shows what happens.
 `scan` lists every 3DS network in range, `analyze` decodes an Azahar log or a capture, `build` makes a Pokemon with
 PKHeX, `gift` lists, edits, builds and distributes Mystery Gift cards (`--gen7-key` points at `rsa_d_key.txt` if it
-is not beside `aes_keys.txt`), `board` manages the ESP32, `pkhex` gets the PKHeX helper, `plugins` manages plugins.
+is not beside `aes_keys.txt`), `board` manages the ESP32, `pkhex` builds PKHeX in a source tree, `plugins` manages plugins.
 `python scripts/extract_gen7_key.py DISTRIBUTOR.cxi --keys aes_keys.txt` is the Settings key extraction from a
 terminal. Each game's protocol is in
 [docs/vc.md](docs/vc.md), [docs/gen6.md](docs/gen6.md) and [docs/gen7.md](docs/gen7.md).
@@ -156,9 +154,9 @@ terminal. Each game's protocol is in
 | `pokeuds/games/gen6/delivery.py`, `gen7/delivery.py` | Local-wireless Mystery Gift: the beacon fragments, LZ10, Gen 7's OPSSR signing |
 | `gui/`, `pokeuds/app/` | The app (Flet) and what it shares with the command line; `gui/assets/` holds the icon |
 | `packaging/`, `scripts/build_exe.py` | The Windows exe's entry point, the icon artwork and the build ([docs/release.md](docs/release.md)) |
-| `services/pkhex/` | The PKHeX helper: building and checking Pokemon, Mystery Gift cards, migration |
+| `services/pkhex/` | PKHeX's side (a .NET program the app runs): building and checking Pokemon, Mystery Gift cards, migration |
 | `profiles/` | Each game's network constants, from captures |
-| `docs/` | [The app](docs/gui.md), [architecture](docs/architecture.md), [UDS](docs/uds.md), [Gen 6](docs/gen6.md), [Gen 7](docs/gen7.md), [Virtual Console](docs/vc.md), [hardware](docs/hardware.md), [captures](docs/captures.md), [PKHeX helper](docs/pkhex.md), [Mystery Gift](docs/mystery_gift.md), [Wonder Cards](docs/wonder_cards.md), [plugins](docs/plugins.md), [releases](docs/release.md) |
+| `docs/` | [The app](docs/gui.md), [architecture](docs/architecture.md), [UDS](docs/uds.md), [Gen 6](docs/gen6.md), [Gen 7](docs/gen7.md), [Virtual Console](docs/vc.md), [hardware](docs/hardware.md), [captures](docs/captures.md), [PKHeX](docs/pkhex.md), [Mystery Gift](docs/mystery_gift.md), [Wonder Cards](docs/wonder_cards.md), [plugins](docs/plugins.md), [releases](docs/release.md) |
 
 ```bash
 python -m pytest -q

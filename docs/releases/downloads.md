@@ -12,8 +12,6 @@ Not sure which Mac you have? Apple menu, About This Mac: "Chip: Apple M..." is A
 **First start on a Mac:** the app is not notarized by Apple, so macOS refuses it the first time. Open it once, then
 go to System Settings, Privacy & Security, and click **Open Anyway** next to PokeUDS. After that it opens normally.
 
-**The `pokeuds-pkhex-...` files are not for you to open.** They are the PKHeX helper for each kind of computer, and
-the app downloads the right one by itself when it needs it (the apps above already carry their own copy). On a Mac
-or Linux they have no file extension, as programs there don't, so they show as blank documents.
+Everything is inside each app, PKHeX included: there is nothing else to download or install.
 
 `SHA256SUMS` lists every file's checksum.

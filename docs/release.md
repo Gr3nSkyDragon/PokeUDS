@@ -1,6 +1,6 @@
 # Making a release
 
-A release carries the Windows app, the Mac app and the PKHeX helper for each computer.
+A release carries the Windows app and the Mac app, each with PKHeX inside.
 `.github/workflows/release.yml` builds them all when a `v*` tag is pushed (or by hand from the Actions tab with a tag
 name) and creates the release as a **draft**, marked pre-release for `v0.*`: nothing is public until it is published
 from the Releases page. Run by hand with no tag name, it only builds the apps and keeps them as the run's artifacts: a
@@ -11,8 +11,7 @@ test build, with no release.
 | `PokeUDS-windows.zip` | The Windows app: unzip, run `PokeUDS/PokeUDS.exe` (`scripts/build_exe.py`) |
 | `PokeUDS-macos-arm64.zip` | The Mac app for Apple Silicon: unzip, move `PokeUDS.app` to Applications (built on `macos-latest`) |
 | `PokeUDS-macos-x64.zip` | The Mac app for Intel Macs (built on `macos-15-intel`) |
-| `pokeuds-pkhex-<rid>[.exe]` | The PKHeX helper for each computer, which an app without its own copy downloads (docs/pkhex.md) |
-| `SHA256SUMS` | Checksums of all of the above; the app checks the helper against it |
+| `SHA256SUMS` | Checksums of the zips |
 
 The notes are `docs/releases/<tag>.md` when that file exists (else just a title), followed by
 `docs/releases/downloads.md`, which says which file to download. There is no Linux app: Linux runs from source.
@@ -44,10 +43,10 @@ the rail. Both are bundled with the app.
 
 `python scripts/build_exe.py` on a Mac builds `dist/PokeUDS.app` and zips it with `ditto` to
 `dist/PokeUDS-macos-arm64.zip` or `-x64.zip`, for the Mac it runs on (the release builds both). The app is a
-one-folder bundle with the PKHeX helper inside; its icon is `gui/assets/icon.icns`. Its bank is
+one-folder bundle with PKHeX inside; its icon is `gui/assets/icon.icns`. Its bank is
 `~/Library/Application Support/PokeUDS/bank`, not inside the bundle, which an update replaces whole. PyInstaller signs
 it ad hoc; without an Apple Developer ID it is not notarized, so players allow it once (System Settings, Privacy &
-Security, Open Anyway). The release workflow checks the signature, that the bundled helper answers, and that the
+Security, Open Anyway). The release workflow checks the signature, that its PKHeX answers, and that the
 app's command line starts, but nothing opens its window there: start it on a Mac before publishing.
 
 ## Checklist

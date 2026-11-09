@@ -85,7 +85,8 @@ class SettingsView(View):
             *([t.label("No language pack installed.", size=12)] if not packs else []))
         from . import pkhex_setup
 
-        helper = t.card(t.heading("PKHeX helper"), pkhex_setup.card(self.app, compact=True))
+        # PKHeX is part of the app; only a source run without it built has anything to say here.
+        helper = None if pkhex_setup.ready() else t.card(t.heading("PKHeX"), pkhex_setup.card(self.app, compact=True))
         art = t.card(
             ft.Row([ft.Column([t.heading("Pokemon sprites"),
                                t.label("Previews in the builder, the bank and Mystery Gift show each Pokemon's sprite, "
@@ -98,7 +99,8 @@ class SettingsView(View):
                                t.label("Adds a Debug page: the demo radio, a network scan and capture analysis.")],
                               spacing=4, expand=True),
                     ft.Switch(value=s.debug, on_change=self._debug)]))
-        return ft.Column([t.title("Settings"), keys, gen7, output, trainer, language, helper, art, debug,
+        return ft.Column([c for c in (t.title("Settings"), keys, gen7, output, trainer, language, helper, art, debug)
+                          if c is not None] + [
                           t.label(f"PokeUDS {__version__}", size=12)],
                          spacing=t.GAP, scroll=ft.ScrollMode.AUTO)
 

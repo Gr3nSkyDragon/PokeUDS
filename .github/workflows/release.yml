@@ -1,6 +1,5 @@
-# A release of PokeUDS: the Windows app (PokeUDS-windows.zip), the Mac app (PokeUDS-macos-arm64.zip for Apple Silicon,
-# PokeUDS-macos-x64.zip for Intel), and the PKHeX helper's self-contained executables for each computer, which an app
-# without its own copy downloads (Settings, PKHeX helper; `pokeuds pkhex get`) so players need no .NET SDK.
+# A release of PokeUDS: the Windows app (PokeUDS-windows.zip) and the Mac app (PokeUDS-macos-arm64.zip for Apple
+# Silicon, PokeUDS-macos-x64.zip for Intel), each carrying PKHeX inside, so players need nothing else; SHA256SUMS.
 # Push a tag like v0.1.0 (push main first, or with it: git push --atomic origin main v0.1.0), or run it by hand from
 # the Actions tab: with a tag name it makes that release, with none it only builds the apps, kept as the run's
 # artifacts (a test build, no release). docs/release.md has the checklist.
@@ -21,29 +20,6 @@ permissions:
   contents: write
 
 jobs:
-  helper:
-    strategy:
-      matrix:
-        include:
-          - os: ubuntu-latest
-            rids: "--rid win-x64 --rid win-arm64 --rid linux-x64 --rid linux-arm64"
-          - os: macos-latest            # Apple Silicon runs only signed programs; the SDK signs them on a Mac
-            rids: "--rid osx-arm64 --rid osx-x64"
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: "10.0.x"
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.13"
-      - run: python scripts/publish_pkhex.py ${{ matrix.rids }} --out assets
-      - uses: actions/upload-artifact@v4
-        with:
-          name: helper-${{ matrix.os }}
-          path: assets/pokeuds-pkhex-*
-
   app:
     runs-on: windows-latest
     steps:
@@ -99,7 +75,7 @@ jobs:
 
   release:
     if: github.event_name == 'push' || inputs.tag != ''
-    needs: [helper, app, app-macos]
+    needs: [app, app-macos]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -110,7 +86,7 @@ jobs:
           path: assets
           merge-multiple: true
       - name: SHA256SUMS
-        run: cd assets && sha256sum PokeUDS-*.zip pokeuds-pkhex-* > SHA256SUMS && cat SHA256SUMS
+        run: cd assets && sha256sum PokeUDS-*.zip > SHA256SUMS && cat SHA256SUMS
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
