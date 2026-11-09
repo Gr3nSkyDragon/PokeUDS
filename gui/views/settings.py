@@ -52,7 +52,7 @@ class SettingsView(View):
             t.heading("Gen 7 Mystery Gift Key"),
             t.label("The Gen 7 distributor signs its gifts with an OPSSR key. PokeUDS can read it from your own "
                     "Gen 7 Local Distributor (CXI, CCI or code.bin); retail Sun/Moon/USUM only carry the public "
-                    "key. The extracted file stays on this computer."),
+                    "key. You choose where to save rsa_d_key.txt, and PokeUDS remembers it."),
             ft.Row([ft.Icon(ft.Icons.CHECK_CIRCLE if gen7_ok else ft.Icons.ERROR_OUTLINE,
                             color=t.GOOD if gen7_ok else t.WARN, size=18),
                     ft.Text(gen7_path or "No key installed", color=t.TEXT, size=14, expand=True)], spacing=8),
@@ -111,7 +111,7 @@ class SettingsView(View):
             self.app.changed()
 
     async def _pick_distributor(self, e) -> None:
-        """Let the user point at their own distributor; extract rsa_d_key.txt and remember it."""
+        """Let the user point at their own distributor, extract the key, and choose where to save it."""
         files = await self.app.picker.pick_files(
             dialog_title="Choose your Gen 7 Local Distributor (CXI, CCI or code.bin)",
             file_type=ft.FilePickerFileType.ANY)
@@ -125,16 +125,41 @@ class SettingsView(View):
 
             data = await asyncio.to_thread(path.read_bytes)
             offset, private = await asyncio.to_thread(keyextract.extract, data)
-            s = self.app.settings
-            out = Path(s.keys).with_name("rsa_d_key.txt") if s.keys else data_dir() / "rsa_d_key.txt"
-            await asyncio.to_thread(keyextract.write_key, out, private, str(path), offset)
-            s.gen7_key = str(out)
-            self.save()
-            _gen7.update(message=f"Installed {out.name} from {path.name}.", color=t.GOOD)
         except ValueError as exc:
             _gen7.update(message=str(exc), color=t.BAD)
+            self.app.changed()
+            return
         except OSError as exc:
-            _gen7.update(message=f"Could not read or write the key: {exc}", color=t.BAD)
+            _gen7.update(message=f"Could not read {path}: {exc}", color=t.BAD)
+            self.app.changed()
+            return
+
+        s = self.app.settings
+        initial = (str(Path(s.gen7_key).parent)
+                   if s.gen7_key and not s.gen7_key.endswith(".py") else str(data_dir()))
+        out = await self.app.picker.save_file(
+            dialog_title="Save the Gen 7 signing key",
+            file_name="rsa_d_key.txt",
+            initial_directory=initial,
+            file_type=ft.FilePickerFileType.CUSTOM,
+            allowed_extensions=["txt"])
+        if not out:
+            _gen7.update(message="Key not saved.", color=t.INFO)
+            self.app.changed()
+            return
+        try:
+            await asyncio.to_thread(keyextract.write_key, out, private, str(path), offset)
+        except OSError as exc:
+            if getattr(exc, "errno", None) == 13:
+                _gen7.update(message=f"Permission denied writing to {Path(out).parent}. Choose a folder PokeUDS "
+                                     "can write to.", color=t.BAD)
+            else:
+                _gen7.update(message=f"Could not write {out}: {exc}", color=t.BAD)
+            self.app.changed()
+            return
+        s.gen7_key = out
+        self.save()
+        _gen7.update(message=f"Installed {Path(out).name} from {path.name}.", color=t.GOOD)
         self.app.changed()
 
     async def _pick_gen7_key(self, e) -> None:

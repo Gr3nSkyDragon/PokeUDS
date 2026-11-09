@@ -201,10 +201,11 @@ gitignored local file — `rsa_d_key.txt` next to your `aes_keys.txt`, or the le
 error instead of sending an unsigned message.
 
 - **Easiest:** run `python scripts/extract_gen7_key.py "Gen 7 Local Distributor.cxi" --keys aes_keys.txt`.
-  It writes `rsa_d_key.txt` next to `aes_keys.txt`, and PokeUDS reads it there. The GUI's Settings page has
-  a **Gen 7 Mystery Gift Key** section below Console keys that asks for the distributor, runs the same
-  extraction, and remembers the key file. Retail Sun/Moon/USUM (and their CIAs/CCIs) contain only the
-  public key — point the script at the distributor (00040000001A8900), not at a retail game.
+  It writes `rsa_d_key.txt` next to `aes_keys.txt` (or `--out`), and PokeUDS reads it there. The GUI's
+  Settings page has a **Gen 7 Mystery Gift Key** section below Console keys that asks for the distributor,
+  runs the same extraction, lets you choose where to save `rsa_d_key.txt`, and remembers it. Retail
+  Sun/Moon/USUM (and their CIAs/CCIs) contain only the public key — point the script at the distributor
+  (00040000001A8900), not at a retail game.
 - **It is not in `aes_keys.txt`.** That file holds the console's UDS AES key (keyslot 0x2D) for the
   local-wireless encryption. The OPSSR key is data inside the distributor app.
 - **In the app:** the private key is the 461-byte PKCS#1 `RSAPrivateKey` DER at VA `0x66B2F7` in the app's `.code`
