@@ -2,8 +2,9 @@
 
 What each game PokeUDS covers can receive as a Mystery Gift, over which link, and whether PokeUDS could
 stand in for the distributor; how pokeldn does it for the Switch; and what PokeUDS does today: cards
-read, made and checked (the Gifts page and `pokeuds gift`), their Pokemon sent by trade, and Gen 6 cards
-sent over local wireless as a distributor sends them (`pokeuds gift distribute`, not yet tried on a console).
+read, made and checked (the Gifts page and `pokeuds gift`), their Pokemon sent by trade, and Gen 6/7 cards sent over local
+wireless as a distributor sends them (`pokeuds gift distribute`; the Gen 7 beacon and the distributor's
+OPSSR signature are decoded and reproduced).
 
 ## Summary
 
@@ -12,7 +13,7 @@ sent over local wireless as a distributor sends them (`pokeuds gift distribute`,
 | Red / Blue / Yellow (VC) | (none) | Gen 1 has no Mystery Gift | no |
 | Gold / Silver / Crystal (VC) | the 3DS's **infrared** port, between two consoles | items and decorations | no: infrared, not wireless |
 | X / Y, Omega Ruby / Alpha Sapphire | **local wireless** from a distributor (store and event distributions), and the internet | Pokemon, items | possibly: the radio side is the same UDS PokeUDS speaks; the gift protocol is unknown |
-| Sun / Moon, Ultra Sun / Ultra Moon | **local wireless** from a distributor (event distributions), and the internet | Pokemon, items, Festival Coins, Poke Beans, BP | possibly, as for Gen 6 |
+| Sun / Moon, Ultra Sun / Ultra Moon | **local wireless** from a distributor (event distributions), and the internet | Pokemon, items, Festival Coins, Poke Beans, BP | yes: the beacon and the OPSSR signature are decoded; PokeUDS signs its Gen 7 cards (see below) |
 
 The Switch games' local gifts run over LDN, which is pokeldn's territory; the 3DS games use UDS.
 
@@ -136,10 +137,87 @@ matched that event's `.wc6full` byte for byte. `pokeuds/games/gen6/delivery.py` 
 `pokeuds gift distribute xy CARD` (or `oras`) sends a gift this way: a `.wc6full`, a `.wc6`, or a card from
 `gift list`. On the 3DS: Mystery Gift, Receive Gift, Get via Local Wireless.
 
+### The Gen 7 distribution, on the air
+
+Read off a real Gen 7 distributor (title 00040000001A8900, "Gen 7 Local Distributor", a modified Sun/Moon)
+in Azahar while it broadcast card 289, the 20th-anniversary Shaymin; two separate runs produced the same
+bytes. `pokeuds/games/gen7/delivery.py` has it; the capture verified the format during development, and the
+unit-test vector is synthetic (the Python signer reproduces the captured signature byte for byte).
+
+- **The network.** The distributor hosts a UDS network of the Gen 7 comm id **0x00164810** (Sun/Moon's and
+  USUM's, the Festival Plaza's own), network id **2**, room for **2**, on channel **11**, with **200 bytes**
+  of application data. The receiving game scans; it never joins.
+- **A fragment (200 bytes):**
+
+  | Offset | Size | Holds |
+  |---|---|---|
+  | 0x00 | 2 | CRC-16/USB (reflected 0x8005, init 0xFFFF, xorout 0xFFFF) of bytes 0x02-0xC7 |
+  | 0x02 | 6 | `78 01 02 1E 02 41` (constant) |
+  | 0x08 | 8 | a distribution id (the captured distributor's; the same in both runs) |
+  | 0x10 | 4 | 0xBA8 (constant in the capture; Gen 6's word was 0x5A8) |
+  | 0x14 | 4 | the card's id (u16), the fragment count (u8), this fragment's index (u8) |
+  | 0x18 | 160 | this fragment's slice of the message, the last one zero-padded |
+  | 0xB8 | 16 | zero padding (part of the CRC) |
+
+  The tag is the distributor's own checksum function (0x36D9CC; CRC-16/USB over 198 bytes) and both
+  captured fragments matched it during development. PokeUDS computed a different CRC before this, which is
+  the likely reason a retail 3DS did not list its distributions at all.
+
+- **The message:** u32 the full file's size (784), u32 the compressed size, then the `.wc7full` compressed
+  with LZ10 and **OPSSR-signed**. Two fragments carry a typical card.
+- **The date, corrected by the GDB trace.** The extdata's `haishin/1` carries date `00 00 00`, but that is
+  not what goes on the air: at split time the app stamps the **event's date** into the card. For card 289
+  the runtime full file (captured at `0x41D2F0`) has date `23 c1 02` = **2018-05-15** and CRC `d2 56`,
+  differing from the extdata file only at those five bytes. PokeUDS therefore keeps the card's own date and
+  CRC by default; `gen7.delivery.sanitized` remains available for callers that want the date cleared.
+- **Game restrictions still apply.** The extdata's Searing Groudon card is version byte `2` (Moon only);
+  a Sun game will not show it, however the date is set. The Chinese Greninja is version `15` (all games)
+  and dated 2016-06-06, which PokeUDS keeps.
+- **PokeUDS's beacon:** `pokeuds gift distribute sm CARD` (or `usum`) hosts the Gen 7 network, signs the
+  compressed message and cycles the fragments; the fragment header (0x02-0x17) matches the capture byte for
+  byte.
+
+**The signature, solved from the game source.** The source of the Gen 7 game (the `niji_project` in the
+`git_program170525momiji` tree) contains `NetStatic/NetLib/source/Delivery/Wireless/`: the splitter
+(`DeliveryWirelessBeaconSplitter.cpp`) and the receiver (`DeliveryWirelessBeaconBinder.cpp`). The splitter
+signs the compressed stream with `mw::zorro::OpssrCmcSha1_Sign`, overhead 8, RSA-768, using the public key
+`0x66B279` and the private key `0x66B2F7`; Nintendo's Zorro readme describes it as **OPSSR with an AES-CMC
+keyed permutation and SHA-1**, and `extlib/ctr/CTR_MW-Zorro/tools/sign.pl` is the reference implementation.
+The signer keeps the first `len(compressed) - 88` bytes clear and replaces the last 88 with a **96-byte RSA
+block** that recovers them (the digest's first 8 bytes are part of the signed block), so the signed stream
+is `compressed + 8` bytes. That is the "8-byte tail": not a checksum, but the end of the RSA block.
+
+`gen7.delivery.opssr_sign` is a faithful Python port (AES-CMC, SHA-1, raw RSA-768). It reproduces the real
+distributor's captured message **byte for byte**, including the tail `66 33 d7 72 f5 65 00 c5`, and
+`opssr_verify` recovers the compressed stream. The retail game verifies/recoveres the block with the public
+key before decompressing, so PokeUDS now signs every Gen 7 message.
+
+**Where the private key lives.** The 126-byte public key is embedded in `gen7/delivery.py` (it is public).
+The RSA private exponent is **not** in the repository: it is the distributor app's own key, kept in the
+gitignored `pokeuds/games/gen7/delivery_key.py`. Without that file the verifier still works, but
+`fragments` raises a clear error instead of sending an unsigned message.
+
+- **It is not in `aes_keys.txt`.** That file holds the console's UDS AES key (keyslot 0x2D) for the
+  local-wireless encryption. The OPSSR key is data inside the distributor app.
+- **In the app:** the private key is the 461-byte PKCS#1 `RSAPrivateKey` DER at VA `0x66B2F7` in the app's `.code`
+  (00040000001A8900); the public key is the 126-byte DER at `0x66B279`. In the decrypted CXI, `.code`
+  starts at file offset `0x3000` and maps at VA `0x100000`, so the private DER is at
+  `0x3000 + (0x66B2F7 - 0x100000) = 0x56E2F7`.
+- **With GodMode9:** dump the installed title's decrypted ExeFS/`code.bin` (title 00040000001A8900) and
+  read `0x56B2F7..0x56B4C4`; GM9 has no named "extract RSA key" function. The public key is
+  `0x56B279..0x56B2F7`. If you already have the decrypted CXI, reading those offsets is enough.
+- **Install it:** parse the DER's RSA private exponent `d` and set `RSA_D` in
+  `pokeuds/games/gen7/delivery_key.py` (the file's docstring has the steps).
+
+**Verified on a retail 3DS** (Sun): the real distributor's captured Shaymin message, replayed through
+PokeUDS's own beacons, completes and shows the card. PokeUDS's own message for the same card is now the
+same 314 bytes, signature included.
+
 ### What is not known
 
-1. **Whether the game takes PokeUDS's beacons** (above: the two unknown header words, the beacon's timing).
-2. **Gen 7's distribution**: its comm id and whether its format is Gen 6's.
+1. Nothing about the signature: the source and the reference tool pin it down, and PokeUDS's output matches
+   the real distributor's. The only open point is the game's own `bDoVerifySign` setting on a retail build
+   (it verifies, since the retail receiver recovers the signature before decompressing).
 
 PokeUDS will not use or point to leaked copies of Nintendo's distribution software.
 

@@ -20,3 +20,16 @@ services/pkhex/bin/
 services/pkhex/obj/
 services/pkhex/publish/
 services/pkhex/dist/
+
+# Reverse-engineering scratch (the extracted distributor, its code.bin and RomFS) and test scratch.
+.re/
+pytest-tmp/
+tests/_tmp/
+
+# Local radio dumps (they carry the host MAC and friend codes) and the captured-beacon replay diagnostic.
+distributor.json
+friendlist.json
+scripts/replay_gen7_beacon.py
+
+# The distributor app's private OPSSR exponent; the public key and verifier stay in delivery.py.
+pokeuds/games/gen7/delivery_key.py

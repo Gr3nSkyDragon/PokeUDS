@@ -118,7 +118,7 @@ class Plugin:
 
 
 class Api:
-    """What ``register(api)`` receives. API 1.0: add_tool, add_game, add_radio, add_offer_edit, folder, data."""
+    """What ``register(api)`` receives (API 1.0 and up): add_tool, add_game, add_radio, add_offer_edit, folder, data."""
 
     version, level = VERSION, API_LEVEL
 

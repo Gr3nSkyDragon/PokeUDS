@@ -749,11 +749,17 @@ def _full_file(game: str, source: str) -> bytes:
 
 
 def cmd_gift_distribute(args) -> int:
-    """Send a Gen 6 gift as an official distribution does: beacons on the game's comm id, the gift in fragments."""
-    from .games import profile
-    from .games.gen6 import delivery
+    """Send a Gen 6 or Gen 7 gift as an official distribution does: beacons on the game's comm id, the gift in
+    fragments."""
+    from .games import get, profile
     from .radio import open_radio
     from .uds import Station
+
+    game = get(args.game)
+    if game.generation == 6:
+        from .games.gen6 import delivery
+    else:
+        from .games.gen7 import delivery
 
     full = _full_file(args.game, args.source)
     parts = delivery.fragments(full)
@@ -766,6 +772,9 @@ def cmd_gift_distribute(args) -> int:
     print(f"distributing card {delivery.card_id(full)} in {len(parts)} beacon fragment(s) on channel {args.channel} "
           f"(comm id {prof.wlan_comm_id:08X}) for {args.seconds:.0f} s: on the 3DS, Mystery Gift > Receive Gift > "
           "Get via Local Wireless")
+    if game.generation == 7:
+        print("note: PokeUDS keeps the card's own date and full-file CRC and signs the compressed message with the "
+              "distributor's OPSSR key, so the game recovers and accepts it (docs/mystery_gift.md).")
     status.emit("distributing", card_id=delivery.card_id(full), fragments=len(parts), channel=args.channel)
     deadline = time.monotonic() + args.seconds
     i = 0
@@ -990,10 +999,12 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("source", help="a key from `gift list`, or a card file")
     p.add_argument("--save", required=True, help="the .udsgift to write")
     p.set_defaults(func=cmd_gift)
-    p = gsub.add_parser("distribute", help="send a Gen 6 gift over local wireless, as an official distribution does "
+    p = gsub.add_parser("distribute", help="send a Gen 6/7 gift over local wireless, as an official distribution does "
                         "(the 3DS: Mystery Gift > Get via Local Wireless)")
-    p.add_argument("game", choices=["xy", "oras"], help="the receiving game (both listen on X/Y's comm id)")
-    p.add_argument("source", help="a .wc6full (784 bytes, or several back to back), a .wc6, or a key from `gift list`")
+    p.add_argument("game", choices=GAME_KEYS,
+                   help="the receiving game (X/Y and ORAS share X/Y's comm id; Sun/Moon and USUM share Sun/Moon's)")
+    p.add_argument("source", help="a .wc6full/.wc7full (784 bytes, or several back to back), a card, or a key from "
+                                  "`gift list`")
     _add_radio(p)
     _add_keys(p)
     p.add_argument("--name", default="PokeUDS", help="the name in the beacon's node list")

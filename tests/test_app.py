@@ -163,8 +163,8 @@ def test_no_handler_drops_a_coroutine():
     assert found == []
 
 
-def test_gifts_page_sends_gen6_cards_over_local_wireless(data, tmp_path, monkeypatch):
-    """A Gen 6 card gets Start sending (`gift distribute`); a Gen 7 card says it goes by trade."""
+def test_gifts_page_sends_gen6_and_gen7_cards_over_local_wireless(data, tmp_path, monkeypatch):
+    """A Gen 6 or Gen 7 card gets Start sending (`gift distribute`, a .wc6full/.wc7full)."""
     pytest.importorskip("flet")
     from types import SimpleNamespace
 
@@ -191,8 +191,13 @@ def test_gifts_page_sends_gen6_cards_over_local_wireless(data, tmp_path, monkeyp
     from pathlib import Path
     assert Path(args[3]).read_bytes() == full
     view.game = "sm"
-    view.control()                                       # the Gen 7 note, no Start button
+    view.control()                                       # Gen 7 gets Start sending too
     assert view.generation == 7
+    assert any(getattr(c, 'value', None) == 'Send over local wireless' for c in view._wireless())
+    view._distribute()
+    kind, sm_args = started[1]
+    assert kind == "gift" and sm_args[:3] == ["gift", "distribute", "sm"]
+    assert sm_args[3].endswith("sending.wc7full")
 
 
 def test_send_over_local_wireless_sits_between_legal_and_the_bank(data, tmp_path):

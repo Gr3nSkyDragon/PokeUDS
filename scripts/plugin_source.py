@@ -1,4 +1,4 @@
-"""Write or update a plugin source listing (pokeuds-source.json) for packages (docs/plugins.md, Sources).
+"""Write or update a plugin source listing (pokeuds-source.json) for packages (docs/plugins.md, Publishing a source).
 
     python scripts/plugin_source.py hello-1.0.0.udsplugin -o pokeuds-source.json --name "My plugins" \\
         --download "https://github.com/me/my-plugins/releases/download/{id}-{version}/{file}"

@@ -227,10 +227,8 @@ class GiftsView(View):
     # -- local wireless distribution ------------------------------------------------------------
 
     def _wireless(self) -> list[ft.Control]:
-        """The result card's "Send over local wireless" rows: a Gen 6 card sent as an official distribution did
-        (`pokeuds gift distribute`); for a Gen 7 card, not yet implemented."""
-        if self.generation != 6:
-            return [t.heading("Send over local wireless"), t.label("Feature not yet implemented")]
+        """The result card's "Send over local wireless" rows: a Gen 6/7 card sent as an official distribution did
+        (`pokeuds gift distribute`)."""
         s = self.app.settings
         sending = self.app.busy() and self.app.run_kind == "gift"
         problem = ("Choose an ESP32 board or a USB Wi-Fi adapter on the Trade page (the demo radio cannot send gifts)."
@@ -249,6 +247,10 @@ class GiftsView(View):
         rows.append(t.label("PokeUDS sends this card the way a store or event distribution did. On the 3DS: Mystery "
                             "Gift, Receive Gift, Get via Local Wireless. Any number of consoles can take it while it runs.",
                             size=12))
+        if self.generation == 7:
+            rows.append(t.label("PokeUDS signs the compressed message with the distributor's OPSSR key, as the "
+                                "real distributor does, so the game recovers and accepts it "
+                                "(docs/mystery_gift.md).", size=12))
         if self.app.run_kind == "gift":
             rows.append(log_box(self.app.log, height=140))
         return rows
@@ -259,7 +261,7 @@ class GiftsView(View):
             return
         folder = data_dir() / "gifts"
         folder.mkdir(parents=True, exist_ok=True)
-        path = folder / "sending.wc6full"
+        path = folder / f"sending.wc{self.generation}full"
         path.write_bytes(g.full_data)
         args = ["gift", "distribute", self.game, str(path), "--radio", s.radio_spec(), "--seconds", "3600"]
         if s.keys:

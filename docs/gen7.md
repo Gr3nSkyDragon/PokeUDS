@@ -68,3 +68,13 @@ PokeUDS inviting the 3DS. Getting there took matching the consoles on details th
 
 Not captured yet: a console declining, leaving the trade screen early, and several trades in a row. PokeUDS's handling
 of those follows the captured flow.
+
+## Mystery Gift distribution
+
+A Gen 7 local distributor opens no trade session: it hosts the Festival Plaza's comm id (0x00164810), network id **2**,
+room for two, on channel 11, and carries the gift in its 200-byte beacons. Sun/Moon's Mystery Gift (Receive Gift, Get
+via Local Wireless) only scans them, as for Generation 6. The fragment layout and the LZ10 full-file message
+are in [mystery_gift.md](mystery_gift.md), "The Gen 7 distribution, on the air"; the message is signed with
+Nintendo's Zorro/OPSSR scheme (AES-CMC + SHA-1 + RSA-768, 8-byte overhead) using the distributor's own keys,
+and `gen7.delivery.opssr_sign` reproduces the real distributor's bytes exactly. `pokeuds gift distribute sm
+CARD` (or `usum`) sends it.

@@ -7,7 +7,8 @@ Pokemon forward instead). azahar_uds verified a trade between Ultra Sun and Ultr
 Their code links the same local transport as Generation 6 (NEX PRUDP V1 behind Pia's local UDS
 header, the same checksum key, gflnet2). Sun/Moon's Festival Plaza invitation (``plaza``) and trade
 (``wire``, ``session``, ``trade``) are mapped from Azahar logs (docs/gen7.md); Ultra Sun/Ultra Moon
-waits for a capture.
+waits for a capture.  Local Mystery Gifts travel in 200-byte beacons of the same comm id, network
+id 2 (``delivery``; docs/mystery_gift.md).
 """
 
 from ...pkx import PK7
