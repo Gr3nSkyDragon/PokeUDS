@@ -45,8 +45,12 @@ Poke Transporter and Pokemon Bank do.
 
 **Windows:** download `PokeUDS-windows.zip` from the [releases](https://github.com/Gr3nSkyDragon/PokeUDS/releases),
 unzip it anywhere and run `PokeUDS/PokeUDS.exe`. Nothing else to install: the pages that use PKHeX (Build, legality,
-Mystery Gift) offer to download its helper, about 20 MB, once. The first start takes a few seconds longer while the
-app unpacks its window.
+Mystery Gift) offer to download its helper, about 20 MB, once.
+
+Your Pokemon are kept in `PokeUDS/Bank`, beside the exe (a bank from an earlier version in
+`%APPDATA%\PokeUDS\bank` is copied there on the first start). The zip holds no `Bank` folder, so to update,
+unzip the new version over the old `PokeUDS` folder: the app is replaced and the bank is left as it is. If you
+delete the old folder instead, move `Bank` into the new one first.
 
 **From source** (any OS, Python 3.11 or newer):
 

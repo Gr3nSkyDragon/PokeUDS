@@ -16,7 +16,7 @@ import flet as ft  # noqa: E402
 from gui import theme as t  # noqa: E402
 from gui import window  # noqa: E402
 from gui.translate import translate  # noqa: E402
-from pokeuds.app import i18n  # noqa: E402
+from pokeuds.app import bank, i18n  # noqa: E402
 from gui.app import App  # noqa: E402
 from gui.views.board import BoardView  # noqa: E402
 from gui.views.bank import BankView  # noqa: E402
@@ -102,6 +102,10 @@ def main(page: ft.Page) -> None:
     page.bgcolor = t.BG
     page.padding = 0
     app = App(page)
+    try:
+        bank.Bank(app.settings.bank or None)    # makes the bank folder and tidies an older one (pokeuds/app/bank.py)
+    except OSError:
+        pass
     i18n.select(app.settings.language)          # a language pack, or English
     if i18n.current().font_family:
         page.theme.font_family = page.dark_theme.font_family = i18n.current().font_family

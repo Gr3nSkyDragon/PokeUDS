@@ -22,15 +22,18 @@ pip install -r requirements-gui.txt pyinstaller
 python scripts/build_exe.py
 ```
 
-`flet pack` (PyInstaller) builds `dist/PokeUDS/` (the exe, Python, the game profiles, the strings, and Flet's
-window, which the app unpacks to `%USERPROFILE%\.flet\client` on first start) and zips it to
-`dist/PokeUDS-windows.zip`. The window is the exe's own: no console opens, and a trade runs as a second copy of the
-exe (`PokeUDS.exe --cli trade ...`, `packaging/pokeuds_app.py`) started without a window, as `python -m pokeuds` is
-from source. The exe's command-line mode is for the app; from a terminal use `python -m pokeuds`.
+`flet pack` (PyInstaller) builds `dist/PokeUDS/` (the exe, Python, the game profiles, the strings, and Flet's window)
+and zips it to `dist/PokeUDS-windows.zip`. Flet would unpack its window into `%USERPROFILE%\.flet\client` on first
+start; the build script unpacks it into `_internal/flet_view` instead, and the exe points Flet there
+(`FLET_VIEW_PATH`), so the app is self-contained and writes nothing outside its folder but its settings and bank. The
+window is the exe's own: no console opens, and a trade runs as a second copy of the exe (`PokeUDS.exe --cli trade
+...`, `packaging/pokeuds_app.py`) started without a window, as `python -m pokeuds` is from source. The exe's
+command-line mode is for the app; from a terminal use `python -m pokeuds`.
 
-The icon is `gui/assets/icon.ico` (or `--icon some.ico`), made from the artwork in `packaging/icon.jpg`; its 16 to
-256 px images cover the exe, the taskbar and the window. `gui/assets/icon.png` is the logo at the top of the rail.
-Both are bundled with the app.
+The icon is `gui/assets/icon.ico` (or `--icon some.ico`), made from the artwork in `packaging/icon.jpg` by `python
+scripts/make_icon.py`, which turns the artwork's red into the app's accent (the Start and Broadcast buttons' colour);
+its 16 to 256 px images cover the exe, the taskbar and the window. `gui/assets/icon.png` is the logo at the top of
+the rail. Both are bundled with the app.
 
 ## Checklist
 

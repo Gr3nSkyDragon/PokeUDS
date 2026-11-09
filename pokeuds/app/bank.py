@@ -1,11 +1,15 @@
 """The bank: the Pokemon the app keeps between trades.
 
-Each record is a file in the bank folder (``<data>/bank``, or Settings' bank folder) with a ``.json``
-beside it, as pokeldn's bank keeps them:
+Each record is a file in the bank folder (``default_folder``, or Settings' bank folder); what the app knows about
+it is a ``.json`` of the same name in the hidden ``.info`` folder inside, so the bank shows only Pokemon:
 
-    20261104-153012_025_Sparky_1a2b3c4d.pk6     the record, as PKHeX writes it (decrypted, stored)
-    20261104-153012_025_Sparky_1a2b3c4d.json    {"source", "created", "origin", "game", "note", "legal", ...}
-    20261104-153012_025_Sparky_1a2b3c4d.mail    a Gen 2 Pokemon's mail, when it holds one
+    20261104-153012_025_Sparky_1a2b3c4d.pk6          the record, as PKHeX writes it (decrypted, stored)
+    20261104-153012_025_Sparky_1a2b3c4d.mail         a Gen 2 Pokemon's mail, when it holds one (beside its .pk2,
+                                                     where the trade reads it)
+    .info/20261104-153012_025_Sparky_1a2b3c4d.json   {"source", "created", "origin", "game", "note", "legal", ...}
+    .info/received.json                              the received files already deposited
+
+A bank from before ``.info`` (the ``.json`` beside each record) is tidied into it the first time it is opened.
 
 Records are kept once: a Pokemon already banked is not added again, even when a trade changed what a
 trade changes (``identity``): the same Abra traded to a 3DS and back carries the 3DS player as its handler,
@@ -17,8 +21,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import shutil
+import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -33,8 +39,48 @@ SOURCES = {"received": "Received", "imported": "Imported", "built": "Built", "co
 _UNSAFE = re.compile(r"[^\w\-]+", re.UNICODE)
 
 
+PORTABLE = "Bank"           # the packaged app's bank, beside PokeUDS.exe
+INFO = ".info"              # inside a bank: the records' .json and received.json, hidden
+SEEN = "received.json"
+_portable: dict[Path, Path | None] = {}
+_tidied: set[Path] = set()
+
+
 def default_folder() -> Path:
+    """Where the bank lives when Settings names no folder.
+
+    The packaged app keeps it in ``Bank`` beside PokeUDS.exe: the release zip holds no such folder, so an update
+    unzipped over the app's folder leaves it as it is. From source, with ``POKEUDS_DATA`` set, or when the exe's
+    folder cannot be written (Program Files), it is ``<data>/bank``."""
+    if getattr(sys, "frozen", False) and not os.environ.get("POKEUDS_DATA"):
+        if (folder := portable_folder(Path(sys.executable).resolve().parent)) is not None:
+            return folder
     return data_dir() / "bank"
+
+
+def portable_folder(app_folder: Path) -> Path | None:
+    """``app_folder/Bank``, made the first time, with the records of the old ``<data>/bank`` copied into it once
+    (the old folder is left as it was). None when the folder cannot be written."""
+    if app_folder in _portable:
+        return _portable[app_folder]
+    folder = app_folder / PORTABLE
+    try:
+        fresh = not folder.exists()
+        folder.mkdir(parents=True, exist_ok=True)
+        probe = folder / ".write-test"
+        probe.write_bytes(b"")
+        probe.unlink()
+        legacy = data_dir() / "bank"
+        if fresh and legacy.is_dir() and legacy.resolve() != folder.resolve():
+            for item in legacy.iterdir():
+                if item.is_file() and not (folder / item.name).exists():
+                    shutil.copy2(item, folder / item.name)
+                elif item.is_dir() and item.name == INFO:
+                    shutil.copytree(item, folder / INFO, dirs_exist_ok=True)
+    except OSError:
+        folder = None
+    _portable[app_folder] = folder
+    return folder
 
 
 @dataclass(frozen=True)
@@ -161,9 +207,48 @@ def _g7_tid(plain: bytes) -> int:
 
 # -- the folder -----------------------------------------------------------------------------------
 
+def _hide(folder: Path) -> None:
+    """Windows shows a folder whose name starts with a dot; mark it hidden as well."""
+    if sys.platform == "win32":
+        try:
+            import ctypes
+
+            ctypes.windll.kernel32.SetFileAttributesW(str(folder), 0x02)      # FILE_ATTRIBUTE_HIDDEN
+        except (AttributeError, OSError):
+            pass
+
+
 class Bank:
     def __init__(self, folder: str | Path | None = None) -> None:
         self.folder = Path(folder).expanduser() if folder else default_folder()
+        self.info = self.folder / INFO
+        self._tidy()                # an older bank's .json files go into .info as soon as the app touches it
+
+    def _info_dir(self) -> Path:
+        if not self.info.is_dir():
+            self.info.mkdir(parents=True, exist_ok=True)
+            _hide(self.info)
+        return self.info
+
+    def _tidy(self) -> None:
+        """Move an older bank's .json files (beside each record) and received.json into .info, once a run."""
+        if not self.folder.is_dir():
+            return
+        key = self.folder.resolve()
+        if key in _tidied:
+            return
+        _tidied.add(key)
+        try:
+            records = {p.stem for p in self.folder.iterdir() if p.suffix in EXTENSIONS}
+            loose = [p for p in self.folder.glob("*.json") if p.stem in records or p.name == SEEN]
+            for path in loose:
+                target = self._info_dir() / path.name
+                if target.exists():
+                    path.unlink()           # .info already holds the newer copy
+                else:
+                    path.replace(target)
+        except OSError:
+            _tidied.discard(key)            # try again next time; the old files are still read meanwhile
 
     # listing
 
@@ -171,6 +256,7 @@ class Bank:
         """Newest first."""
         if not self.folder.is_dir():
             return []
+        self._tidy()
         found = [e for p in self.folder.iterdir() if p.suffix in EXTENSIONS and (e := self._entry(p))]
         return sorted(found, key=lambda e: (e.created, e.id), reverse=True)
 
@@ -193,18 +279,27 @@ class Bank:
                      meta.get("origin", ""), meta.get("note", ""), meta.get("legal"), meta.get("report", ""),
                      path.with_suffix(".mail").exists(), meta, form=parsed.form)
 
-    @staticmethod
-    def _meta(path: Path) -> dict:
-        try:
-            meta = json.loads(path.with_suffix(".json").read_text(encoding="utf-8"))
-            return meta if isinstance(meta, dict) else {}
-        except (OSError, ValueError):
-            return {}
+    def _meta_path(self, path: Path) -> Path:
+        return self.info / f"{path.stem}.json"
+
+    def _meta(self, path: Path) -> dict:
+        # .info's copy, else the old place beside the record (a bank _tidy could not move yet)
+        for candidate in (self._meta_path(path), path.with_suffix(".json")):
+            try:
+                meta = json.loads(candidate.read_text(encoding="utf-8"))
+                return meta if isinstance(meta, dict) else {}
+            except FileNotFoundError:
+                continue
+            except (OSError, ValueError):
+                return {}
+        return {}
 
     def _write_meta(self, path: Path, meta: dict) -> None:
-        tmp = path.with_suffix(".json.tmp")
+        target = self._info_dir() / f"{path.stem}.json"
+        tmp = target.with_suffix(".json.tmp")
         tmp.write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
-        tmp.replace(path.with_suffix(".json"))
+        tmp.replace(target)
+        path.with_suffix(".json").unlink(missing_ok=True)       # an old copy beside the record would go stale
 
     def _digests(self) -> dict[str, str]:
         """identity -> entry id, for everything in the bank (the oldest entry, when there are duplicates)."""
@@ -289,7 +384,8 @@ class Bank:
         return added
 
     def _seen_path(self) -> Path:
-        return self.folder / "received.json"
+        self._tidy()
+        return self.info / SEEN
 
     def _seen(self, root: Path) -> list[str]:
         """Received files already looked at, so one deleted from the bank is not brought back."""
@@ -305,7 +401,7 @@ class Bank:
         except (OSError, ValueError):
             data = {}
         data[str(root)] = sorted(names)
-        self.folder.mkdir(parents=True, exist_ok=True)
+        self._info_dir()
         self._seen_path().write_text(json.dumps(data, indent=1), encoding="utf-8")
 
     # changing
@@ -325,6 +421,7 @@ class Bank:
     def remove(self, entry: Entry) -> None:
         for suffix in (entry.path.suffix, ".json", ".mail"):
             entry.path.with_suffix(suffix).unlink(missing_ok=True)
+        self._meta_path(entry.path).unlink(missing_ok=True)
 
     def export(self, entry: Entry, folder: str | Path) -> Path:
         """Copy the record (and its mail) out under a readable name."""

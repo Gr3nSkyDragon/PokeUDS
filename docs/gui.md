@@ -77,18 +77,23 @@ at a time, since one radio serves one process.
 
 ## The bank
 
-The bank is a folder (`<data folder>/bank`, or Settings' `bank`) holding one file per Pokemon with a
-`.json` beside it, as pokeldn keeps its bank (`pokeuds/app/bank.py`):
+The bank is a folder holding one file per Pokemon (`pokeuds/app/bank.py`). What the app knows about each one is a
+`.json` of the same name in the hidden `.info` folder inside, so the folder itself shows only Pokemon (and a Gen 2
+Pokemon's `.mail`, which trades read beside its `.pk2`); a bank from before `.info` is tidied into it when opened. The packaged app keeps it in `Bank` beside PokeUDS.exe, which the release zip never
+contains, so an update unzipped over the app's folder leaves it alone; on its first start it copies the records of
+an older `<data folder>/bank` there (the old folder stays). From source, or when the exe's folder cannot be written,
+it is `<data folder>/bank`. Settings' `bank` overrides both.
 
 ```
-20261104-153012_025_Sparky_1a2b3c4d.pk6     the record: .pk1/.pk2 as PokeUDS writes them, .pk6/.pk7 decrypted and stored, as PKHeX opens them
-20261104-153012_025_Sparky_1a2b3c4d.json    source (received, imported, built, converted, gift, migrated), when, the file it came from, a note, PKHeX's verdict
-20261104-153012_025_Sparky_1a2b3c4d.mail    a Gen 2 Pokemon's mail, when it holds one
+20261104-153012_025_Sparky_1a2b3c4d.pk6          the record: .pk1/.pk2 as PokeUDS writes them, .pk6/.pk7 decrypted and stored, as PKHeX opens them
+20261104-153012_025_Sparky_1a2b3c4d.mail         a Gen 2 Pokemon's mail, when it holds one
+.info/20261104-153012_025_Sparky_1a2b3c4d.json   source (received, imported, built, converted, gift, migrated), when, the file it came from, a note, PKHeX's verdict
+.info/received.json                              the received files already deposited
 ```
 
 - **Received Pokemon** still land in the output folder first (one file per trade, as before). Each time
   the Bank page opens, files there that it has not seen are deposited; one deleted from the bank is not
-  brought back (`received.json` remembers what was seen).
+  brought back (`.info/received.json` remembers what was seen).
 - **One copy each:** a Pokemon already banked is not added again, whatever its file name, and also after a trade there and back: what a trade writes into a record (Gen 6/7: the handling trainer, geolocations, memories, friendship and affection, the checksum; Gen 2: friendship) does not count. Anything else does, so a Pokemon that levelled up, learned a move or evolved is a new entry. Copies banked before this check existed show a **Remove duplicates** button, which keeps the oldest copy of each and moves an offer on a removed copy to it.
 - **Import** takes `.pk1`, `.pk2`, `.pk6`, `.pk7`, `.ek6` and `.ek7` (encrypted records are stored decrypted),
   with a `.pk2`'s `.mail` beside it.

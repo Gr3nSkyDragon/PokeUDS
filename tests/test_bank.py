@@ -185,3 +185,77 @@ def test_migrating_keeps_the_original_and_makes_one_copy(b):
         bank.migrate(b, replace(gen1, meta={}), vc_game="gold", helper=helper)   # Gold is not a Gen 1 game
     xy_copy, made = bank.migrate(b, xy, helper=helper)
     assert made and helper.migrated[-1][1] == "xy" and xy_copy.note.startswith("Pokemon Bank copy")
+
+
+def _packaged(monkeypatch, tmp_path):
+    """Act as PokeUDS.exe unzipped into tmp_path/app, with the old data folder at tmp_path/appdata."""
+    app = tmp_path / "app"
+    app.mkdir()
+    monkeypatch.setattr("sys.frozen", True, raising=False)
+    monkeypatch.setattr("sys.executable", str(app / "PokeUDS.exe"))
+    monkeypatch.delenv("POKEUDS_DATA", raising=False)
+    monkeypatch.setenv("APPDATA", str(tmp_path / "appdata"))
+    monkeypatch.setattr(bank, "_portable", {})
+    return app
+
+
+def test_packaged_app_banks_beside_the_exe(monkeypatch, tmp_path):
+    app = _packaged(monkeypatch, tmp_path)
+    legacy = tmp_path / "appdata" / "PokeUDS" / "bank"
+    legacy.mkdir(parents=True)
+    (legacy / "old.pk7").write_bytes(b"x" * 232)
+    (legacy / "received.json").write_text("{}", encoding="utf-8")
+    assert bank.default_folder() == app / "Bank"
+    assert sorted(p.name for p in (app / "Bank").iterdir()) == ["old.pk7", "received.json"]
+    assert (legacy / "old.pk7").is_file()                   # copied, not moved
+    bank.Bank().entries()                                   # opening it tidies received.json into .info
+    assert sorted(p.name for p in (app / "Bank").iterdir()) == [".info", "old.pk7"]
+    # Copied once: what the player removes from the new bank does not come back on the next start.
+    (app / "Bank" / "old.pk7").unlink()
+    monkeypatch.setattr(bank, "_portable", {})
+    assert bank.default_folder() == app / "Bank" and not (app / "Bank" / "old.pk7").exists()
+
+
+def test_packaged_app_falls_back_when_its_folder_is_read_only(monkeypatch, tmp_path):
+    _packaged(monkeypatch, tmp_path)
+
+    def refuse(*a, **k):
+        raise PermissionError("read-only")
+    monkeypatch.setattr(bank.Path, "mkdir", refuse)
+    assert bank.default_folder() == tmp_path / "appdata" / "PokeUDS" / "bank"
+
+
+def test_from_source_the_bank_stays_in_the_data_folder(monkeypatch, tmp_path):
+    monkeypatch.setenv("POKEUDS_DATA", str(tmp_path / "data"))
+    assert bank.default_folder() == tmp_path / "data" / "bank"
+
+
+def test_the_bank_shows_only_pokemon(b, tmp_path):
+    out = tmp_path / "received"
+    received.save(pk6(), out, game="xy", stamp="20261104-120000")
+    gold = out / "cynda.pk2"
+    gold.write_bytes(sample_mon(2, 155, 10, "CYNDA").to_file())
+    gold.with_suffix(".mail").write_bytes(b"" * 47)
+    b.sync_received(out)
+    entry = b.set_note(b.entries()[0], "keep")
+    top = sorted(p.suffix or p.name for p in b.folder.iterdir())
+    assert top == [".info", ".mail", ".pk2", ".pk6"]        # the mail stays beside its .pk2, where trades read it
+    assert sorted(p.name for p in b.info.iterdir()) == sorted([f"{e.id}.json" for e in b.entries()] + ["received.json"])
+    assert entry.note == "keep"
+    b.remove(entry)
+    assert not (b.info / f"{entry.id}.json").exists()
+
+
+def test_an_older_bank_is_tidied_into_info(tmp_path):
+    folder = tmp_path / "old"
+    first = bank.Bank(folder)
+    entry, _ = first.deposit(pk6(), "pk6", source="built", note="from before")
+    # the layout before .info: the .json beside the record, received.json at the top
+    (first.info / f"{entry.id}.json").replace(folder / f"{entry.id}.json")
+    (folder / "received.json").write_text('{"x": ["a.pk6"]}', encoding="utf-8")
+    first.info.rmdir()
+    bank._tidied.clear()
+    again = bank.Bank(folder)
+    assert again.entries()[0].note == "from before" and again.entries()[0].source == "built"
+    assert sorted(p.name for p in folder.iterdir()) == [".info", f"{entry.id}.pk6"]
+    assert again._seen("x") == ["a.pk6"]

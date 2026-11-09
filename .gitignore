@@ -35,3 +35,6 @@ scripts/replay_gen7_beacon.py
 pokeuds/games/gen7/delivery_key.py
 rsa_d_key.txt
 gen7_delivery_key.txt
+
+# scripts/build_exe.py keeps dist/PokeUDS/Bank here while flet pack wipes dist/ and build/.
+.bank-kept/

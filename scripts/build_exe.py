@@ -1,12 +1,15 @@
-"""Build the Windows app: dist/PokeUDS/PokeUDS.exe and dist/PokeUDS-windows.zip (docs/release.md).
+r"""Build the Windows app: dist/PokeUDS/PokeUDS.exe and dist/PokeUDS-windows.zip (docs/release.md).
 
     pip install -r requirements-gui.txt pyinstaller
     python scripts/build_exe.py [--icon PokeUDS.ico]
 
 ``flet pack`` (PyInstaller) builds one folder holding the app, Python, the game profiles, the strings and Flet's
-window, which it unpacks on first start. The icon is ``--icon``, else ``gui/assets/icon.ico`` (made from
-``packaging/icon.jpg``), else Flet's own. The PKHeX helper is not inside: the app downloads it from the release
-when a page needs it.
+window. Flet ships its window as a zip that it unpacks into ``%USERPROFILE%\.flet\client`` on first start; this
+script unpacks it into the app's own folder instead (``_internal/flet_view``, found through ``FLET_VIEW_PATH`` by
+packaging/pokeuds_app.py), so the app writes nothing there and runs wherever it is unzipped. The icon is ``--icon``,
+else ``gui/assets/icon.ico`` (made from ``packaging/icon.jpg`` by scripts/make_icon.py), else Flet's own. The PKHeX
+helper is not inside: the app downloads it from the release when a page needs it. The app keeps its bank in
+``PokeUDS/Bank``; a rebuild keeps that folder and the zip never holds it, so an update never replaces a bank.
 """
 
 from __future__ import annotations
@@ -29,6 +32,8 @@ NAME = "PokeUDS"
 ENTRY = ROOT / "packaging" / "pokeuds_app.py"
 DEFAULT_ICON = ROOT / "gui" / "assets" / "icon.ico"
 DATA = [("profiles", "profiles"), ("pokeuds/app/data", "pokeuds/app/data"), ("gui/assets", "gui/assets")]
+BANK = "Bank"               # the packaged app's bank (pokeuds/app/bank.py): kept across builds, never zipped
+VIEW = "flet_view"          # the unpacked window, beside the app's Python in _internal (packaging/pokeuds_app.py)
 
 
 def file_version(version: str) -> str:
@@ -59,11 +64,28 @@ def pack(icon: Path | None, dist: Path) -> Path:
     return folder
 
 
+def unpack_view(folder: Path) -> Path:
+    """Unpack Flet's window (already given the icon by flet pack) into the app and drop the zip it came in."""
+    internal = folder / "_internal"
+    archive = internal / "flet_desktop" / "app" / "flet-windows.zip"
+    if not archive.is_file():
+        sys.exit(f"{archive} is missing: flet pack's layout changed")
+    view = internal / VIEW
+    shutil.rmtree(view, ignore_errors=True)
+    with zipfile.ZipFile(archive) as z:
+        z.extractall(view)
+    if not (view / "flet" / "flet.exe").is_file():
+        sys.exit(f"{archive} holds no flet/flet.exe")
+    for leftover in archive.parent.iterdir():       # the zip, its .sha256, the .last-used flet pack touched
+        leftover.unlink()
+    return view / "flet"
+
+
 def zip_folder(folder: Path, out: Path) -> Path:
     out.unlink(missing_ok=True)
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
         for path in sorted(folder.rglob("*")):
-            if path.is_file():
+            if path.is_file() and path.relative_to(folder).parts[0] != BANK:     # the player's bank stays theirs
                 z.write(path, Path(NAME) / path.relative_to(folder))
     return out
 
@@ -79,9 +101,22 @@ def main(argv: list[str] | None = None) -> int:
     if icon and not icon.is_file():
         sys.exit(f"{icon} does not exist")
     print(f"PokeUDS {__version__}, icon: {icon or 'none (Flet default)'}", flush=True)
+    # A bank made by running the built exe here survives the rebuild: moved aside, then put back. Not into dist/ or
+    # build/: flet pack --yes deletes both whole before it starts.
+    kept = ROOT / ".bank-kept"
+    if kept.exists():
+        sys.exit(f"{kept} is a bank kept by an earlier build that stopped: move it back to {a.dist / NAME / BANK}")
+    if (a.dist / NAME / BANK).is_dir():
+        (a.dist / NAME / BANK).rename(kept)
     shutil.rmtree(a.dist / NAME, ignore_errors=True)
-    folder = pack(icon, a.dist.resolve())
+    try:
+        folder = pack(icon, a.dist.resolve())
+    finally:
+        if kept.is_dir():
+            (a.dist / NAME).mkdir(parents=True, exist_ok=True)
+            kept.rename(a.dist / NAME / BANK)
     print(f"built {folder / NAME}.exe")
+    print(f"window unpacked to {unpack_view(folder)}")
     if not a.no_zip:
         print(f"zipped {zip_folder(folder, a.dist / f'{NAME}-windows.zip')}")
     return 0

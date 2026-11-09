@@ -1,10 +1,33 @@
 """The entry point of the packaged app (PokeUDS.exe, scripts/build_exe.py).
 
-With no arguments it is the app. ``PokeUDS.exe --cli <command> ...`` is the command line: the app runs each trade
-that way as a child (pokeuds/app/runner.py), since a packaged app has no ``python -m pokeuds`` to call.
+With no arguments it is the app, run in the window unpacked beside it (``_internal/flet_view``).
+``PokeUDS.exe --cli <command> ...`` is the command line: the app runs each trade that way as a child
+(pokeuds/app/runner.py), since a packaged app has no ``python -m pokeuds`` to call.
 """
 
+import os
 import sys
+import tempfile
+from pathlib import Path
+
+INTERNAL = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
+
+
+def keep_temp_out_of_sight() -> None:
+    """Python falls back to the current folder (the app's, when PokeUDS.exe is double-clicked) for its temporary
+    files when %TEMP% cannot be written, and Flet keeps the window's process id in one while the app runs: a file
+    with a random name in the app's folder. Use a folder inside _internal for them instead."""
+    here = {Path.cwd().resolve(), Path(sys.executable).resolve().parent}
+    if Path(tempfile.gettempdir()).resolve() in here:
+        private = INTERNAL / "temp"
+        try:
+            private.mkdir(exist_ok=True)
+        except OSError:
+            return
+        tempfile.tempdir = str(private)
+
+
+keep_temp_out_of_sight()
 
 if len(sys.argv) > 1 and sys.argv[1] == "--cli":
     del sys.argv[1]
@@ -16,6 +39,12 @@ if len(sys.argv) > 1 and sys.argv[1] == "--cli":
 
     sys.exit(main())
 
-from gui.main import run
+# The window ships unpacked beside the app (scripts/build_exe.py), so Flet runs it from here instead of unpacking
+# a copy into %USERPROFILE%\.flet on first start: nothing to unpack, nothing written outside the app's folder.
+view = INTERNAL / "flet_view" / "flet"
+if (view / "flet.exe").is_file():
+    os.environ["FLET_VIEW_PATH"] = str(view)
+
+from gui.main import run  # noqa: E402
 
 run()

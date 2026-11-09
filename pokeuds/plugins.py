@@ -310,12 +310,13 @@ _registry: Registry | None = None
 def _guard_folders(plugins: list[Plugin]) -> tuple[list, list]:
     import tempfile
 
+    from .app.bank import default_folder
     from .app.settings import Settings
 
     code = [p.folder for p in plugins]
     settings = Settings.load()
     free = code + [data_dir() / "plugin-data", Path(settings.output).expanduser(), Path(tempfile.gettempdir()),
-                   data_dir() / "bank" if not settings.bank else Path(settings.bank).expanduser(), Path.cwd() / "received"]
+                   Path(settings.bank).expanduser() if settings.bank else default_folder(), Path.cwd() / "received"]
     return code, free
 
 
