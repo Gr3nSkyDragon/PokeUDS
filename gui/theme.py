@@ -2,7 +2,13 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import flet as ft
+
+ASSETS = Path(__file__).resolve().parent / "assets"     # bundled beside the gui package (scripts/build_exe.py)
+ICON = ASSETS / "icon.ico"          # the exe's, the taskbar's and the window's icon
+LOGO = ASSETS / "icon.png"          # the rail's mark
 
 BG = "#101318"
 PANEL = "#181C23"
@@ -68,6 +74,9 @@ def notice(text: str, color: str = WARN, icon=ft.Icons.INFO_OUTLINE) -> ft.Conta
 
 
 def mark() -> ft.Container:
-    """The rail's mark: a plain placeholder until the logo exists."""
+    """The rail's mark: the PokeUDS logo, or the old "UDS" tile if the logo file is missing."""
+    if LOGO.is_file():
+        return ft.Container(ft.Image(LOGO.read_bytes(), width=40, height=40, fit=ft.BoxFit.COVER),
+                            width=40, height=40, border_radius=12, clip_behavior=ft.ClipBehavior.ANTI_ALIAS)
     return ft.Container(ft.Text("UDS", size=12, weight=ft.FontWeight.W_700, color="#FFFFFF"),
                         width=40, height=40, bgcolor=ACCENT, border_radius=12, alignment=ft.Alignment.CENTER)

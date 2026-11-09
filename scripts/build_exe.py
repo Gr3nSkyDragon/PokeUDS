@@ -4,8 +4,9 @@
     python scripts/build_exe.py [--icon PokeUDS.ico]
 
 ``flet pack`` (PyInstaller) builds one folder holding the app, Python, the game profiles, the strings and Flet's
-window, which it unpacks on first start. The icon is ``--icon``, else ``packaging/PokeUDS.ico`` when there is one,
-else Flet's own. The PKHeX helper is not inside: the app downloads it from the release when a page needs it.
+window, which it unpacks on first start. The icon is ``--icon``, else ``gui/assets/icon.ico`` (made from
+``packaging/icon.jpg``), else Flet's own. The PKHeX helper is not inside: the app downloads it from the release
+when a page needs it.
 """
 
 from __future__ import annotations
@@ -26,8 +27,8 @@ from pokeuds.util import NO_WINDOW  # noqa: E402
 
 NAME = "PokeUDS"
 ENTRY = ROOT / "packaging" / "pokeuds_app.py"
-DEFAULT_ICON = ROOT / "packaging" / f"{NAME}.ico"
-DATA = [("profiles", "profiles"), ("pokeuds/app/data", "pokeuds/app/data")]
+DEFAULT_ICON = ROOT / "gui" / "assets" / "icon.ico"
+DATA = [("profiles", "profiles"), ("pokeuds/app/data", "pokeuds/app/data"), ("gui/assets", "gui/assets")]
 
 
 def file_version(version: str) -> str:
@@ -69,8 +70,8 @@ def zip_folder(folder: Path, out: Path) -> Path:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--icon", type=Path, help=f"a .ico for the exe and its window (default: {DEFAULT_ICON.name} "
-                                                  "in packaging/, when it exists)")
+    parser.add_argument("--icon", type=Path, help=f"a .ico for the exe and its window (default: gui/assets/{DEFAULT_ICON.name}, "
+                                                  "when it exists)")
     parser.add_argument("--dist", type=Path, default=ROOT / "dist")
     parser.add_argument("--no-zip", action="store_true")
     a = parser.parse_args(argv)

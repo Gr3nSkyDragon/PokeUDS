@@ -28,8 +28,9 @@ window, which the app unpacks to `%USERPROFILE%\.flet\client` on first start) an
 exe (`PokeUDS.exe --cli trade ...`, `packaging/pokeuds_app.py`) started without a window, as `python -m pokeuds` is
 from source. The exe's command-line mode is for the app; from a terminal use `python -m pokeuds`.
 
-The icon is `packaging/PokeUDS.ico` when that file exists (or `--icon some.ico`), else Flet's default. A `.ico` with
-16, 32, 48 and 256 px images covers the exe, the taskbar and the window.
+The icon is `gui/assets/icon.ico` (or `--icon some.ico`), made from the artwork in `packaging/icon.jpg`; its 16 to
+256 px images cover the exe, the taskbar and the window. `gui/assets/icon.png` is the logo at the top of the rail.
+Both are bundled with the app.
 
 ## Checklist
 

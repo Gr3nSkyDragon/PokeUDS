@@ -108,6 +108,8 @@ def main(page: ft.Page) -> None:
     shell = Shell(page, app)
     page.add(shell.build())
     if not page.web:
+        if t.ICON.is_file():
+            page.window.icon = str(t.ICON)      # from source too; the packaged exe also carries it
         # The window starts hidden (run) and shows once, in place and drawn: no flashing (gui/window.py).
         window.restore(page, app.settings.window)
         window.remember(page, app.settings)
