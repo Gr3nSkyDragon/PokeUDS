@@ -194,7 +194,8 @@ def _packaged(monkeypatch, tmp_path):
     monkeypatch.setattr("sys.frozen", True, raising=False)
     monkeypatch.setattr("sys.executable", str(app / "PokeUDS.exe"))
     monkeypatch.delenv("POKEUDS_DATA", raising=False)
-    monkeypatch.setenv("APPDATA", str(tmp_path / "appdata"))
+    # The old data folder: %APPDATA%\PokeUDS on Windows, elsewhere on Linux and macOS, so set it outright.
+    monkeypatch.setattr(bank, "data_dir", lambda: tmp_path / "appdata" / "PokeUDS")
     monkeypatch.setattr(bank, "_portable", {})
     return app
 
