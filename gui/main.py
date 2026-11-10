@@ -125,7 +125,27 @@ def main(page: ft.Page) -> None:
     page.on_close = closing
 
 
+def _report(message: str) -> None:
+    """A fatal startup error with no window yet: a Windows message box, else stderr."""
+    if sys.platform == "win32":
+        try:
+            import ctypes
+
+            ctypes.windll.user32.MessageBoxW(None, message, "PokeUDS", 0x10)
+            return
+        except Exception:
+            pass
+    print(message, file=sys.stderr)
+
+
 def run() -> None:
+    from pokeuds.app.settings import AppFolderNotWritable, data_dir
+
+    try:
+        data_dir()          # makes Data beside the exe (and adopts older data), or reports a read-only folder
+    except AppFolderNotWritable as exc:
+        _report(str(exc))
+        return
     if port := os.environ.get("POKEUDS_GUI_WEB"):
         # POKEUDS_GUI_HOST=0.0.0.0 also serves other machines (a preview pane, a phone on the LAN).
         ft.run(main, view=ft.AppView.WEB_BROWSER, no_cdn=True, port=int(port), host=os.environ.get("POKEUDS_GUI_HOST") or None)

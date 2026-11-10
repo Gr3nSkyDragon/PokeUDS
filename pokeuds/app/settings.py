@@ -1,12 +1,12 @@
 """App settings, kept as JSON in the app's data folder (``data_dir``; ``POKEUDS_DATA`` overrides it).
 
 The packaged Windows app keeps everything in its own folder: ``Data`` beside PokeUDS.exe (hidden) holds the
-settings, sprites, plugins, gift projects and the received folder, as ``Bank`` holds the bank. Nothing is written
-to the user's profile, which some PCs refuse an unsigned program (security software, Controlled Folder Access),
-and the release zip holds neither folder, so an update unzipped over the app leaves both as they are. On its
-first start the folder takes a copy of what an older version kept in ``%APPDATA%\\PokeUDS``. From source, in the
-Mac app (whose bundle an update replaces), or when the exe's folder cannot be written (Program Files), the data
-folder is the platform's own (``system_data_dir``).
+settings, sprites, plugins and gift projects; received Pokemon go to ``received`` beside the exe, as ``Bank``
+holds the bank. Nothing is written to the user's profile, and a folder the app cannot write is reported rather
+than replaced by one outside it: unzip PokeUDS somewhere writable. The release zip holds none of these folders,
+so an update unzipped over the app leaves them as they are. On its first start ``Data`` takes a copy of what an
+older version kept in ``%APPDATA%\\PokeUDS``. From source or in the Mac app (whose bundle an update replaces),
+the data folder is the platform's own (``system_data_dir``).
 """
 
 from __future__ import annotations
@@ -22,8 +22,14 @@ from pathlib import Path
 
 log = logging.getLogger(__name__)
 PORTABLE_DATA = "Data"
+RECEIVED = "received"                    # the received folder, beside PokeUDS.exe (not inside Data)
+PORTABLE_OUTPUT = RECEIVED               # written to settings.json for the default output, so a moved app follows it
 ADOPTED = ("settings.json", "sprites", "plugins", "plugin-data", "gifts")    # what the first start copies over
 _portable: dict[Path, Path | None] = {}
+
+
+class AppFolderNotWritable(RuntimeError):
+    """The packaged app cannot write its own folder, and it will not fall back to a folder outside it."""
 
 
 def system_data_dir() -> Path:
@@ -95,26 +101,47 @@ def _adopt(old: Path, new: Path) -> None:
 
 
 def _portable_settings(text: str, data: Path) -> str:
-    """Older settings, moved into the app's folder: a received folder left at the old default moves in too."""
+    """Older settings, moved into the app's folder: a received folder left at the old default moves beside the app."""
     raw = json.loads(text)
-    if isinstance(raw, dict) and raw.get("output") in (None, "", OLD_OUTPUT):
-        raw["output"] = str(data / "received")
+    if isinstance(raw, dict) and raw.get("output") in (None, "", OLD_OUTPUT, str(data / RECEIVED)):
+        raw["output"] = str(data.parent / RECEIVED)
     return json.dumps(raw, indent=2)
 
 
 def data_dir() -> Path:
     if override := os.environ.get("POKEUDS_DATA"):
         return Path(override)
-    return portable_data_dir() or system_data_dir()
+    app = app_folder()
+    if app is not None:
+        portable = portable_data_dir()
+        if portable is None:
+            raise AppFolderNotWritable(
+                f"PokeUDS cannot write to its own folder ({app}). Move the whole PokeUDS folder to a writable "
+                "place, such as Documents or the Desktop, and start it again. PokeUDS keeps its settings, bank "
+                "and received Pokemon inside its folder.")
+        return portable
+    return system_data_dir()
 
 
 OLD_OUTPUT = str(Path.home() / "PokeUDS" / "received")      # the received folder's default outside the packaged app
 
 
 def default_output() -> str:
-    """Where trades write what they receive: in the packaged Windows app, ``Data/received``; else ~/PokeUDS/received."""
+    """Where trades write what they receive: ``received`` beside the packaged app; else ~/PokeUDS/received."""
+    app = app_folder()
+    if app is not None:
+        return str(app / RECEIVED)
     portable = portable_data_dir()
-    return str(portable / "received") if portable is not None else OLD_OUTPUT
+    return str(portable / RECEIVED) if portable is not None else OLD_OUTPUT
+
+
+def _migrate_output(raw: dict) -> None:
+    """An older settings file's output: its received folder moves beside the app, not inside Data or the profile."""
+    if not isinstance(raw, dict):
+        return
+    app = app_folder()
+    if app is not None and raw.get("output") in (None, "", OLD_OUTPUT, str(app / PORTABLE_DATA / RECEIVED)):
+        raw["output"] = default_output()
 
 
 @dataclass
@@ -166,6 +193,9 @@ class Settings:
             raw = json.loads(cls.path().read_text(encoding="utf-8"))
         except (OSError, ValueError):
             return cls()
+        if isinstance(raw, dict) and raw.get("output") == PORTABLE_OUTPUT:
+            raw["output"] = default_output()       # the default output follows the folder when the app is moved
+        _migrate_output(raw)
         known = {f.name for f in fields(cls)}
         return cls(**{k: v for k, v in raw.items() if k in known})
 
@@ -174,7 +204,10 @@ class Settings:
         scanning the last save, a backup or sync tool) is tried again for about a second; after that the save is
         given up and logged, and the settings in memory stay as they are: a click never fails over it."""
         path = self.path()
-        text = json.dumps(asdict(self), indent=2)
+        data = asdict(self)
+        if data.get("output") == default_output():
+            data["output"] = PORTABLE_OUTPUT       # keep the default relative to the folder, so a moved app follows it
+        text = json.dumps(data, indent=2)
         problem: OSError | None = None
         for attempt in range(8):
             tmp = path.with_name(f"settings.{os.getpid()}.{attempt}.tmp")

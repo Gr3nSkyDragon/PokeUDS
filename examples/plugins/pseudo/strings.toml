@@ -524,6 +524,7 @@
 "PokeUDS" = "[!PõkéÜDŠ!]"
 "PokeUDS " = "[!PõkéÜDŠ !]"
 "PokeUDS asks" = "[!PõkéÜDŠ àškš!]"
+"PokeUDS cannot write to its own folder ({value0}). Move the whole PokeUDS folder to a writable place, such as Documents or the Desktop, and start it again. PokeUDS keeps its settings, bank and received Pokemon inside its folder." = "[!PõkéÜDŠ çàññõt wrîté tõ îtš õwñ fõldér ({value0}). Mõvé thé whõlé PõkéÜDŠ fõldér tõ à wrîtàblé plàçé, šüçh àš Dõçüméñtš õr thé Déšktõp, àñd štàrt ît àgàîñ. PõkéÜDŠ kéépš îtš šéttîñgš, bàñk àñd réçéîvéd Põkémõñ îñšîdé îtš fõldér.!]"
 "PokeUDS comes with the firmware it uses: VC-Adapter's esp32-uds-bridge " = "[!PõkéÜDŠ çõméš wîth thé fîrmwàré ît üšéš: VÇ-Àdàptér'š éšp32-üdš-brîdgé !]"
 "PokeUDS comes with the firmware it uses: VC-Adapter's esp32-uds-bridge {value0}, the build for a board on a computer (the same one Azahar and mGBA use). It is the 3DS radio every generation trades over, and drives the optional SSD1306 screen. Its Switch side is not used here; the board restarts into its 3DS mode the first time PokeUDS connects." = "[!PõkéÜDŠ çõméš wîth thé fîrmwàré ît üšéš: VÇ-Àdàptér'š éšp32-üdš-brîdgé {value0}, thé büîld fõr à bõàrd õñ à çõmpütér (thé šàmé õñé Àzàhàr àñd mGBÀ üšé). Ît îš thé 3DŠ ràdîõ évérý géñéràtîõñ tràdéš õvér, àñd drîvéš thé õptîõñàl ŠŠD1306 šçrééñ. Îtš Šwîtçh šîdé îš ñõt üšéd héré; thé bõàrd réštàrtš îñtõ îtš 3DŠ mõdé thé fîršt tîmé PõkéÜDŠ çõññéçtš.!]"
 "PokeUDS gift" = "[!PõkéÜDŠ gîft!]"

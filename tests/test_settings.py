@@ -34,13 +34,15 @@ def test_the_packaged_app_keeps_its_data_in_its_folder(portable):
     assert s.data_dir() == app / "Data"
     loaded = s.Settings.load()
     assert loaded.trainer_name == "RED" and loaded.last_game == "gsc"
-    assert loaded.output == str(app / "Data" / "received")             # the old default moves in with it
+    assert loaded.output == str(app / "received")                      # the old default moves beside the app
     assert (app / "Data" / "sprites" / "normal" / "25.png").read_bytes() == b"png"
     assert (app / "Data" / "plugin-data" / "x").is_dir() and not (app / "Data" / "bank").exists()
     loaded.trainer_name = "BLUE"
-    assert loaded.save() and json.loads((app / "Data" / "settings.json").read_text())["trainer_name"] == "BLUE"
+    assert loaded.save()
+    raw = json.loads((app / "Data" / "settings.json").read_text())
+    assert raw["trainer_name"] == "BLUE" and raw["output"] == s.PORTABLE_OUTPUT
     assert json.loads((old / "settings.json").read_text())["trainer_name"] == "RED"      # the old folder is left alone
-    assert s.Settings().output == str(app / "Data" / "received")
+    assert s.Settings().output == str(app / "received")
     assert not list((app / "Data").glob("*.tmp"))
 
 
@@ -50,10 +52,23 @@ def test_a_received_folder_the_player_chose_is_kept(portable):
     assert s.Settings.load().output == "D:/My Pokemon"
 
 
-def test_an_unwritable_app_folder_uses_the_platform_folder(portable, monkeypatch):
+def test_an_unwritable_app_folder_is_reported(portable):
     app, old = portable
     (app / "Data").write_text("a file where the folder would be")          # cannot be made
-    assert s.data_dir() == old and s.Settings().output == s.OLD_OUTPUT
+    with pytest.raises(s.AppFolderNotWritable):
+        s.data_dir()
+    assert s.Settings().output == str(app / "received")                    # it never falls back outside the app
+    assert not (old / "settings.json").exists()
+
+
+def test_a_moved_app_keeps_its_received_folder(portable, monkeypatch, tmp_path):
+    app, old = portable
+    assert s.Settings.load().save()                                        # the default output is stored relative
+    moved = tmp_path / "moved"
+    app.rename(moved)
+    monkeypatch.setattr(s, "app_folder", lambda: moved)
+    s._portable.clear()
+    assert s.Settings.load().output == str(moved / "received")
 
 
 def test_from_source_nothing_changes(monkeypatch, tmp_path):

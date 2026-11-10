@@ -85,10 +85,11 @@ Pokemon's `.mail`, which trades read beside its `.pk2`); a bank from before `.in
 The packaged Windows app keeps it in `Bank` beside PokeUDS.exe, which the release zip never contains, so an update
 unzipped over the app's folder leaves it alone; on its first start it copies the records of an older
 `%APPDATA%\PokeUDS\bank` there (the old folder stays). Its data folder is `Data` beside the exe too (hidden:
-settings, sprites, plugins, gift projects and the received folder), so the packaged Windows app writes nothing to
-the user's profile, which some PCs refuse an unsigned program. The Mac app, whose bundle an update replaces whole, keeps it in
-`~/Library/Application Support/PokeUDS/bank`. From source, or when the exe's folder cannot be written, it is `<data
-folder>/bank`. Settings' `bank` overrides both.
+settings, sprites, plugins and gift projects); received Pokemon go to `received` beside the exe, so the packaged
+Windows app writes nothing to the user's profile, which some PCs refuse an unsigned program. A packaged app in a
+folder it cannot write (Program Files) reports that and asks you to move it, rather than writing outside. The Mac
+app, whose bundle an update replaces whole, keeps it in `~/Library/Application Support/PokeUDS/bank`. From source
+it is `<data folder>/bank`. Settings' `bank` overrides both.
 
 ```
 20261104-153012_025_Sparky_1a2b3c4d.pk6          the record: .pk1/.pk2 as PokeUDS writes them, .pk6/.pk7 decrypted and stored, as PKHeX opens them
@@ -97,7 +98,8 @@ folder>/bank`. Settings' `bank` overrides both.
 .info/received.json                              the received files already deposited
 ```
 
-- **Received Pokemon** still land in the output folder first (one file per trade, as before). Each time
+- **Received Pokemon** still land in the output folder first (one file per trade, as before; by default `received`
+  beside the exe). Each time
   the Bank page opens, files there that it has not seen are deposited; one deleted from the bank is not
   brought back (`.info/received.json` remembers what was seen).
 - **One copy each:** a Pokemon already banked is not added again, whatever its file name, and also after a trade there and back: what a trade writes into a record (Gen 6/7: the handling trainer, geolocations, memories, friendship and affection, the checksum; Gen 2: friendship) does not count. Anything else does, so a Pokemon that levelled up, learned a move or evolved is a new entry. Copies banked before this check existed show a **Remove duplicates** button, which keeps the oldest copy of each and moves an offer on a removed copy to it.

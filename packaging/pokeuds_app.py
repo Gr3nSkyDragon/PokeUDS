@@ -35,9 +35,14 @@ if len(sys.argv) > 1 and sys.argv[1] == "--cli":
     for stream in (sys.stdout, sys.stderr):
         if stream is not None:
             stream.reconfigure(encoding="utf-8", errors="replace", line_buffering=True)
+    from pokeuds.app.settings import AppFolderNotWritable
     from pokeuds.cli import main
 
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except AppFolderNotWritable as exc:
+        print(f"PokeUDS: {exc}", file=sys.stderr)
+        sys.exit(2)
 
 # The window ships unpacked beside the app (scripts/build_exe.py), so Flet runs it from here instead of unpacking
 # a copy into %USERPROFILE%\.flet on first start: nothing to unpack, nothing written outside the app's folder.

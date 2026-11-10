@@ -56,14 +56,17 @@ Poke Transporter and Pokemon Bank do.
 Download the app for your computer from the [releases](https://github.com/Gr3nSkyDragon/PokeUDS/releases). The
 apps carry everything, PKHeX included: nothing else to install or download.
 
-**Windows:** download `PokeUDS-windows.zip`, unzip it anywhere and run `PokeUDS/PokeUDS.exe`.
+**Windows:** download `PokeUDS-windows.zip`, unzip it anywhere you can write (Documents, the Desktop, a USB
+drive) and run `PokeUDS/PokeUDS.exe`.
 
-Everything the app keeps stays in its own folder: your Pokemon in `PokeUDS/Bank`, and its settings, sprites,
-plugins and received files in `PokeUDS/Data` (hidden). Nothing is written to your user profile. An earlier
-version's files in `%APPDATA%\PokeUDS` are copied over on the first start and left where they were. The zip holds
-neither folder, so to update, unzip the new version over the old `PokeUDS` folder: the app is replaced and your
-`Bank` and `Data` are left as they are. If you delete the old folder instead, move both into the new one first.
-Two copies of the folder are two separate players (each with its own bank, settings and GTS listings).
+Everything the app keeps stays in its own folder: your Pokemon in `PokeUDS/Bank`, received files in
+`PokeUDS/received`, and its settings, sprites and plugins in `PokeUDS/Data` (hidden). Nothing is written to your
+user profile, and the app will not write outside its folder: if it cannot write there, it says so and asks you to
+move the folder. An earlier version's files in `%APPDATA%\PokeUDS` are copied over on the first start and left
+where they were. The zip holds none of these folders, so to update, unzip the new version over the old `PokeUDS`
+folder: the app is replaced and your `Bank`, `Data` and `received` are left as they are. If you delete the old
+folder instead, move them into the new one first. Two copies of the folder are two separate players (each with its
+own bank, settings and GTS listings).
 
 **Mac:** download `PokeUDS-macos-arm64.zip` for Apple Silicon (M1 or newer) or `PokeUDS-macos-x64.zip` for an Intel
 Mac (Apple menu, About This Mac, says which), unzip it and move `PokeUDS.app` to Applications. The app is not
