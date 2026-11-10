@@ -237,3 +237,20 @@ def test_send_over_local_wireless_sits_between_legal_and_the_bank(data, tmp_path
     walk(view._result())
     order = [texts.index(x) for x in ("Legal", "Send over local wireless", "Start sending", "Keep its Pokemon in the bank")]
     assert order == sorted(order), texts
+
+
+def test_each_run_leaves_its_log(tmp_path, monkeypatch):
+    """A run's log is written to <data>/logs when it ends (beside the packaged app: Data/logs), the newest 30 kept."""
+    pytest.importorskip("flet")
+    import time as clock
+
+    from gui.app import LOGS_KEPT, save_log
+
+    monkeypatch.setenv("POKEUDS_DATA", str(tmp_path))
+    path = save_log("trade", ["trade", "xy", "--role", "host"], ["$ pokeuds trade xy", "(exited with code 1)"])
+    assert path.parent == tmp_path / "logs" and path.name.endswith("_trade_trade-xy.txt")
+    assert path.read_text(encoding="utf-8") == "$ pokeuds trade xy\n(exited with code 1)\n"
+    for i in range(LOGS_KEPT + 5):
+        save_log("scan", ["scan"], [str(i)])
+        clock.sleep(0.002)
+    assert len(list((tmp_path / "logs").glob("*.txt"))) == LOGS_KEPT

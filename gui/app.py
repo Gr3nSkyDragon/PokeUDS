@@ -11,6 +11,33 @@ from pokeuds.app.runner import Run
 from pokeuds.app.settings import Settings
 
 
+LOGS_KEPT = 30                 # run logs kept in <data>/logs, newest first
+
+
+def save_log(kind: str, args: list[str], lines: list[str]):
+    """Write a run's log to ``<data>/logs`` (beside the packaged app: Data/logs), so a hardware test can be looked at
+    after the app is closed; the oldest beyond LOGS_KEPT go. -> the file, or None when it cannot be written."""
+    import time
+    from pathlib import Path
+
+    from pokeuds.app.settings import data_dir
+
+    try:
+        folder = Path(data_dir()) / "logs"
+        folder.mkdir(parents=True, exist_ok=True)
+        what = next((a for a in args if not a.startswith("-")), kind)
+        if len(args) > 1 and args[0] in ("trade", "vc", "gift") and not args[1].startswith("-"):
+            what = f"{args[0]}-{args[1]}"
+        now = time.time()
+        path = folder / f"{time.strftime('%Y%m%d-%H%M%S', time.localtime(now))}-{int(now * 1000) % 1000:03d}_{kind}_{what}.txt"
+        path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        for old in sorted(folder.glob("*.txt"), reverse=True)[LOGS_KEPT:]:
+            old.unlink(missing_ok=True)
+        return path
+    except OSError:
+        return None
+
+
 class App:
     def __init__(self, page: ft.Page | None, settings: Settings | None = None) -> None:
         self.page = page
@@ -29,6 +56,7 @@ class App:
         self.run_kind = ""                       # "trade", "probe", "scan", "analyze", "board", "gift"
         self.progress = Progress()
         self.log: list[str] = []
+        self.saved_log = None                    # the last run's log file (save_log)
         self.listeners: list[Callable[[], None]] = []
         self.navigate: Callable[[str], None] = lambda key: None
         self.views: dict = {}                    # key -> view, set by the shell
@@ -89,6 +117,7 @@ class App:
             if kind == "trade":
                 self.progress.exited(code)
             self.log.append(f"(exited with code {code})")
+            self.saved_log = save_log(kind, args, self.log)
             if on_exit:
                 on_exit(code)
             self.ui(self.changed)

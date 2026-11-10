@@ -146,8 +146,17 @@ repairs only is kept as usual. An imported paste goes through the same builder, 
 ## Build one (the Trade page) and `pokeuds build`
 
 On the Trade page, **Build one** opens the builder for the chosen game. It collects the wishes (species,
-level, nickname, shiny, gender, nature, ability, held item, ball, up to four moves, and under **Set IVs and EVs**
-the IVs, EVs and Hidden Power) and the original trainer, which it keeps for the next build.
+level, nickname, language, shiny, gender, nature, ability, held item, ball, up to four moves, and under **Set IVs
+and EVs** the IVs, EVs and Hidden Power) and the original trainer, which it keeps for the next build.
+
+**Language** is the game the Pokemon comes from (PKHeX's trainer language): English, Japanese, French, Italian,
+German, Spanish, Korean from Gen 2, and Chinese (simplified and traditional) in Gen 7. PKHeX names a Pokemon with
+no nickname in that language (ピカチュウ, 피카츄, 皮卡丘). In Gen 1/2 it also makes the record that language's: a
+Japanese one has 6-byte names (a 59- or 63-byte file), and the bank keeps the language beside a Game Boy record,
+which does not hold it (docs/vc.md, Languages). A Japanese Game Boy game writes only kana, 5 at most, so its OT
+and nickname must be kana; PKHeX tells a Korean Gen 2 record by its OT's first character, so a Korean OT starts in
+Hangul. The builder says so before PKHeX is asked. A paste keeps the language chosen (Showdown sets name none);
+`pokeuds build --language jp`.
 The trainer is entered as each generation shows it: a five-digit ID (and SID from Gen 3 on), or from Gen
 7 the six-digit ID and four-digit SID. Build and offer it puts the result in the bank (source "built", with
 PKHeX's verdict) and queues it for the trade; Build and save in Bank only puts it in the bank, and the builder

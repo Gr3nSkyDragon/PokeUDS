@@ -216,8 +216,11 @@ class BuilderPanel(View):
                     beside(ft.Switch(label="Shiny", value=w.shiny, on_change=self._shiny, disabled=busy or gen == 1))],
                    spacing=12, vertical_alignment=TOP),
             *form,
-            ft.TextField(label="Nickname", value=w.nickname, width=200, dense=True, disabled=busy,
-                         max_length=builder.NAME_LIMITS[gen][0], on_blur=self._nickname),
+            ft.Row([ft.TextField(label="Nickname", value=w.nickname, width=200, dense=True, disabled=busy,
+                                 max_length=builder.NAME_LIMITS[gen][0], on_blur=self._nickname),
+                    self._dd("Language", w.language, [(k, builder.LANGUAGES[k][0]) for k in builder.languages_for(gen)],
+                             self._language, 200, disabled=busy)],
+                   spacing=12, vertical_alignment=TOP),
         ], spacing=8)
         preview = sprite(self.app, w.species, shiny=w.shiny and gen >= 2, size=112, on_ready=self.refresh)
         rows: list[ft.Control] = [ft.Row([names, ft.Container(expand=True), preview], spacing=24, vertical_alignment=TOP)]
@@ -483,6 +486,8 @@ class BuilderPanel(View):
     def _apply_game(self, game: str) -> None:
         self.wish.game = game
         gen = builder.generation(self.wish.game)
+        if self.wish.language not in builder.languages_for(gen):
+            self.wish.language = "en"            # Korean before Gen 2, Chinese before Gen 7
         if self.wish.species > GAMES[self.wish.game][2]:
             self.wish.species = 25
         if gen < 3:
@@ -523,6 +528,10 @@ class BuilderPanel(View):
             self.wish.level = max(1, min(100, int(e.control.value)))
         except (TypeError, ValueError):
             pass
+        self._changed()
+
+    def _language(self, e) -> None:
+        self.wish.language = e.control.value or "en"
         self._changed()
 
     def _nickname(self, e) -> None:

@@ -24,7 +24,7 @@ other chips can join the firmware list later without renaming anything.
 
 | page | what it does |
 |---|---|
-| Trade | pick the game, who hosts, the Pokemon to offer, the connection, Start; the session panel follows the run: radio, 3DS connected, link up, Pokemon received, what happened, the log |
+| Trade | pick the game, who hosts, the Pokemon to offer, the connection, Start; the session panel follows the run: radio, 3DS connected, link up, Pokemon received, what happened, the log (each run's log is also saved in `<data>/logs`, `Data/logs` beside the packaged app; the newest 30 are kept) |
 | Bank | every Pokemon the app keeps, received ones included: details, PKHeX legality, offer in a trade, List on the GTS, Time Capsule copy, import, export, delete |
 | GTS | list a banked Pokemon against one to three wants, browse other players' listings by format and species and offer on one, and see where your listings and offers stand; Check now settles them (docs/online.md) |
 | Gifts | Gen 6/7 Mystery Gift cards: PKHeX's official events, a `.wc6`/`.wc7` (or full) file, or a custom card from the editor (every field, Customize any card, save as `.udsgift`, export `.wc6`/`.wc7`); the card's Pokemon into the bank and a trade; a Gen 6 or Gen 7 card sent over local wireless as an event distribution did (Gen 7 signed with the key from Settings) (Send over local wireless: Mystery Gift, Get via Local Wireless on the 3DS) (docs/mystery_gift.md, docs/wonder_cards.md) |

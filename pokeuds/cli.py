@@ -646,6 +646,7 @@ def cmd_build(args) -> int:
     wish = builder.Wish(args.game, pick("species", args.species), args.level, args.shiny, pick("natures", args.nature),
                         args.gender or "", args.ability or "", pick("items", args.item), pick("balls", args.ball),
                         [pick("moves", m) for m in args.moves or []], args.nickname or "")
+    wish.language = args.language
     trainer = builder.Trainer(args.ot, args.tid, args.sid, args.female)
     try:
         built = builder.build(wish, trainer, helper, fix=args.fix)
@@ -986,6 +987,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--ball", help="name or number (Gen 6/7)")
     p.add_argument("--moves", nargs="+", help="up to four, names or numbers (default: what it knows at that level)")
     p.add_argument("--nickname")
+    p.add_argument("--language", default="en", choices=["en", "jp", "fr", "it", "de", "es", "kr", "zh-hans", "zh-hant"],
+                   help="the game language it comes from (default en); Gen 1/2 Japanese and Korean need a kana or Hangul OT")
     p.add_argument("--ot", default="POKEUDS")
     p.add_argument("--tid", type=int, default=12345)
     p.add_argument("--sid", type=int, default=54321)

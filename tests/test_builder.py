@@ -26,7 +26,7 @@ def test_wish_checks_and_request():
     assert "at most 10" in Wish("gsc", 25, nickname="ELEVENCHARS").problems()[0]
     tr = Trainer()
     gb = Wish("rby", 25, 20, nature=3, ability="hidden", ball=4, held_item=1, moves=[84, 0]).request(tr)
-    assert gb == {"level": 20, "trainer": tr.request(1), "moves": [84]}      # Gen 1 has no nature, ability, ball, item
+    assert gb == {"level": 20, "trainer": {**tr.request(1), "language": 2}, "moves": [84]}      # Gen 1 has no nature, ability, ball, item
     six = Wish("xy", 25, 30, shiny=True, nature=0, ability="1", ball=4, held_item=234, nickname="Sparky").request(tr)
     assert six["nature"] == 0 and six["ability"] == "1" and six["ball"] == 4 and six["held_item"] == 234 and six["shiny"]
 
@@ -386,3 +386,24 @@ def test_a_closest_build_waits_for_the_player(tmp_path, monkeypatch):
     trade.toggle_builder()
     b._build(None, offer=False)
     assert b.closest is None and "saved it in the bank" in b.message and "PKHeX also: Traded once" in b.message
+
+
+def test_the_language_a_pokemon_comes_from():
+    """Each generation's languages; the trainer request carries PKHeX's LanguageID; a Gen 1/2 Japanese or Korean
+    game's names are checked before PKHeX is asked; a paste keeps the language chosen."""
+    assert builder.languages_for(1) == ["en", "jp", "fr", "it", "de", "es"]
+    assert "kr" in builder.languages_for(2) and "zh-hans" not in builder.languages_for(6) and "zh-hant" in builder.languages_for(7)
+    wish = builder.Wish(game="rby", species=25, level=20, language="kr")
+    assert any("Korean" in p for p in wish.problems())                       # no Korean Gen 1 game
+    wish = builder.Wish(game="gsc", species=25, level=20, language="jp")
+    assert wish.request(builder.Trainer("サトシ"))["trainer"]["language"] == 1 and wish.problems() == []
+    assert wish.name_problems(builder.Trainer("サトシ")) == []
+    assert "use kana" in wish.name_problems(builder.Trainer("ASH"))[0]
+    wish.language = "kr"
+    assert wish.name_problems(builder.Trainer("골드")) == []
+    assert any("starts in Hangul" in p for p in wish.name_problems(builder.Trainer("ASH")))
+    assert builder.Wish(game="xy", species=25, language="jp").name_problems(builder.Trainer("ASH")) == []   # Gen 6 writes both
+    with pytest.raises(ValueError, match="use kana"):
+        builder.build(builder.Wish(game="gsc", species=25, level=20, language="jp"), builder.Trainer("ASH"), helper=object())
+    pasted = builder.Pasted.from_reply({"species": 25, "species_name": "Pikachu", "level": 50, "usable": True})
+    assert pasted.apply(builder.Wish(game="xy", language="de")).language == "de"

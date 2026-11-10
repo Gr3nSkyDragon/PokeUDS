@@ -20,6 +20,21 @@ GAMES = {
     "usum": ("Ultra Sun / Ultra Moon", 7, 807),
 }
 NAME_LIMITS = {1: (10, 7), 2: (10, 7), 6: (12, 12), 7: (12, 12)}      # (nickname, OT) characters
+# The game language a built Pokemon comes from: PokeUDS's key -> (name, PKHeX's LanguageID). It sets the species name
+# a Pokemon without a nickname gets, and for Gen 1/2 the record itself (Japanese names are 6 bytes; pokeuds.vc.gbtext).
+LANGUAGES = {"en": ("English", 2), "jp": ("Japanese", 1), "fr": ("French", 3), "it": ("Italian", 4),
+             "de": ("German", 5), "es": ("Spanish", 7), "kr": ("Korean", 8), "zh-hans": ("Chinese (simplified)", 9),
+             "zh-hant": ("Chinese (traditional)", 10)}
+
+
+def languages_for(gen: int) -> list[str]:
+    """The languages a generation's games came in: Korean from Gen 2 (Gold and Silver), Chinese in Gen 7."""
+    keys = ["en", "jp", "fr", "it", "de", "es"]
+    if gen >= 2:
+        keys.append("kr")
+    if gen >= 7:
+        keys += ["zh-hans", "zh-hant"]
+    return keys
 ABILITIES = {"": "Any", "1": "First ability", "2": "Second ability", "hidden": "Hidden ability"}
 GENDERS = {"": "Any", "male": "Male", "female": "Female"}
 STATS = ("HP", "Atk", "Def", "SpA", "SpD", "Spe")      # Showdown's order, which every ivs/evs list here keeps
@@ -154,6 +169,7 @@ class Wish:
     form: int = 0                      # an Alolan form, a Pikachu's cap...: set by a paste (Pasted.apply)
     ivs: list[int] | None = None       # STATS order; -1 is left to the encounter (Gen 1/2: DVs, see above)
     evs: list[int] | None = None       # STATS order (Gen 1/2: stat experience)
+    language: str = "en"               # a LANGUAGES key: the game it comes from
 
     def problems(self) -> list[str]:
         out = []
@@ -171,7 +187,31 @@ class Wish:
             out.append("four moves at most")
         if self.shiny and gen == 1:
             out.append("Generation 1 has no shiny Pokemon")
+        if self.language not in languages_for(gen):
+            out.append(f"no Generation {gen} game came out in {LANGUAGES.get(self.language, (self.language,))[0]}")
         out += self._stat_problems(gen)
+        return out
+
+    def name_problems(self, trainer: "Trainer") -> list[str]:
+        """What a Gen 1/2 game of this language cannot write: a Japanese one has only kana (and 5 characters), and
+        PKHeX tells a Korean record by its OT's first character, so a Korean OT starts in Hangul."""
+        gen = generation(self.game)
+        if gen > 2 or self.language not in ("jp", "kr"):
+            return []
+        from ..vc import gbtext
+
+        out = []
+        family = gbtext.family_of(self.language)
+        for what, text in (("the OT name", trainer.ot), ("the nickname", self.nickname)):
+            if not text:
+                continue
+            try:
+                gbtext.encode(text, family)
+            except ValueError as exc:
+                out.append(f"{what} {text!r} cannot be written by a {LANGUAGES[self.language][0]} Game Boy game "
+                           f"({exc}): " + ("use kana, 5 at most" if family == "jp" else "use Hangul"))
+        if family == "kr" and trainer.ot and not "\uac00" <= trainer.ot[0] <= "\ud7a3":
+            out.append("a Korean OT name starts in Hangul: PKHeX tells a Korean Gen 2 record by it")
         return out
 
     def _stat_problems(self, gen: int) -> list[str]:
@@ -235,6 +275,7 @@ class Wish:
             wish["nickname"] = self.nickname
         if self.form:
             wish["form"] = self.form
+        wish["trainer"]["language"] = LANGUAGES.get(self.language, LANGUAGES["en"])[1]
         wish.update(self.stats_request())
         return wish
 
@@ -293,13 +334,14 @@ class Pasted:
 
     def apply(self, wish: Wish) -> Wish:
         """A wish for the same game with this set's species and wishes; what the set does not name is left open
-        (the wish's ball stays: a Showdown set has none)."""
+        (the wish's ball and language stay: a Showdown set names neither)."""
         f = self.fields
         return Wish(game=wish.game, species=self.species, level=int(f.get("level", 100)), shiny=bool(f.get("shiny")),
                     nature=f.get("nature"), gender=f.get("gender", ""), ability=f.get("ability", ""),
                     held_item=f.get("held_item"), ball=wish.ball, moves=list(f.get("moves", []))[:4],
                     nickname=str(f.get("nickname", ""))[:NAME_LIMITS[generation(wish.game)][0]], form=self.form,
-                    ivs=list(f["ivs"]) if f.get("ivs") else None, evs=list(f["evs"]) if f.get("evs") else None)
+                    ivs=list(f["ivs"]) if f.get("ivs") else None, evs=list(f["evs"]) if f.get("evs") else None,
+                    language=wish.language)
 
 
 def paste(game: str, text: str, helper=None) -> list[Pasted]:
@@ -320,7 +362,7 @@ def build(wish: Wish, trainer: Trainer, helper=None, *, fix: bool = False):
     closest legal one instead, and ``Built.changes`` says what differs from the request (services/pkhex/Fix.cs)."""
     from .. import pkhex
 
-    if problems := wish.problems():
+    if problems := wish.problems() + wish.name_problems(trainer):
         raise ValueError("; ".join(problems))
     helper = helper or pkhex.shared()
     request = wish.request(trainer)
@@ -354,6 +396,8 @@ def take_changes(wish: Wish, built) -> None:
 
 def keep(built, bank, wish: Wish):
     """Put a built record in the bank (source "built"), with PKHeX's verdict on it."""
-    entry, _ = bank.deposit(built.data, built.extension.lstrip("."), source="built", note="",
-                            extra={"built_for": wish.game})
+    extra = {"built_for": wish.game}
+    if generation(wish.game) <= 2:
+        extra["language"] = wish.language          # a Game Boy record does not hold it; the bank keeps it beside
+    entry, _ = bank.deposit(built.data, built.extension.lstrip("."), source="built", note="", extra=extra)
     return bank.set_legality(entry, built.legal, built.report, built.encounter)
