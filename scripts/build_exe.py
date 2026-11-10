@@ -11,7 +11,8 @@ r"""Build the desktop app for this computer (docs/release.md):
 On Windows, Flet ships its window as a zip that it unpacks into ``%USERPROFILE%\.flet\client`` on first start; this
 script unpacks it into the app's own folder instead (``_internal/flet_view``, found through ``FLET_VIEW_PATH`` by
 packaging/pokeuds_app.py), so the app writes nothing there and runs wherever it is unzipped. The app keeps its bank in
-``PokeUDS/Bank``; a rebuild keeps that folder and the zip never holds it, so an update never replaces a bank.
+``PokeUDS/Bank``, its settings in ``PokeUDS/Data`` and received Pokemon in ``PokeUDS/received``; a rebuild keeps those
+folders and the zip never holds them, so an update never replaces them.
 
 On macOS the app is a one-folder ``.app`` (flet pack refuses ``--onedir`` there, so it goes to PyInstaller directly)
 and keeps Flet's own handling of its window, which unpacks into ``~/.flet`` on first start. The bank lives in
@@ -50,7 +51,8 @@ DEFAULT_ICON = ROOT / "gui" / "assets" / ("icon.icns" if MAC else "icon.ico")
 DATA = [("profiles", "profiles"), ("pokeuds/app/data", "pokeuds/app/data"), ("gui/assets", "gui/assets"),
         ("LICENSE", ".")]       # the AGPL-3.0 inside the app (and beside PokeUDS.exe on Windows)
 BANK = "Bank"               # the Windows app's bank (pokeuds/app/bank.py): kept across builds, never zipped
-APP_DATA = "Data"           # and its data folder (pokeuds/app/settings.py): the same
+APP_DATA = "Data"           # its data folder (pokeuds/app/settings.py): the same
+RECEIVED = "received"       # and the received Pokemon (pokeuds/app/settings.py): the same
 VIEW = "flet_view"          # the unpacked window, beside the app's Python in _internal (packaging/pokeuds_app.py)
 
 
@@ -131,8 +133,8 @@ def zip_folder(folder: Path, out: Path) -> Path:
     out.unlink(missing_ok=True)
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
         for path in sorted(folder.rglob("*")):
-            if path.is_file() and path.relative_to(folder).parts[0] not in (BANK, APP_DATA):     # the player's stay theirs
-                z.write(path, Path(NAME) / path.relative_to(folder))
+            if path.is_file() and path.relative_to(folder).parts[0] not in (BANK, APP_DATA, RECEIVED):
+                z.write(path, Path(NAME) / path.relative_to(folder))       # the player's folders stay theirs
     return out
 
 
@@ -161,10 +163,10 @@ def main(argv: list[str] | None = None) -> int:
           f"icon: {icon or 'none (Flet default)'}", flush=True)
     if not a.no_helper:
         bundle_helper()
-    # The bank and data folder made by running the built exe here survive the rebuild: moved aside, then put back.
-    # Not into dist/ or build/: flet pack --yes deletes both whole before it starts. (The Mac app keeps them outside
-    # its bundle.)
-    kept = {BANK: ROOT / ".bank-kept", APP_DATA: ROOT / ".data-kept"}
+    # The bank, data and received folders made by running the built exe here survive the rebuild: moved aside, then
+    # put back. Not into dist/ or build/: flet pack --yes deletes both whole before it starts. (The Mac app keeps
+    # its bank outside its bundle.)
+    kept = {BANK: ROOT / ".bank-kept", APP_DATA: ROOT / ".data-kept", RECEIVED: ROOT / ".received-kept"}
     for name, aside in kept.items():
         if aside.exists():
             sys.exit(f"{aside} was kept by an earlier build that stopped: move it back to {a.dist / NAME / name}")
