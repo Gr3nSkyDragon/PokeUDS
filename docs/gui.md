@@ -68,7 +68,7 @@ at a time, since one radio serves one process.
 
 | module | role |
 |---|---|
-| `pokeuds/app/settings.py` | settings in the platform data folder (`POKEUDS_DATA` overrides it) |
+| `pokeuds/app/settings.py` | settings in the data folder: the packaged Windows app's hidden `Data` beside the exe, else the platform's (`POKEUDS_DATA` overrides both) |
 | `pokeuds/app/catalog.py` | the games the app lists, what each accepts, the command it runs, what blocks Start |
 | `pokeuds/app/runner.py` | the child process |
 | `pokeuds/app/progress.py` | events to headline, steps and notes |
@@ -83,8 +83,10 @@ The bank is a folder holding one file per Pokemon (`pokeuds/app/bank.py`). What 
 `.json` of the same name in the hidden `.info` folder inside, so the folder itself shows only Pokemon (and a Gen 2
 Pokemon's `.mail`, which trades read beside its `.pk2`); a bank from before `.info` is tidied into it when opened.
 The packaged Windows app keeps it in `Bank` beside PokeUDS.exe, which the release zip never contains, so an update
-unzipped over the app's folder leaves it alone; on its first start it copies the records of an older `<data
-folder>/bank` there (the old folder stays). The Mac app, whose bundle an update replaces whole, keeps it in
+unzipped over the app's folder leaves it alone; on its first start it copies the records of an older
+`%APPDATA%\PokeUDS\bank` there (the old folder stays). Its data folder is `Data` beside the exe too (hidden:
+settings, sprites, plugins, gift projects and the received folder), so the packaged Windows app writes nothing to
+the user's profile, which some PCs refuse an unsigned program. The Mac app, whose bundle an update replaces whole, keeps it in
 `~/Library/Application Support/PokeUDS/bank`. From source, or when the exe's folder cannot be written, it is `<data
 folder>/bank`. Settings' `bank` overrides both.
 

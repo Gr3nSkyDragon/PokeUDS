@@ -30,7 +30,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .. import gbpk, pkx, species
-from .settings import data_dir
+from .settings import data_dir, system_data_dir
 
 EXTENSIONS = (".pk1", ".pk2", ".pk6", ".pk7")
 IMPORTABLE = EXTENSIONS + (".ek6", ".ek7")
@@ -101,7 +101,7 @@ def portable_folder(app_folder: Path) -> Path | None:
         probe = folder / ".write-test"
         probe.write_bytes(b"")
         probe.unlink()
-        legacy = data_dir() / "bank"
+        legacy = system_data_dir() / "bank"
         if fresh and legacy.is_dir() and legacy.resolve() != folder.resolve():
             for item in legacy.iterdir():
                 if item.is_file() and not (folder / item.name).exists():

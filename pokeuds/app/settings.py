@@ -1,22 +1,120 @@
-"""App settings, kept as JSON in the platform's data folder (``POKEUDS_DATA`` overrides it)."""
+"""App settings, kept as JSON in the app's data folder (``data_dir``; ``POKEUDS_DATA`` overrides it).
+
+The packaged Windows app keeps everything in its own folder: ``Data`` beside PokeUDS.exe (hidden) holds the
+settings, sprites, plugins, gift projects and the received folder, as ``Bank`` holds the bank. Nothing is written
+to the user's profile, which some PCs refuse an unsigned program (security software, Controlled Folder Access),
+and the release zip holds neither folder, so an update unzipped over the app leaves both as they are. On its
+first start the folder takes a copy of what an older version kept in ``%APPDATA%\\PokeUDS``. From source, in the
+Mac app (whose bundle an update replaces), or when the exe's folder cannot be written (Program Files), the data
+folder is the platform's own (``system_data_dir``).
+"""
 
 from __future__ import annotations
 
 import json
+import logging
 import os
+import shutil
 import sys
+import time
 from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 
+log = logging.getLogger(__name__)
+PORTABLE_DATA = "Data"
+ADOPTED = ("settings.json", "sprites", "plugins", "plugin-data", "gifts")    # what the first start copies over
+_portable: dict[Path, Path | None] = {}
 
-def data_dir() -> Path:
-    if override := os.environ.get("POKEUDS_DATA"):
-        return Path(override)
+
+def system_data_dir() -> Path:
+    """The platform's data folder: %APPDATA%\\PokeUDS, ~/Library/Application Support/PokeUDS, ~/.local/share/pokeuds."""
     if sys.platform == "win32":
         return Path(os.environ.get("APPDATA", Path.home())) / "PokeUDS"
     if sys.platform == "darwin":
         return Path.home() / "Library" / "Application Support" / "PokeUDS"
     return Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share")) / "pokeuds"
+
+
+def app_folder() -> Path | None:
+    """The packaged Windows app's own folder (where PokeUDS.exe is); None from source and on other systems."""
+    if getattr(sys, "frozen", False) and sys.platform == "win32" and not os.environ.get("POKEUDS_DATA"):
+        return Path(sys.executable).resolve().parent
+    return None
+
+
+def hide(folder: Path) -> None:
+    """Windows shows a folder whose name starts with a dot, or any folder: mark it hidden."""
+    if sys.platform == "win32":
+        try:
+            import ctypes
+
+            ctypes.windll.kernel32.SetFileAttributesW(str(folder), 0x02)      # FILE_ATTRIBUTE_HIDDEN
+        except (AttributeError, OSError):
+            pass
+
+
+def portable_data_dir(folder: Path | None = None) -> Path | None:
+    """``Data`` in the app's folder (``folder``, default ``app_folder()``), made the first time with a copy of the
+    older data folder's files; None when there is no app folder or it cannot be written."""
+    folder = app_folder() if folder is None else folder
+    if folder is None:
+        return None
+    if folder in _portable:
+        return _portable[folder]
+    target = folder / PORTABLE_DATA
+    try:
+        fresh = not target.exists()
+        target.mkdir(parents=True, exist_ok=True)
+        probe = target / ".write-test"
+        probe.write_bytes(b"")
+        probe.unlink()
+        if fresh:
+            hide(target)
+            _adopt(system_data_dir(), target)
+    except OSError:
+        target = None
+    _portable[folder] = target
+    return target
+
+
+def _adopt(old: Path, new: Path) -> None:
+    """Copy what an older version kept in ``old`` (read only; ``old`` is left as it was). A file that cannot be read
+    is skipped: the app starts with its default instead."""
+    for name in ADOPTED:
+        source = old / name
+        try:
+            if source.is_dir():
+                shutil.copytree(source, new / name, dirs_exist_ok=True)
+            elif source.is_file():
+                text = source.read_text(encoding="utf-8")
+                if name == "settings.json":
+                    text = _portable_settings(text, new)
+                (new / name).write_text(text, encoding="utf-8")
+        except (OSError, ValueError) as exc:
+            log.info("not copied from %s: %s (%s)", old, name, exc)
+
+
+def _portable_settings(text: str, data: Path) -> str:
+    """Older settings, moved into the app's folder: a received folder left at the old default moves in too."""
+    raw = json.loads(text)
+    if isinstance(raw, dict) and raw.get("output") in (None, "", OLD_OUTPUT):
+        raw["output"] = str(data / "received")
+    return json.dumps(raw, indent=2)
+
+
+def data_dir() -> Path:
+    if override := os.environ.get("POKEUDS_DATA"):
+        return Path(override)
+    return portable_data_dir() or system_data_dir()
+
+
+OLD_OUTPUT = str(Path.home() / "PokeUDS" / "received")      # the received folder's default outside the packaged app
+
+
+def default_output() -> str:
+    """Where trades write what they receive: in the packaged Windows app, ``Data/received``; else ~/PokeUDS/received."""
+    portable = portable_data_dir()
+    return str(portable / "received") if portable is not None else OLD_OUTPUT
 
 
 @dataclass
@@ -25,7 +123,7 @@ class Settings:
     gen7_key: str = ""                 # rsa_d_key.txt (the Gen 7 distributor's OPSSR signing key)
     radio: str = "esp32"               # "esp32" or "ldnd"
     port: str = ""                     # ESP32 serial port or ldnd pipe; "" finds it
-    output: str = str(Path.home() / "PokeUDS" / "received")
+    output: str = field(default_factory=default_output)
     bank: str = ""                     # the bank folder; "" is <data>/bank
     trainer_name: str = "POKEUDS"
     debug: bool = False
@@ -71,12 +169,33 @@ class Settings:
         known = {f.name for f in fields(cls)}
         return cls(**{k: v for k, v in raw.items() if k in known})
 
-    def save(self) -> None:
+    def save(self) -> bool:
+        """Write the settings; -> whether they were written. A file another program holds for a moment (an antivirus
+        scanning the last save, a backup or sync tool) is tried again for about a second; after that the save is
+        given up and logged, and the settings in memory stay as they are: a click never fails over it."""
         path = self.path()
-        path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(asdict(self), indent=2), encoding="utf-8")
-        tmp.replace(path)
+        text = json.dumps(asdict(self), indent=2)
+        problem: OSError | None = None
+        for attempt in range(8):
+            tmp = path.with_name(f"settings.{os.getpid()}.{attempt}.tmp")
+            try:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                tmp.write_text(text, encoding="utf-8")
+                tmp.replace(path)
+                return True
+            except OSError as exc:
+                problem = exc
+                try:
+                    tmp.unlink(missing_ok=True)
+                except OSError:
+                    pass
+                time.sleep(0.02 * (attempt + 1))
+        try:
+            path.write_text(text, encoding="utf-8")      # in place, as a last try
+            return True
+        except OSError:
+            log.warning("could not save the settings to %s: %s", path, problem)
+            return False
 
     def gen7_key_path(self) -> str:
         """The chosen rsa_d_key.txt, one beside aes_keys.txt, or the legacy local delivery_key.py."""

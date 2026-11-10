@@ -58,10 +58,12 @@ apps carry everything, PKHeX included: nothing else to install or download.
 
 **Windows:** download `PokeUDS-windows.zip`, unzip it anywhere and run `PokeUDS/PokeUDS.exe`.
 
-Your Pokemon are kept in `PokeUDS/Bank`, beside the exe (a bank from an earlier version in
-`%APPDATA%\PokeUDS\bank` is copied there on the first start). The zip holds no `Bank` folder, so to update,
-unzip the new version over the old `PokeUDS` folder: the app is replaced and the bank is left as it is. If you
-delete the old folder instead, move `Bank` into the new one first.
+Everything the app keeps stays in its own folder: your Pokemon in `PokeUDS/Bank`, and its settings, sprites,
+plugins and received files in `PokeUDS/Data` (hidden). Nothing is written to your user profile. An earlier
+version's files in `%APPDATA%\PokeUDS` are copied over on the first start and left where they were. The zip holds
+neither folder, so to update, unzip the new version over the old `PokeUDS` folder: the app is replaced and your
+`Bank` and `Data` are left as they are. If you delete the old folder instead, move both into the new one first.
+Two copies of the folder are two separate players (each with its own bank, settings and GTS listings).
 
 **Mac:** download `PokeUDS-macos-arm64.zip` for Apple Silicon (M1 or newer) or `PokeUDS-macos-x64.zip` for an Intel
 Mac (Apple menu, About This Mac, says which), unzip it and move `PokeUDS.app` to Applications. The app is not
