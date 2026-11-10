@@ -41,3 +41,4 @@ gen7_delivery_key.txt
 
 # scripts/build_exe.py keeps dist/PokeUDS/Bank here while flet pack wipes dist/ and build/.
 .bank-kept/
+.data-kept/
