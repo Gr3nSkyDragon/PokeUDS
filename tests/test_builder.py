@@ -245,7 +245,7 @@ def test_build_and_save_in_bank_does_not_queue(tmp_path, monkeypatch):
     monkeypatch.setattr(panel, "_helper_ready", lambda: True)
     monkeypatch.setattr(panel.threading, "Thread", lambda target, **k: type("T", (), {"start": lambda self: target()})())
     record = sample_mon(1, 25, 12, "PIKA").to_file()
-    monkeypatch.setattr(panel.builder, "build", lambda wish, trainer: pkhex.Built(True, "Legal", "Static", "pk1", record, {}))
+    monkeypatch.setattr(panel.builder, "build", lambda wish, trainer, **kw: pkhex.Built(True, "Legal", "Static", "pk1", record, {}))
     trade = TradeView(app)
     trade.toggle_builder()
     b = trade.builder
@@ -341,3 +341,48 @@ def test_the_stats_section_headless(tmp_path, monkeypatch):
     b._hidden_power(typed(str(builder.HIDDEN_POWER.index("Ice"))))
     assert builder.hidden_power(b.wish.ivs, 2) == builder.HIDDEN_POWER.index("Ice")
     b.control()
+
+
+def test_a_closest_build_waits_for_the_player(tmp_path, monkeypatch):
+    """Nothing legal is exactly what was asked: the builder shows the closest and what changed, keeps nothing until
+    Keep this one, then takes its values into the fields. Repairs alone keep at once and are said."""
+    pytest.importorskip("flet")
+    monkeypatch.setenv("POKEUDS_DATA", str(tmp_path))
+    from gui.app import App
+    from gui.views import builder as panel
+    from gui.views.trade import TradeView
+    from pokeuds.app import bank
+    from pokeuds.app.settings import Settings
+    from pokeuds.radio.demo import sample_mon
+
+    app = App(None, Settings(output=str(tmp_path / "received"), last_game="rby"))
+    app.ui = lambda fn: fn()
+    monkeypatch.setattr(panel, "_helper_ready", lambda: True)
+    monkeypatch.setattr(panel.threading, "Thread", lambda target, **k: type("T", (), {"start": lambda self: target()})())
+    record = sample_mon(1, 25, 36, "PIKA").to_file()
+    asked = []
+    summary = {"level": 36, "move_ids": [85, 0, 0, 0], "shiny": False}
+    closest = pkhex.Built(True, "Legal!", "Static", "pk1", record, summary, ["Traded once to a partner and back."],
+                          ["Level 1 became 36.", "Left out Spore: no legal Pikachu knows it with the rest."])
+    monkeypatch.setattr(panel.builder, "build", lambda wish, trainer, **kw: asked.append(kw) or closest)
+    trade = TradeView(app)
+    trade.toggle_builder()
+    b = trade.builder
+    b.lists["rby"] = {"species": [[25, "Pikachu"]], "moves": [], "items": [], "balls": [], "natures": []}
+    b.wish.level, b.wish.moves = 1, [147, 85]
+    trade.control()
+    b._build(None)
+    assert asked == [{"fix": True}] and b.closest is closest and not bank.Bank().entries() and not trade.queue
+    assert "closest legal one" in b.message and "Level 1 became 36." in b.message and "Traded once" in b.message
+    trade.control()                                         # Keep this one / Back to editing drawn
+    b._drop_closest()
+    assert b.closest is None and b.message == "" and b.wish.level == 1
+    b._build(None)
+    b._keep_closest()
+    assert b.wish.level == 36 and b.wish.moves == [85] and len(trade.queue) == 1 and len(bank.Bank().entries()) == 1
+
+    repaired = pkhex.Built(True, "Legal!", "Static", "pk1", record, summary, ["Traded once to a partner and back."], [])
+    monkeypatch.setattr(panel.builder, "build", lambda wish, trainer, **kw: repaired)
+    trade.toggle_builder()
+    b._build(None, offer=False)
+    assert b.closest is None and "saved it in the bank" in b.message and "PKHeX also: Traded once" in b.message

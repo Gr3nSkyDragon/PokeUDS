@@ -648,11 +648,15 @@ def cmd_build(args) -> int:
                         [pick("moves", m) for m in args.moves or []], args.nickname or "")
     trainer = builder.Trainer(args.ot, args.tid, args.sid, args.female)
     try:
-        built = builder.build(wish, trainer, helper)
+        built = builder.build(wish, trainer, helper, fix=args.fix)
     except ValueError as exc:
-        print(f"PKHeX could not build it: {exc}")
+        print(f"PKHeX could not build it: {exc}" + ("" if args.fix else "\n(--fix builds the closest legal one instead)"))
         return 1
     s = built.summary
+    for line in built.fixes:
+        print(f"repaired: {line}")
+    for line in built.changes:
+        print(f"changed: {line}")
     print(f"{s['species_name']} Lv {s['level']}{' (shiny)' if s['shiny'] else ''}, {'legal' if built.legal else 'NOT legal'}"
           f", from {built.encounter or '?'}; moves {', '.join(m for m in s['moves'] if m)}")
     if args.out:
@@ -988,6 +992,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--female", action="store_true", help="a female OT (Gen 2 on)")
     p.add_argument("--out", help="write the record to this file or folder")
     p.add_argument("--bank", action="store_true", help="also keep it in the bank (the default without --out)")
+    p.add_argument("--fix", action="store_true",
+                   help="when no legal Pokemon has everything asked for, build the closest one and say what changed")
     p.set_defaults(func=cmd_build)
 
     gf = sub.add_parser("gift", help="Gen 6/7 Mystery Gift cards (docs/mystery_gift.md)")

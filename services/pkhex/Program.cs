@@ -3,7 +3,8 @@
 //   {"cmd":"ping"}                                   -> {"ok":true,"pkhex":"26.10.18.0"}
 //   {"cmd":"lists","game":"xy"}                      -> species, moves, items, balls, natures, languages
 //   {"cmd":"paste","game":"xy","text":"..."}         -> each Showdown set in the text as the builder's wishes
-//   {"cmd":"build","game":"xy","species":25,...}     -> a legal record (base64), its summary and report
+//   {"cmd":"build","game":"xy","species":25,...}     -> a legal record (base64), its summary and report; with
+//                                                       "fix": true, the closest legal one when none fits (Fix.cs)
 //   {"cmd":"check","data":"<base64>","game":"xy"}    -> summary and legality report of a record
 //   {"cmd":"gifts","game":"xy"}                      -> the official Mystery Gift cards PKHeX knows for the game
 //   {"cmd":"gift","game":"xy","key":"..."|"data":..} -> a card (official, or a .wc6/.wc7/full file) made into its Pokemon
@@ -392,6 +393,30 @@ static partial class Program
 
     static JsonObject Build(Game game, JsonObject request)
     {
+        var outcome = Search(game, request, 200, 6);
+        if (outcome.Legal is { } legal)
+        {
+            var built = Describe(game, legal.Pk, legal.La, legal.Encounter);
+            built["fixes"] = new JsonArray(legal.Fixes.Select(f => (JsonNode)f).ToArray());
+            built["changes"] = new JsonArray();
+            return built;
+        }
+        if ((bool?)request["fix"] == true && Closest(game, request) is { } closest)
+            return closest;
+        var reason = outcome.Tried == 0 ? "no encounter of this species in the game fits the moves and level asked for"
+                                        : outcome.FirstProblem ?? "no legal build found";
+        if (reason.Contains("Cannot receive EVs"))
+            reason += game.Generation <= 2
+                ? " In Gen 1 and 2 every battle gives stat experience to all five stats: give each at least 1, or leave "
+                  + "them all at 0."
+                : " A Pokemon still at the level it was met at has not battled: raise the level, or leave the EVs at 0.";
+        return new JsonObject { ["ok"] = false, ["error"] = reason };
+    }
+
+    /// <summary>The species' encounters in PKHeX's order, each converted, given what was asked for and repaired
+    /// (Fix.cs), until one is legal and meets every request.</summary>
+    static Outcome Search(Game game, JsonObject request, int encounters, int rolls)
+    {
         var species = (ushort)(int)request["species"]!;
         var level = (int?)request["level"] ?? 0;
         if (level is < 0 or > 100)
@@ -402,17 +427,19 @@ static partial class Program
         var blank = game.Blank();
         blank.Species = species;
         blank.Form = (byte)((int?)request["form"] ?? 0);
-        string? firstProblem = null;
-        int tried = 0;
-        foreach (var encounter in EncounterMovesetGenerator.GenerateEncounters(blank, trainer, moves, game.Versions).Take(200))
+        var outcome = new Outcome();
+        // PKHeX lists an evolved species' own encounters before its pre-evolutions' (a Machamp event before a wild
+        // Machop): every encounter that is not a Mystery Gift goes first, whatever species it is of.
+        var found = EncounterMovesetGenerator.GenerateEncounters(blank, trainer, moves, game.Versions).Take(encounters).ToList();
+        foreach (var encounter in found.Where(e => e is not MysteryGift).Concat(found.Where(e => e is MysteryGift)))
         {
             if (encounter is not IEncounterConvertible convertible)
                 continue;
             if (level > 0 && encounter.LevelMin > level)
                 continue;
-            for (var roll = 0; roll < 6; roll++)
+            for (var roll = 0; roll < rolls; roll++)
             {
-                tried++;
+                outcome.Tried++;
                 var pk = convertible.ConvertToPKM(trainer, criteria);
                 if (pk.GetType() != blank.GetType())
                     break;
@@ -430,20 +457,20 @@ static partial class Program
                         pk.ClearNickname();
                 }
                 Apply(game, pk, request, moves, level);
-                var la = new LegalityAnalysis(pk);
+                var fixes = new List<string>();
+                var la = Repair(game, ref pk, request, trainer, fixes, encounter.Species != species);
+                var attempt = new Attempt(pk, la, encounter, fixes);
                 if (la.Valid && Satisfied(pk, request, criteria))
-                    return Describe(game, pk, la, encounter);
-                firstProblem ??= la.Valid ? "the encounter could not meet every request" : la.Report(false);
+                {
+                    outcome.Legal = attempt;
+                    return outcome;
+                }
+                if (outcome.Closest is null || Count(la) < Count(outcome.Closest.La))
+                    outcome.Closest = attempt;
+                outcome.FirstProblem ??= la.Valid ? "the encounter could not meet every request" : la.Report(false);
             }
         }
-        var reason = tried == 0 ? "no encounter of this species in the game fits the moves and level asked for"
-                                : firstProblem ?? "no legal build found";
-        if (reason.Contains("Cannot receive EVs"))
-            reason += game.Generation <= 2
-                ? " In Gen 1 and 2 every battle gives stat experience to all five stats: give each at least 1, or leave "
-                  + "them all at 0."
-                : " A Pokemon still at the level it was met at has not battled: raise the level, or leave the EVs at 0.";
-        return new JsonObject { ["ok"] = false, ["error"] = reason };
+        return outcome;
     }
 
     static void Apply(Game game, PKM pk, JsonObject request, ushort[] moves, int level)
@@ -556,6 +583,12 @@ static partial class Program
             ["hidden_power"] = pk.Format >= 2 ? Name(Strings.types, pk.HPType + 1) : null,     // its type list opens with Normal
             ["ball"] = pk.Format >= 3 ? Name(Strings.balllist, pk.Ball) : null,
             ["origin"] = GameInfo.GetVersionName(pk.Version),
+            // The ids behind the names, as the builder asks for them (a closest build fills its fields back in).
+            ["move_ids"] = new JsonArray(pk.Move1, pk.Move2, pk.Move3, pk.Move4),
+            ["ball_id"] = pk.Format >= 3 ? pk.Ball : null,
+            ["nature_id"] = pk.Format >= 3 ? (int)pk.Nature : null,
+            ["held_item_id"] = pk.Format >= 2 ? pk.HeldItem : null,
+            ["ability_slot"] = pk.Format >= 3 ? pk.AbilityNumber switch { 1 => "1", 2 => "2", 4 => "hidden", _ => null } : null,
         };
         var encounter = la.EncounterMatch;
         return new JsonObject

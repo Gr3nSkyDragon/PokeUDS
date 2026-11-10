@@ -215,3 +215,52 @@ def test_a_pasted_spread_builds_legal(helper):
     assert gen2.legal and gen2.summary["hidden_power"] == "Ice"
     (plain,) = builder.paste("gsc", "Snorlax\n- Rest", helper=helper)    # no IVs line: the encounter rolls the DVs
     assert "ivs" not in plain.fields
+
+
+AROMATISSE = """Aromatisse @ Lum Berry
+Ability: Healer
+EVs: 252 HP / 252 Def / 4 SpA
+Relaxed Nature
+IVs: 0 Atk / 0 Spe
+- Odor Sleuth
+- Dazzling Gleam
+- Moonblast
+- Trick Room"""
+
+
+def test_a_trade_evolution_is_given_its_trade(helper):
+    """Aromatisse evolves only by trade: built from a wild Spritzee, it is traded to a partner and back, and is legal
+    with every wish of the paste, still the player's."""
+    from pokeuds.app import builder
+
+    (pasted,) = builder.paste("xy", AROMATISSE, helper)
+    built = builder.build(pasted.apply(builder.Wish(game="xy")), builder.Trainer("ASH", 1234, 4321), helper)
+    s = built.summary
+    assert built.legal and built.changes == [] and any("traded" in f.lower() for f in built.fixes)
+    assert s["level"] == 100 and s["moves"] == ["Odor Sleuth", "Dazzling Gleam", "Moonblast", "Trick Room"]
+    assert s["ability"] == "Healer" and s["nature"] == "Relaxed" and s["ivs"] == [31, 0, 31, 31, 31, 0]
+    assert s["ot_name"] == "ASH"
+    pk = plain(built.data)
+    assert pk[0x93] == 0                             # PK6's current handler: back with its original trainer
+    machamp = helper.build("oras", 68, trainer={"ot": "ASH", "tid": 1234, "sid": 4321})
+    assert machamp.legal and machamp.summary["level"] == 28 and "Wild" in machamp.encounter      # traded, and Machoke's level
+    assert len(machamp.fixes) == 2
+
+
+def test_an_egg_move_gets_its_relearn_move(helper):
+    built = helper.build("xy", 25, level=30, moves=[344, 85], trainer={"ot": "ASH", "tid": 1234, "sid": 4321})
+    assert built.legal and "Volt Tackle" in built.summary["moves"] and any("relearnable" in f for f in built.fixes)
+
+
+def test_the_closest_build_says_what_changed(helper):
+    trainer = {"ot": "ASH", "tid": 1234, "sid": 4321}
+    with pytest.raises(ValueError):
+        helper.build("xy", 6, level=50, moves=[147, 53], trainer=trainer)           # Spore: never, without fix
+    spore = helper.build("xy", 6, level=50, moves=[147, 53], trainer=trainer, fix=True)
+    assert spore.legal and spore.summary["moves"][0] == "Flamethrower" and spore.changes == [
+        "Left out Spore: no legal Charizard in X/Y knows it with the rest."]
+    mewtwo = helper.build("xy", 150, level=70, ivs=[0, 0, 0, 0, 0, 0], trainer=trainer, fix=True)
+    assert mewtwo.legal and mewtwo.summary["ivs"][:3] == [0, 0, 0] and len(mewtwo.changes) == 1     # three fixed at 31
+    zygarde = helper.build("xy", 718, level=70, shiny=True, trainer=trainer, fix=True)
+    assert zygarde.legal and not zygarde.summary["shiny"] and zygarde.changes == ["It is not shiny: no legal one can be."]
+    assert zygarde.summary["move_ids"][0] and zygarde.summary["ball_id"] == 4

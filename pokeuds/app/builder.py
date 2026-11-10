@@ -312,14 +312,44 @@ def paste(game: str, text: str, helper=None) -> list[Pasted]:
     return [Pasted.from_reply(raw) for raw in helper.paste(game, text)]
 
 
-def build(wish: Wish, trainer: Trainer, helper=None):
-    """Build with the PKHeX helper; raises ValueError with PKHeX's reason when nothing legal fits."""
+def build(wish: Wish, trainer: Trainer, helper=None, *, fix: bool = False):
+    """Build with the PKHeX helper; raises ValueError with PKHeX's reason when nothing legal fits.
+
+    The helper repairs what the request cannot say (a trade for a trade evolution, the relearnable moves of an egg,
+    the level an evolution needs): ``Built.fixes`` names them. With ``fix``, a request no legal Pokemon meets gets the
+    closest legal one instead, and ``Built.changes`` says what differs from the request (services/pkhex/Fix.cs)."""
     from .. import pkhex
 
     if problems := wish.problems():
         raise ValueError("; ".join(problems))
     helper = helper or pkhex.shared()
-    return helper.build(wish.game, wish.species, **wish.request(trainer))
+    request = wish.request(trainer)
+    if fix:
+        request["fix"] = True
+    return helper.build(wish.game, wish.species, **request)
+
+
+def take_changes(wish: Wish, built) -> None:
+    """A closest build kept: the builder's fields follow what was built (level, moves, ball...), so a build from them
+    again asks for what is legal."""
+    s = built.summary
+    wish.level = int(s.get("level") or wish.level)
+    if isinstance(s.get("ivs"), list) and wish.ivs is not None:
+        wish.ivs = [int(v) for v in s["ivs"]]
+    if isinstance(s.get("evs"), list) and wish.evs is not None:
+        wish.evs = [int(v) for v in s["evs"]]
+    if wish.shiny and not s.get("shiny"):
+        wish.shiny = False
+    if wish.gender and s.get("gender") in ("male", "female") and s["gender"] != wish.gender:
+        wish.gender = s["gender"]
+    ids = s.get("move_ids")
+    if isinstance(ids, list):
+        wish.moves = [int(m) for m in ids if m]
+    for key in ("ball", "nature", "held_item"):
+        if isinstance(s.get(f"{key}_id"), int) and getattr(wish, key) is not None:
+            setattr(wish, key, s[f"{key}_id"] or None)
+    if wish.ability and isinstance(s.get("ability_slot"), str):
+        wish.ability = s["ability_slot"]
 
 
 def keep(built, bank, wish: Wish):

@@ -58,6 +58,8 @@ class BuilderPanel(View):
         self.compiling = False
         self.result = None                  # pkhex.Built
         self.saved: bank.Entry | None = None
+        self.closest = None                 # a closest legal build waiting for Keep this one (services/pkhex/Fix.cs)
+        self.closest_offer = True           # what its build button asked: offer it, or only save it
         self.message, self.message_color = "", t.INFO
         # Import paste: its text, a read in progress, and the sets read from it.
         self.paste_text = ""
@@ -178,6 +180,7 @@ class BuilderPanel(View):
         if not self.pasted or not 0 <= index < len(self.pasted) or not self.pasted[index].usable:
             return
         pasted = self.pasted[index]
+        self.closest = None                 # a new set: any closest build was for the old wishes
         self.wish = pasted.apply(self.wish)
         self.form_name = pasted.form_name
         self.stats_open = self.stats_open or self.wish.ivs is not None or self.wish.evs is not None
@@ -344,6 +347,11 @@ class BuilderPanel(View):
 
     def _build_row(self) -> ft.Control:
         busy = self.building
+        if self.closest is not None:
+            keep = "Keep this one and offer it" if self.closest_offer else "Keep this one in the Bank"
+            return ft.Row([t.primary(keep, lambda e: self._keep_closest(), ft.Icons.CHECK, disabled=busy or self.app.busy()),
+                           t.secondary("Back to editing", lambda e: self._drop_closest(), ft.Icons.EDIT, disabled=busy),
+                           t.label(self.wish.label())], spacing=12, wrap=True)
         return ft.Row([t.primary("Build and offer it", self._build, ft.Icons.AUTO_FIX_HIGH, disabled=busy or self.app.busy()),
                        t.secondary("Build and save in Bank", lambda e: self._build(e, offer=False),
                                    ft.Icons.INVENTORY_2_OUTLINED, disabled=busy),
@@ -405,19 +413,17 @@ class BuilderPanel(View):
 
         def work() -> None:
             try:
-                self.result = builder.build(wish, trainer)
-                self.saved = builder.keep(self.result, bank.Bank(self.app.settings.bank or None), wish)
-                self.message = ""
-                verdict = "legal" if self.result.legal else "NOT legal"
-                self.building = False
-                if offer:
-                    saved, text = self.saved, f"Built {self.saved.describe()} ({verdict}), kept it in the bank and made it the offer."
-                    self.app.ui(lambda: self.on_built(saved, text))
+                self.result = builder.build(wish, trainer, fix=True)
+                if self.result.changes:
+                    # Nothing legal is exactly what was asked for: show the closest and let the player choose.
+                    self.closest, self.closest_offer = self.result, offer
+                    self.message = ("PKHeX cannot build exactly that, so here is the closest legal one. "
+                                    + " ".join(self.result.changes) + self._fixes_text(self.result))
+                    self.message_color = t.WARN
+                    self.building = False
+                    self.app.ui(self.refresh)
                     return
-                # Saved only: the builder stays open for the next one; the Bank page has it to offer later.
-                self.message = f"Built {self.saved.describe()} ({verdict}) and saved it in the bank."
-                self.message_color = t.GOOD if self.result.legal else t.WARN
-                self.app.ui(self.refresh)
+                self._keep(self.result, offer)
                 return
             except ValueError as exc:              # PKHeX found nothing legal with these wishes
                 self.result, self.saved = None, None
@@ -430,10 +436,48 @@ class BuilderPanel(View):
 
         threading.Thread(target=work, daemon=True, name="pkhex-build").start()
 
+    @staticmethod
+    def _fixes_text(built) -> str:
+        return (" PKHeX also: " + " ".join(built.fixes)) if built.fixes else ""
+
+    def _keep(self, built, offer: bool) -> None:
+        """Keep a build in the bank; ``offer`` also hands it to the Trade page. Runs on the build's thread."""
+        self.saved = builder.keep(built, bank.Bank(self.app.settings.bank or None), self.wish)
+        self.message = ""
+        verdict = "legal" if built.legal else "NOT legal"
+        self.building = False
+        fixes = self._fixes_text(built)
+        if offer:
+            saved, text = self.saved, f"Built {self.saved.describe()} ({verdict}), kept it in the bank and made it the offer.{fixes}"
+            self.app.ui(lambda: self.on_built(saved, text))
+            return
+        # Saved only: the builder stays open for the next one; the Bank page has it to offer later.
+        self.message = f"Built {self.saved.describe()} ({verdict}) and saved it in the bank.{fixes}"
+        self.message_color = t.GOOD if built.legal else t.WARN
+        self.app.ui(self.refresh)
+
+    def _keep_closest(self) -> None:
+        """Keep the closest build: the fields take what it has (level, moves, ball...), and it goes as the build did."""
+        built, offer = self.closest, self.closest_offer
+        if built is None:
+            return
+        builder.take_changes(self.wish, built)
+        self.closest = None
+        try:
+            self._keep(built, offer)
+        except (OSError, ValueError) as exc:
+            self.message, self.message_color = f"Could not keep it: {exc}", t.BAD
+            self.refresh()
+
+    def _drop_closest(self) -> None:
+        self.closest, self.result, self.message = None, None, ""
+        self.refresh()
+
     # -- inputs ---------------------------------------------------------------------------------
 
     def _changed(self) -> None:
         self.message = ""
+        self.closest = None                 # a field changed: the closest build was for the old wishes
         self.refresh()
 
     def _apply_game(self, game: str) -> None:

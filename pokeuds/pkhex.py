@@ -26,7 +26,7 @@ import subprocess
 import sys
 import tempfile
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from .util import NO_WINDOW
@@ -194,6 +194,8 @@ class Built:
     extension: str
     data: bytes
     summary: dict
+    fixes: list = field(default_factory=list)      # what the build added that nothing asked for (a trade...)
+    changes: list = field(default_factory=list)    # what differs from the request: a closest build (fix=True)
 
 
 @dataclass
@@ -291,7 +293,8 @@ class Helper:
     @staticmethod
     def _built(reply: dict) -> Built:
         return Built(reply["legal"], reply["report"], reply.get("encounter") or "", reply["extension"],
-                     base64.b64decode(reply["data"]), reply["summary"])
+                     base64.b64decode(reply["data"]), reply["summary"], [str(f) for f in reply.get("fixes") or []],
+                     [str(c) for c in reply.get("changes") or []])
 
     def close(self) -> None:
         if self.proc.poll() is None:

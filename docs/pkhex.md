@@ -61,7 +61,7 @@ One JSON object per line each way. Every reply has `ok`; a refused request has `
 | `{"cmd":"ping"}` | `{"ok":true,"pkhex":"26.10.18.0"}` |
 | `{"cmd":"lists","game":"xy"}` | the game's `species`, `moves`, `items`, `balls`, `natures`, `languages` as `[value, name]` lists |
 | `{"cmd":"paste","game":"xy","text":"..."}` | `sets`: each Showdown or Smogon set in the text as the wishes `build` takes for this game, with `errors` and `notes` (Import paste, below) |
-| `{"cmd":"build","game":"xy","species":25, ...wishes}` | a built record (below) |
+| `{"cmd":"build","game":"xy","species":25, ...wishes}` | a built record (below), with `fixes`; `"fix": true` returns the closest legal one when none fits, with `changes` |
 | `{"cmd":"check","game":"xy","data":"<base64>"}` | the same, for a record you have |
 | `{"cmd":"gifts","game":"oras"}` | the official Mystery Gift cards PKHeX.Core embeds for the game (Gen 6/7; `"all":true` for every card with its bytes) |
 | `{"cmd":"gift","game":"oras","key":"0547-384-0"}` or `"data":"<base64>"` | a card (official, or a `.wc6`/`.wc7`/full file) and the Pokemon it gives the trainer |
@@ -98,14 +98,50 @@ Gen 7: nothing official reaches Gen 6 from the Game Boy.
 ## How a build works
 
 1. PKHeX's encounter generator lists the species' encounters in the chosen games (wild slots, then
-   static encounters, in-game trades, eggs, and event gifts last), each at or below the asked level.
+   static encounters, in-game trades, eggs, and event gifts last), each at or below the asked level. PKHeX
+   lists an evolved species' own encounters before its pre-evolutions', so every encounter that is not an
+   event goes first, whatever species it is of (a wild Machop before a Machamp event).
 2. Each encounter is turned into a record with the wishes as criteria (`EncounterCriteria`): shiny,
    nature, gender, ability. An evolved species keeps its pre-evolution's encounter and is evolved.
 3. The level, moves (or, with none asked, the moves it would know at that level), item, ball and nickname
-   are applied, and PKHeX's `LegalityAnalysis` checks the result.
+   are applied, the record is repaired (below), and PKHeX's `LegalityAnalysis` checks the result.
 4. The first record that is legal and still has every wish is returned. None: the request is refused
-   with PKHeX's reason, or "the encounter could not meet every request". (A species the game does not
-   have, Rowlet in X/Y, is refused by PokeUDS before PKHeX is asked.)
+   with PKHeX's reason, or "the encounter could not meet every request", unless the closest build is asked
+   for (below). (A species the game does not have, Rowlet in X/Y, is refused by PokeUDS before PKHeX is asked.)
+
+## Fixing a build
+
+`services/pkhex/Fix.cs`. PKHeX's legality check decides everything; the fixer only looks for a record it passes.
+Auto-Legality Mod's idea, with what PKHeX's checks report as an encounter mismatch handled too.
+
+**Repairs** change nothing that was asked for. Each is kept only when it clears the check it is for, and the build
+lists them (`fixes`; the builder adds them to its message after "PKHeX also:"):
+
+| PKHeX reports | the repair |
+|---|---|
+| evolution not valid, for a species that evolves only by trade (Aromatisse, Gengar, Machamp) | traded once to a partner and back: the handling trainer is set and the Pokemon is the player's again (Gen 6/7 record the trade; Gen 1/2 do not) |
+| evolution not valid, or "Unable to match an encounter" for a Pokemon evolved from its encounter, with no level asked | the lowest level it can have evolved by (found by halving), with the trade too when it needs both (Machamp: Machoke's Lv 28, then a trade) |
+| an invalid move or relearn move (Gen 6/7) | the relearnable moves its encounter teaches (PKHeX's `MoveSetApplicator`): egg and event moves live there, so a Pikachu with Volt Tackle gets it as an egg move |
+| memories (Gen 6/7) | the memories PKHeX's `FixMemories` gives its history |
+| EVs at the level it was met, with no level asked | one level more: it has battled |
+| ball, with no ball asked | a ball the encounter allows |
+
+**The closest build** (`"fix": true`; the builder always asks for it, `pokeuds build --fix` on the command line) is
+for a request no legal Pokemon meets:
+
+1. Moves no encounter in the game can teach are left out (each alone, then the fewest more so the rest go
+   together); a move PKHeX still finds invalid on the closest attempt is left out after that.
+2. The wishes least likely to matter are set free one at a time, in this order, until something builds: ball,
+   level, IVs, ability, gender, nature, held item, shininess, EVs.
+3. Each freed wish is asked for again and kept when it still builds. IVs go back one stat at a time, so an
+   encounter that fixes three at 31 (most legendaries) keeps the other three as asked.
+4. Everything that differs from the request is listed (`changes`), one line each: "Left out Spore: no legal Charizard
+   in X/Y knows it with the rest", "Level 1 became 36", "It is not shiny: no legal one can be", "IVs changed (SpA
+   0->31, ...)".
+
+The builder keeps nothing on its own when there are changes: it shows them, with **Keep this one** (which also
+fills its fields from what was built: level, moves, ball, nature, IVs) and **Back to editing**. A build with
+repairs only is kept as usual. An imported paste goes through the same builder, so a paste gets both.
 
 ## Build one (the Trade page) and `pokeuds build`
 
