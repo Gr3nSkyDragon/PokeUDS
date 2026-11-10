@@ -264,3 +264,33 @@ def test_the_closest_build_says_what_changed(helper):
     zygarde = helper.build("xy", 718, level=70, shiny=True, trainer=trainer, fix=True)
     assert zygarde.legal and not zygarde.summary["shiny"] and zygarde.changes == ["It is not shiny: no legal one can be."]
     assert zygarde.summary["move_ids"][0] and zygarde.summary["ball_id"] == 4
+
+
+def test_a_build_in_another_language(helper, tmp_path):
+    """The builder's language: PKHeX names the species in it, a Japanese Gen 2 record is the 63-byte Japanese file,
+    and the bank keeps a Korean one's language (its size does not tell)."""
+    from pokeuds import gbpk
+    from pokeuds.app import bank, builder
+
+    b = bank.Bank(tmp_path / "bank")
+    jp = builder.build(builder.Wish(game="gsc", species=25, level=20, language="jp"), builder.Trainer("サトシ"), helper)
+    assert jp.legal and len(jp.data) == gbpk.PK2_SIZE_JP and jp.summary["nickname"] == "ピカチュウ"
+    kept = builder.keep(jp, b, builder.Wish(game="gsc", language="jp"))
+    assert kept.meta["language"] == "jp" and kept.nickname == "ピカチュウ" and kept.ot == "サトシ"
+    kr = builder.build(builder.Wish(game="gsc", species=25, level=20, language="kr"), builder.Trainer("골드"), helper)
+    entry = builder.keep(kr, b, builder.Wish(game="gsc", language="kr"))
+    assert kr.legal and entry.meta["language"] == "kr" and entry.nickname == "피카츄" and entry.ot == "골드"
+    fr = builder.build(builder.Wish(game="sm", species=25, level=20, language="fr"), builder.Trainer("SACHA"), helper)
+    assert fr.legal and fr.summary["nickname"] == "Pikachu" and plain(fr.data)[0xE3] == 3
+    zh = builder.build(builder.Wish(game="usum", species=25, level=20, language="zh-hans"), builder.Trainer("小智"), helper)
+    assert zh.legal and zh.summary["nickname"] == "皮卡丘"
+
+
+@pytest.mark.parametrize("game,species,from_species", [("xy", 478, "Snorunt"), ("sm", 758, "Salandit"),
+                                                       ("oras", 292, "Nincada")])
+def test_gender_locked_evolutions_come_from_their_pre_evolution(helper, game, species, from_species):
+    """Froslass and Salazzle come only from a female, Shedinja is genderless from a gendered Nincada: each is built
+    from its wild pre-evolution, not refused or made an event."""
+    built = helper.build(game, species, level=50, trainer={"ot": "ASH", "tid": 1234, "sid": 4321})
+    assert built.legal and from_species in built.encounter and "Wild" in built.encounter
+    assert built.summary["gender"] == ("none" if species == 292 else "female")

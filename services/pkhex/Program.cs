@@ -427,6 +427,11 @@ static partial class Program
         var blank = game.Blank();
         blank.Species = species;
         blank.Form = (byte)((int?)request["form"] ?? 0);
+        // The encounter generator follows the blank's gender down the evolution chain: a female-only species
+        // (Froslass, Salazzle) has only a female pre-evolution to come from, and the blank's default is male.
+        var personal = blank.PersonalInfo;
+        blank.Gender = personal.Genderless ? (byte)2 : personal.OnlyFemale ? (byte)1 : personal.OnlyMale ? (byte)0
+                     : (string?)request["gender"] == "female" ? (byte)1 : (byte)0;
         var outcome = new Outcome();
         // PKHeX lists an evolved species' own encounters before its pre-evolutions' (a Machamp event before a wild
         // Machop): every encounter that is not a Mystery Gift goes first, whatever species it is of.
@@ -453,6 +458,9 @@ static partial class Program
                     // the slot the encounter rolled, not the pre-evolution's ability.
                     if (pk.Format >= 3)
                         pk.RefreshAbility(pk.AbilityNumber >> 1);
+                    // A genderless evolution of a gendered Pokemon (Shedinja from Nincada) has no gender.
+                    if (pk.Format >= 3 && pk.PersonalInfo.Genderless)
+                        pk.Gender = 2;
                     if (!nicknamed)
                         pk.ClearNickname();
                 }
