@@ -22,6 +22,18 @@ The byte layer and the room sequence come from pret (pokered ``engine/link/cable
 Block alignment is measured (mgba_LDN ``wiki/vc_link.md``): for a block whose first preamble
 ``$FD`` the 3DS sends at index T, it stores our units from T-1. Our unit T-1 is a padding ``$FD``
 and our block's remaining bytes go out from T on, so the 3DS sees a normal preamble.
+
+Languages (``Layout``; pokeuds.vc.gbtext; from Lorenzooone's PokemonGB_Online_Trades, MIT): the structs and patch
+lists are the same everywhere; only the names and the mail differ.
+
+| family | names | party block Gen 1 / Gen 2 | mail body |
+|---|---|---|---|
+| international | 11 bytes | 424 / 450 | ``$20`` run; six 33-byte messages, six 14-byte authors, the authors' patch list (103): 385 |
+| Japanese | 6 bytes | 359 / 385 | ``$20`` run; six (33-byte message, 9-byte author), one patch list over all of it (33): 285 |
+| Korean | 11 bytes | - / 450 | ``$52`` run; six 65-byte messages, six 14-byte authors, the authors' patch list (103): 577 |
+
+Only the international layout has been seen on the air from a 3DS; the Japanese and Korean ones are those the
+cartridges use, as Lorenzooone's project trades with them, and unmeasured on the Virtual Console.
 """
 
 from __future__ import annotations
@@ -64,6 +76,39 @@ class LinkMode:
         return 424 if self.generation == 1 else 450
 
 
+@dataclass(frozen=True)
+class Layout:
+    """How a language family lays out its blocks (the table above)."""
+    family: str
+    name: int                  # a name field
+    mail_preamble: int
+    mail_message: int          # one mail's message
+    mail_author: int           # one mail's author record
+    interleaved: bool          # Japanese: each message followed by its author, one patch list over both
+
+    def party_block(self, generation: int) -> int:
+        structs = gbpk.GEN1_STRUCT * 6 if generation == 1 else 2 + gbpk.GEN2_STRUCT * 6     # Gen 2: the trainer id too
+        return 6 + self.name + 1 + 7 + structs + self.name * 12 + 3
+
+    @property
+    def mail(self) -> int:
+        """One slot's mail as the bank keeps it: message then author."""
+        return self.mail_message + self.mail_author
+
+    @property
+    def mail_patch(self) -> int:
+        return 33 if self.interleaved else (self.mail_author + 3) * 6 + 1
+
+    @property
+    def mail_body(self) -> int:
+        return self.mail * 6 + self.mail_patch
+
+
+LAYOUTS = {"intl": Layout("intl", 11, MAIL_PREAMBLE, MAIL_MSG, MAIL_META, False),
+           "jp": Layout("jp", 6, MAIL_PREAMBLE, MAIL_MSG, 9, True),
+           "kr": Layout("kr", 11, 0x52, 0x41, MAIL_META, False)}
+
+
 GEN1 = LinkMode("gen1", 1, 0xD4, 0x60, False)
 GEN2 = LinkMode("gen2", 2, 0xD1, 0x70, True)
 TIME_CAPSULE = LinkMode("timecapsule", 1, 0xD4, 0x60, False)
@@ -101,35 +146,48 @@ class Party:
     mail: list[bytes] = field(default_factory=list)      # Gen 2: one 47-byte mail per slot (message + metadata)
 
 
-def party_blocks(party: Party, generation: int) -> tuple[bytes, bytes]:
-    """The party block and its patch lists, as ``Link_PrepPartyData_*`` + ``FixDataForLinkTransfer``."""
+def party_blocks(party: Party, generation: int, family: str = "intl") -> tuple[bytes, bytes]:
+    """The party block and its patch lists, as ``Link_PrepPartyData_*`` + ``FixDataForLinkTransfer``, with the
+    names of ``family``'s length."""
+    layout = LAYOUTS[family]
     struct_len = gbpk.GEN1_STRUCT if generation == 1 else gbpk.GEN2_STRUCT
+    if any(m.family != family for m in party.mons) or len(party.trainer_name) != layout.name:
+        raise ValueError(f"a {family} party block holds {family} names")
     count = len(party.mons)
     species = bytes(m.data[0] for m in party.mons) + bytes([0xFF])
     species = species.ljust(7, b"\x00")
     structs = b"".join(m.data for m in party.mons).ljust(struct_len * 6, b"\x00")
-    names = lambda pick: b"".join(pick(m) for m in party.mons).ljust(gbpk.NAME_LENGTH * 6, b"\x00")
+    names = lambda pick: b"".join(pick(m) for m in party.mons).ljust(layout.name * 6, b"\x00")
     region = bytearray((struct.pack(">H", party.trainer_id) if generation == 2 else b"") + structs)
     patch = _patch(region)
     block = (bytes([PREAMBLE] * 6) + party.trainer_name + bytes([count]) + species + bytes(region)
              + names(lambda m: m.ot_name) + names(lambda m: m.nickname) + bytes(3))
-    assert len(block) == (424 if generation == 1 else 450)
+    assert len(block) == layout.party_block(generation), (len(block), layout.party_block(generation))
     return block, patch
 
 
-def mail_block(party: Party) -> bytes:
-    """The Gen 2 Trade Center's mail block (``Link_PrepPartyData_Gen2``, Trade Center part)."""
-    mails = [(party.mail[i] if i < len(party.mail) else b"").ljust(MAIL_MSG + MAIL_META, b"\x00") for i in range(6)]
-    messages = bytes(MAIL_REPLACEMENT if b == NO_DATA else b for m in mails for b in m[:MAIL_MSG])
-    metadata = bytearray(b"".join(m[MAIL_MSG:] for m in mails))
+def mail_block(party: Party, family: str = "intl") -> bytes:
+    """The Gen 2 Trade Center's mail block (``Link_PrepPartyData_Gen2``, Trade Center part), as ``family``'s games
+    send it: international and Korean patch the authors and write ``$21`` for a ``$FE`` in a message; Japanese
+    puts each author after its message and patches the whole of it (Lorenzooone's ``GSCJPMailConverter``)."""
+    layout = LAYOUTS[family]
+    mails = [bytes(party.mail[i] if i < len(party.mail) else b"")[:layout.mail].ljust(layout.mail, b"\x00")
+             for i in range(6)]
+    if layout.interleaved:
+        region = bytearray(b"".join(mails))
+        part = region
+    else:
+        messages = bytes(MAIL_REPLACEMENT if b == NO_DATA else b for m in mails for b in m[:layout.mail_message])
+        part = bytearray(b"".join(m[layout.mail_message:] for m in mails))
     patches = []
-    for i, b in enumerate(metadata):
+    for i, b in enumerate(part):
         if b == NO_DATA:
-            metadata[i] = PATCH_END
+            part[i] = PATCH_END
             patches.append(i + 1)
-    patch_set = bytes(patches + [PATCH_END]).ljust((MAIL_META + 3) * 6 + 1, b"\x00")
-    out = bytes([MAIL_PREAMBLE] * 5) + messages + bytes(metadata) + patch_set
-    assert len(out) == 5 + MAIL_BODY
+    patch_set = bytes(patches + [PATCH_END]).ljust(layout.mail_patch, b"\x00")[:layout.mail_patch]
+    body = bytes(part) if layout.interleaved else messages + bytes(part)
+    out = bytes([layout.mail_preamble] * 5) + body + patch_set
+    assert len(out) == 5 + layout.mail_body
     return out
 
 
@@ -149,13 +207,14 @@ def _copy_skipping_no_data(data: list[int], start: int, count: int) -> list[int]
     return out + [0] * (count - len(out))
 
 
-def parse_party(window: list[int], patch_window: list[int], generation: int) -> Party:
+def parse_party(window: list[int], patch_window: list[int], generation: int, family: str = "intl") -> Party:
     """The partner's party from its stored block and patch lists, as the receiving ROM unpacks them."""
+    n = LAYOUTS[family].name
     struct_len = gbpk.GEN1_STRUCT if generation == 1 else gbpk.GEN2_STRUCT
     id_len = 2 if generation == 2 else 0
-    total = gbpk.NAME_LENGTH + 1 + 7 + id_len + struct_len * 6 + gbpk.NAME_LENGTH * 12
+    total = n + 1 + 7 + id_len + struct_len * 6 + n * 12
     data = _copy_skipping_no_data(window, _skip_control(window), total)
-    region_start = gbpk.NAME_LENGTH + 1 + 7
+    region_start = n + 1 + 7
     region = data[region_start:region_start + id_len + struct_len * 6]
     pos, base = _skip_control(patch_window), 0
     parts = 0
@@ -170,30 +229,42 @@ def parse_party(window: list[int], patch_window: list[int], generation: int) -> 
             continue
         if 0 <= base + b - 1 < len(region):
             region[base + b - 1] = NO_DATA
-    name = bytes(data[:gbpk.NAME_LENGTH])
-    count = data[gbpk.NAME_LENGTH]
+    name = bytes(data[:n])
+    count = data[n]
     trainer_id = struct.unpack(">H", bytes(region[:2]))[0] if generation == 2 else 0
     structs = region[id_len:]
     names_at = region_start + id_len + struct_len * 6
     mons = []
     for i in range(min(count, 6)):
-        ot = bytes(data[names_at + 11 * i:names_at + 11 * (i + 1)])
-        nick = bytes(data[names_at + 66 + 11 * i:names_at + 66 + 11 * (i + 1)])
-        mons.append(gbpk.Record(generation, bytes(structs[struct_len * i:struct_len * (i + 1)]), ot, nick))
+        ot = bytes(data[names_at + n * i:names_at + n * (i + 1)])
+        nick = bytes(data[names_at + 6 * n + n * i:names_at + 6 * n + n * (i + 1)])
+        mons.append(gbpk.Record(generation, bytes(structs[struct_len * i:struct_len * (i + 1)]), ot, nick, family))
     return Party(name, trainer_id, mons)
 
 
-def parse_mail(body: list[int]) -> list[bytes]:
-    """Six 47-byte mails from the body that follows the partner's $20 run (pokecrystal ``.skip_mail``)."""
-    data = list(body[:MAIL_BODY]) + [0] * (MAIL_BODY - len(body))
-    messages = [NO_DATA if b == MAIL_REPLACEMENT else b for b in data[:MAIL_MSG * 6]]
-    metadata = data[MAIL_MSG * 6:MAIL_MSG * 6 + MAIL_META * 6]
-    for b in data[MAIL_MSG * 6 + MAIL_META * 6:]:
+def parse_mail(body: list[int], family: str = "intl") -> list[bytes]:
+    """Six mails (message then author, ``Layout.mail`` bytes each) from the body that follows the partner's mail
+    run (pokecrystal ``.skip_mail``)."""
+    layout = LAYOUTS[family]
+    size = layout.mail_body
+    data = list(body[:size]) + [0] * (size - len(body))
+    if layout.interleaved:
+        region = data[:layout.mail * 6]
+        for b in data[layout.mail * 6:]:
+            if b == PATCH_END:
+                break
+            if 0 < b <= len(region):
+                region[b - 1] = NO_DATA
+        return [bytes(region[layout.mail * i:layout.mail * (i + 1)]) for i in range(6)]
+    msg, meta = layout.mail_message, layout.mail_author
+    messages = [NO_DATA if b == MAIL_REPLACEMENT else b for b in data[:msg * 6]]
+    metadata = data[msg * 6:msg * 6 + meta * 6]
+    for b in data[msg * 6 + meta * 6:]:
         if b == PATCH_END:
             break
         if 0 < b <= len(metadata):
             metadata[b - 1] = NO_DATA
-    return [bytes(messages[MAIL_MSG * i:MAIL_MSG * (i + 1)] + metadata[MAIL_META * i:MAIL_META * (i + 1)]) for i in range(6)]
+    return [bytes(messages[msg * i:msg * (i + 1)] + metadata[meta * i:meta * (i + 1)]) for i in range(6)]
 
 
 # -- the engine -----------------------------------------------------------------------------------
@@ -232,10 +303,14 @@ class TradeEngine:
     queued Pokemon) above the queue offers the first slot again, for tests."""
 
     def __init__(self, mode: LinkMode, party: Party, *, trades: int | None = None,
-                 on_trade: Callable[[Trade], None] | None = None, rng=os.urandom) -> None:
+                 on_trade: Callable[[Trade], None] | None = None, rng=os.urandom, family: str = "intl") -> None:
         if not party.mons or any(m.generation != mode.generation for m in party.mons):
             raise ValueError(f"a {mode.key} trade sends Generation {mode.generation} records")
+        if family == "kr" and mode.generation == 1:
+            raise ValueError("Korean Gold and Silver trade in the Trade Center only: there is no Korean Gen 1 game")
         self.mode = mode
+        self.family = family
+        self.layout = LAYOUTS[family]
         self.party = party
         self.trades_left = len(party.mons) if trades is None else trades
         self._pending = list(party.mons)          # the queue not traded yet, in order
@@ -312,14 +387,14 @@ class TradeEngine:
     def _new_round(self) -> None:
         names = ["rn", "party", "patch"] + (["mail"] if self.mode.mail else [])
         self._blocks = deque(names)
-        self._party_block, self._patch_block = party_blocks(self.party, self.mode.generation)
+        self._party_block, self._patch_block = party_blocks(self.party, self.mode.generation, self.family)
         self._note(f"round: exchanging {', '.join(names)}")
 
     def _block_bytes(self, name: str) -> tuple[bytes, int]:
         if name == "rn":
             return rn_block(self.rng), 17
         if name == "party":
-            return self._party_block, self.mode.party_block
+            return self._party_block, self.layout.party_block(self.mode.generation)
         return self._patch_block, 200
 
     def _start_block(self, b: int) -> int:
@@ -337,15 +412,16 @@ class TradeEngine:
             self._finish_block()
         if reply is not None:
             return reply
-        return PREAMBLE if self.state is State.WAIT_BLOCK else (MAIL_PREAMBLE if self.state is State.MAIL_WAIT else NO_DATA)
+        return PREAMBLE if self.state is State.WAIT_BLOCK else (self.layout.mail_preamble if self.state is State.MAIL_WAIT
+                                                                else NO_DATA)
 
     def _finish_block(self) -> None:
         if self._block == "party":
             self._party_window = self._window
         elif self._block == "patch":
             self._patch_window = self._window
-            self.partner = parse_party(self._party_window, self._patch_window, self.mode.generation)
-            self._note(f"partner {gbpk.decode_name(self.partner.trainer_name)}: "
+            self.partner = parse_party(self._party_window, self._patch_window, self.mode.generation, self.family)
+            self._note(f"partner {gbpk.decode_name(self.partner.trainer_name, self.family)}: "
                        + ", ".join(m.describe() for m in self.partner.mons))
         nxt = self._blocks[0] if self._blocks else None
         if nxt == "mail":
@@ -357,20 +433,21 @@ class TradeEngine:
             self._enter_select()
 
     def _mail(self, b: int) -> int:
+        run = self.layout.mail_preamble
         if self.state is State.MAIL_WAIT:
-            if b == MAIL_PREAMBLE:
+            if b == run:
                 self.state = State.MAIL_RUN       # Units before the 3DS's $20 run are patch-list leftovers.
-            return MAIL_PREAMBLE
+            return run
         if self.state is State.MAIL_RUN:
-            if b in (MAIL_PREAMBLE, NO_DATA):
-                return MAIL_PREAMBLE
+            if b in (run, NO_DATA):
+                return run
             self.state = State.MAIL_BODY
-            self._out = deque(mail_block(self.party)[5:])
+            self._out = deque(mail_block(self.party, self.family)[5:])
             self._mail_body = []
         self._mail_body.append(b)
         reply = self._out.popleft() if self._out else 0
-        if len(self._mail_body) >= MAIL_BODY:
-            self.partner_mail = parse_mail(self._mail_body)
+        if len(self._mail_body) >= self.layout.mail_body:
+            self.partner_mail = parse_mail(self._mail_body, self.family)
             self._enter_select()
         return reply
 
@@ -457,7 +534,7 @@ class TradeEngine:
             mail = None
         slot = self._our_pick if self._our_pick < len(self.party.mons) else 0
         sent = self.party.mons[slot]
-        trade = Trade(sent, received, mail, gbpk.decode_name(self.partner.trainer_name))
+        trade = Trade(sent, received, mail, gbpk.decode_name(self.partner.trainer_name, self.family))
         self.trades.append(trade)
         self.trades_left -= 1
         if self._pending and sent is self._pending[0]:

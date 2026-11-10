@@ -1,8 +1,12 @@
 """The builder, on the Trade page ("Build one"): a legal Pokemon made by PKHeX for someone with no file to send.
 
 It builds for the game the Trade page has chosen. Pick the species and the level, add any wishes, and
-Build: the PKHeX helper walks the species' encounters and returns the first record its legality check
-accepts with every wish (docs/pkhex.md). The result goes into the bank and becomes the trade's offer.
+Build: PKHeX walks the species' encounters and returns the first record its legality check accepts with
+every wish (docs/pkhex.md). The result goes into the bank and becomes the trade's offer.
+
+Import paste (its own button beside Build one, ``paste_control``) reads a Showdown or Smogon set, or a whole
+team, with PKHeX's own parser; Use this one fills the fields from the set picked and opens the builder. What the
+game lacks is listed. Build and offer it queues the result for the trade; Build and save in Bank only keeps it.
 """
 
 from __future__ import annotations
@@ -13,9 +17,10 @@ from typing import Callable
 import flet as ft
 
 from pokeuds.app import bank, builder
-from pokeuds.app.builder import ABILITIES, GAMES, GENDERS, Trainer, Wish
+from pokeuds.app.builder import ABILITIES, GAMES, GENDERS, HIDDEN_POWER, STATS, Pasted, Trainer, Wish
 
 from .. import theme as t
+from ..translate import translate
 from .common import View
 from .picker import name_field
 from .sprite import sprite
@@ -40,9 +45,12 @@ class BuilderPanel(View):
 
     key = "builder"
 
-    def __init__(self, app, game: str, on_built: Callable[[bank.Entry, str], None]) -> None:
+    def __init__(self, app, game: str, on_built: Callable[[bank.Entry, str], None],
+                 on_pasted: Callable[[], None] | None = None) -> None:
         super().__init__(app)
         self.on_built = on_built
+        self.on_pasted = on_pasted          # a pasted set filled the fields: the Trade page opens the builder
+        self.paste_root = ft.Container()    # Import paste is drawn apart from the builder (paste_control)
         self.wish = Wish(game=game if game in GAMES else "xy", species=25, level=30)
         self.lists: dict[str, dict] = {}
         self.loading = ""
@@ -51,6 +59,12 @@ class BuilderPanel(View):
         self.result = None                  # pkhex.Built
         self.saved: bank.Entry | None = None
         self.message, self.message_color = "", t.INFO
+        # Import paste: its text, a read in progress, and the sets read from it.
+        self.paste_text = ""
+        self.reading = False
+        self.pasted: list[Pasted] | None = None
+        self.form_name = ""                 # the form a pasted set chose, shown beside the species
+        self.stats_open = False             # the IVs and EVs section (opened by a paste that brings them)
 
     @property
     def trainer(self) -> Trainer:
@@ -71,7 +85,7 @@ class BuilderPanel(View):
         name = GAMES[self.wish.game][0]
         head = [t.heading(f"Build a Pokemon for {name}"),
                 t.label("No file to send? PKHeX builds a legal one from an encounter in this game and checks it. "
-                        "It goes into the bank and becomes the offer.")]
+                        "It goes into the bank; Build and offer it also queues it for this trade.")]
         if not _helper_ready():
             return self._no_helper(head)
         lists = self.lists.get(self.wish.game)
@@ -82,6 +96,99 @@ class BuilderPanel(View):
         rows = head + ([t.notice(self.message, self.message_color)] if self.message else [])
         rows += self._pokemon(lists) + [ft.Divider(color=t.LINE)] + self._trainer() + [self._build_row()]
         return t.card(*rows, spacing=12)
+
+    def refresh(self) -> None:
+        super().refresh()
+        self.paste_root.content = translate(self._paste_card())
+        try:
+            self.paste_root.page                 # raises when the paste is not on the page (Flet 1.0)
+        except RuntimeError:
+            return
+        self.paste_root.update()
+
+    # -- import paste ---------------------------------------------------------------------------
+
+    def paste_control(self) -> ft.Container:
+        """Import paste, for the Trade page to show under its own button."""
+        self.paste_root.content = translate(self._paste_card())
+        return self.paste_root
+
+    def _paste_card(self) -> ft.Control:
+        name = GAMES[self.wish.game][0]
+        head: list[ft.Control] = [t.heading(f"Import a paste for {name}")]
+        if not _helper_ready():
+            return self._no_helper(head)
+        busy = self.building or self.reading
+        rows: list[ft.Control] = head + [
+            t.label("Paste a Showdown or Smogon set, or a whole team, in any language PKHeX reads. Each set it finds "
+                    "is listed; Use this one opens the builder filled with it, to check and build."),
+            *([t.notice(self.message, self.message_color)] if self.message and self.pasted is None else []),
+            ft.TextField(value=self.paste_text, multiline=True, min_lines=6, max_lines=14, dense=True, disabled=busy,
+                         hint_text="Pikachu @ Light Ball\nAbility: Static\nTimid Nature\n- Thunderbolt",
+                         on_change=self._paste_changed),
+            ft.Row([t.primary("Read it", self._read_paste, ft.Icons.SEARCH, disabled=busy or not self.paste_text.strip()),
+                    ft.ProgressRing(width=18, height=18, visible=self.reading)], spacing=12),
+        ]
+        if self.pasted is not None:
+            if not self.pasted:
+                rows.append(t.notice("PKHeX found no set in the paste.", t.WARN))
+            for i, pasted in enumerate(self.pasted):
+                rows.append(self._pasted_card(i, pasted))
+        return t.card(*rows, spacing=12)
+
+    def _pasted_card(self, index: int, pasted: Pasted) -> ft.Control:
+        lines: list[ft.Control] = [
+            ft.Row([ft.Column([t.label(pasted.title(), color=t.TEXT), t.label(pasted.summary(), size=12)],
+                              spacing=2, expand=True),
+                    t.secondary("Use this one", lambda e, i=index: self._use_paste(i), ft.Icons.CHECK,
+                                disabled=not pasted.usable or self.building)],
+                   spacing=12)]
+        for error in pasted.errors:
+            lines.append(t.label(f"Left out: {error}", color=t.BAD, size=12))
+        for note in pasted.notes:
+            lines.append(t.label(note, size=12))
+        return ft.Container(ft.Column(lines, spacing=4, tight=True), bgcolor=t.RAISED, border_radius=10,
+                            padding=ft.Padding(12, 10, 12, 10))
+
+    def _paste_changed(self, e) -> None:
+        had = bool(self.paste_text.strip())
+        self.paste_text = e.control.value or ""
+        if had != bool(self.paste_text.strip()):
+            self.refresh()                   # Read it turns on or off
+
+    def _read_paste(self, e) -> None:
+        if self.reading or not self.paste_text.strip():
+            return
+        self.reading, self.pasted, self.message = True, None, ""
+        self.refresh()
+        game, text = self.wish.game, self.paste_text
+
+        def work() -> None:
+            try:
+                self.pasted = builder.paste(game, text)
+            except Exception as exc:              # PKHeX refused or failed
+                self.pasted = None
+                self.message, self.message_color = f"PKHeX could not read the paste: {exc}", t.BAD
+            self.reading = False
+            self.app.ui(self.refresh)
+
+        threading.Thread(target=work, daemon=True, name="pkhex-paste").start()
+
+    def _use_paste(self, index: int) -> None:
+        if not self.pasted or not 0 <= index < len(self.pasted) or not self.pasted[index].usable:
+            return
+        pasted = self.pasted[index]
+        self.wish = pasted.apply(self.wish)
+        self.form_name = pasted.form_name
+        self.stats_open = self.stats_open or self.wish.ivs is not None or self.wish.evs is not None
+        self.pasted = None
+        left = f" Left out: {'; '.join(pasted.errors)}" if pasted.errors else ""
+        self.message = f"Filled in {pasted.title()} from the paste: check the fields, then build it.{left}"
+        self.message_color = t.WARN if pasted.errors else t.GOOD
+        if self.on_pasted:
+            self.on_pasted()                 # the Trade page closes the paste and opens the builder
+        else:
+            self.refresh()
 
     def _no_helper(self, head: list[ft.Control]) -> ft.Control:
         from . import pkhex_setup
@@ -98,12 +205,14 @@ class BuilderPanel(View):
     def _pokemon(self, lists: dict) -> list[ft.Control]:
         w, gen = self.wish, builder.generation(self.wish.game)
         busy = self.building
+        form = [t.label(f"Form: {self.form_name}", size=12)] if w.form and self.form_name else []
         names = ft.Column([
             ft.Row([name_field("Species", w.species, lists["species"], self._pick_species, 200, disabled=busy),
                     ft.TextField(label="Level", value=str(w.level), width=100, dense=True, on_blur=self._level,
                                  disabled=busy, keyboard_type=ft.KeyboardType.NUMBER),
                     beside(ft.Switch(label="Shiny", value=w.shiny, on_change=self._shiny, disabled=busy or gen == 1))],
                    spacing=12, vertical_alignment=TOP),
+            *form,
             ft.TextField(label="Nickname", value=w.nickname, width=200, dense=True, disabled=busy,
                          max_length=builder.NAME_LIMITS[gen][0], on_blur=self._nickname),
         ], spacing=8)
@@ -133,12 +242,113 @@ class BuilderPanel(View):
         rows.append(ft.Row([name_field(f"Move {i + 1}", m, lists["moves"], lambda v, i=i: self._pick_move(i, v), 190,
                                        empty="none", disabled=busy)
                             for i, m in enumerate(current)], wrap=True, spacing=12, vertical_alignment=TOP))
+        rows += self._stats(gen, busy)
         return rows
+
+    # -- IVs and EVs ----------------------------------------------------------------------------
+
+    def _stats(self, gen: int, busy: bool) -> list[ft.Control]:
+        w = self.wish
+        set_any = w.ivs is not None or w.evs is not None
+        gb = gen <= 2
+        label = (("Hide the DVs and stat experience" if gb else "Hide the IVs and EVs") if self.stats_open
+                 else ("Set DVs and stat experience" if gb else "Set IVs and EVs"))
+        toggle = t.secondary(label, self._toggle_stats, ft.Icons.TUNE, disabled=busy)
+        if not self.stats_open:
+            set_note = t.label("DVs and stat experience are set." if gb else "IVs and EVs are set.", size=12)
+            return [ft.Row([toggle] + ([set_note] if set_any else []), spacing=12)]
+        ivs, evs = w.ivs or [-1] * 6, w.evs or [0] * 6
+        # Gen 1/2 have one Special (kept in SpA and SpD alike) and work out the HP DV from the other four.
+        shown = (1, 2, 3, 5) if gen <= 2 else range(6)
+        names = {3: "Spc"} if gen <= 2 else {}
+
+        def box(label: str, value, on_blur, width: int = 76) -> ft.TextField:
+            return ft.TextField(label=label, value="" if value is None else str(value), width=width, dense=True,
+                                disabled=busy, hint_text="any" if value is None else None, on_blur=on_blur,
+                                keyboard_type=ft.KeyboardType.NUMBER)
+
+        iv_row: list[ft.Control] = []
+        if gen <= 2:
+            iv_row.append(t.label(f"HP {builder.gb_hp_dv(ivs)}", size=12))
+        iv_row += [box(names.get(i, STATS[i]), None if ivs[i] < 0 else ivs[i], lambda e, i=i: self._set_iv(i, e))
+                   for i in shown]
+        ev_shown = (0, 1, 2, 3, 5) if gen <= 2 else range(6)
+        ev_row: list[ft.Control] = [box(names.get(i, STATS[i]), evs[i], lambda e, i=i: self._set_ev(i, e),
+                                        92 if gen <= 2 else 76) for i in ev_shown]
+        if gen >= 3:
+            ev_row.append(t.label(f"{sum(evs)} / 510", size=12, color=t.BAD if sum(evs) > 510 else t.MUTED))
+        rows: list[ft.Control] = [
+            ft.Row([toggle, t.secondary("Best DVs" if gb else "Best IVs", self._best_ivs, disabled=busy),
+                    t.secondary("Clear them", self._clear_stats, disabled=busy or not set_any)], spacing=12, wrap=True),
+            t.label("DVs (0 to 15; empty: the encounter rolls it)" if gen <= 2
+                    else "IVs (0 to 31; empty: the encounter rolls it)", size=12),
+            ft.Row(iv_row, spacing=8, wrap=True, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+            t.label("Stat experience (0 to 65535; a battle gives some to all five)" if gen <= 2
+                    else "EVs (0 to 252, 510 in all)", size=12),
+            ft.Row(ev_row, spacing=8, wrap=True, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+        ]
+        if gen >= 2:
+            kind = builder.hidden_power(w.ivs, gen)
+            now = (f"Hidden Power: {HIDDEN_POWER[kind]}" if kind is not None
+                   else "Hidden Power: set the Attack and Defense DVs to see its type" if gen == 2
+                   else "Hidden Power: set every IV to see its type")
+            rows.append(ft.Row([self._dd("Hidden Power type", ANY, [(ANY, "Keep the IVs" if gen >= 3 else "Keep the DVs")]
+                                         + [(str(i), n) for i, n in enumerate(HIDDEN_POWER)], self._hidden_power, 220,
+                                         disabled=busy),
+                                t.label(now, size=12)], spacing=12, vertical_alignment=ft.CrossAxisAlignment.CENTER))
+        return rows
+
+    def _toggle_stats(self, e) -> None:
+        self.stats_open = not self.stats_open
+        self.refresh()
+
+    @staticmethod
+    def _number(e) -> int | None:
+        text = (e.control.value or "").strip()
+        return int(text) if text.lstrip("-").isdigit() else None
+
+    def _set_iv(self, index: int, e) -> None:
+        gen = builder.generation(self.wish.game)
+        ivs = list(self.wish.ivs or [-1] * 6)
+        value = self._number(e)
+        ivs[index] = -1 if value is None else value
+        if gen <= 2 and index == 3:
+            ivs[4] = ivs[3]                          # Special is one DV
+        self.wish.ivs = ivs if any(v >= 0 for v in ivs) else None
+        self._changed()
+
+    def _set_ev(self, index: int, e) -> None:
+        gen = builder.generation(self.wish.game)
+        evs = list(self.wish.evs or [0] * 6)
+        evs[index] = self._number(e) or 0
+        if gen <= 2 and index == 3:
+            evs[4] = evs[3]
+        self.wish.evs = evs if any(evs) else None
+        self._changed()
+
+    def _best_ivs(self, e) -> None:
+        best, _ = builder.stat_limits(builder.generation(self.wish.game))
+        self.wish.ivs = [best] * 6
+        self._changed()
+
+    def _clear_stats(self, e) -> None:
+        self.wish.ivs = self.wish.evs = None
+        self._changed()
+
+    def _hidden_power(self, e) -> None:
+        if e.control.value in (None, ANY):
+            return
+        self.wish.ivs = builder.with_hidden_power(self.wish.ivs, int(e.control.value),
+                                                  builder.generation(self.wish.game))
+        self._changed()
 
     def _build_row(self) -> ft.Control:
         busy = self.building
         return ft.Row([t.primary("Build and offer it", self._build, ft.Icons.AUTO_FIX_HIGH, disabled=busy or self.app.busy()),
-                       ft.ProgressRing(width=18, height=18, visible=busy), t.label(self.wish.label())], spacing=12)
+                       t.secondary("Build and save in Bank", lambda e: self._build(e, offer=False),
+                                   ft.Icons.INVENTORY_2_OUTLINED, disabled=busy),
+                       ft.ProgressRing(width=18, height=18, visible=busy), t.label(self.wish.label())],
+                      spacing=12, wrap=True)
 
     def _trainer(self) -> list[ft.Control]:
         tr, gen = self.trainer, builder.generation(self.wish.game)
@@ -183,7 +393,8 @@ class BuilderPanel(View):
 
         threading.Thread(target=work, daemon=True, name="pkhex-lists").start()
 
-    def _build(self, e) -> None:
+    def _build(self, e, offer: bool = True) -> None:
+        """Build and keep it in the bank; ``offer`` also hands it to the Trade page's queue."""
         wish, trainer = self.wish, self.trainer
         if problems := wish.problems():
             self.message, self.message_color = "; ".join(problems).capitalize() + ".", t.BAD
@@ -198,9 +409,15 @@ class BuilderPanel(View):
                 self.saved = builder.keep(self.result, bank.Bank(self.app.settings.bank or None), wish)
                 self.message = ""
                 verdict = "legal" if self.result.legal else "NOT legal"
-                saved, text = self.saved, f"Built {self.saved.describe()} ({verdict}), kept it in the bank and made it the offer."
                 self.building = False
-                self.app.ui(lambda: self.on_built(saved, text))
+                if offer:
+                    saved, text = self.saved, f"Built {self.saved.describe()} ({verdict}), kept it in the bank and made it the offer."
+                    self.app.ui(lambda: self.on_built(saved, text))
+                    return
+                # Saved only: the builder stays open for the next one; the Bank page has it to offer later.
+                self.message = f"Built {self.saved.describe()} ({verdict}) and saved it in the bank."
+                self.message_color = t.GOOD if self.result.legal else t.WARN
+                self.app.ui(self.refresh)
                 return
             except ValueError as exc:              # PKHeX found nothing legal with these wishes
                 self.result, self.saved = None, None
@@ -230,12 +447,16 @@ class BuilderPanel(View):
             self.wish.held_item, self.wish.shiny = None, False
         self.wish.moves = []                 # move and item ids are the game's own lists
         self.wish.held_item = None
+        self.wish.form, self.form_name = 0, ""
+        self.wish.ivs = self.wish.evs = None  # DVs and stat experience against IVs and EVs: not the same ranges
+        self.pasted = None                   # read for the other game: read it again
         self.message = ""
 
     def _pick_species(self, value: int) -> None:
         if value:
             self.wish.species = value
             self.wish.moves = []
+            self.wish.form, self.form_name = 0, ""
             self._changed()
 
     def _pick_item(self, value: int) -> None:
@@ -250,6 +471,7 @@ class BuilderPanel(View):
         if e.control.value and e.control.value.isdigit():
             self.wish.species = int(e.control.value)
             self.wish.moves = []
+            self.wish.form, self.form_name = 0, ""
             self._changed()
 
     def _level(self, e) -> None:

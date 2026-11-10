@@ -2,6 +2,7 @@
 //
 //   {"cmd":"ping"}                                   -> {"ok":true,"pkhex":"26.10.18.0"}
 //   {"cmd":"lists","game":"xy"}                      -> species, moves, items, balls, natures, languages
+//   {"cmd":"paste","game":"xy","text":"..."}         -> each Showdown set in the text as the builder's wishes
 //   {"cmd":"build","game":"xy","species":25,...}     -> a legal record (base64), its summary and report
 //   {"cmd":"check","data":"<base64>","game":"xy"}    -> summary and legality report of a record
 //   {"cmd":"gifts","game":"xy"}                      -> the official Mystery Gift cards PKHeX knows for the game
@@ -73,6 +74,7 @@ static partial class Program
         return cmd switch
         {
             "lists" => Lists(game),
+            "paste" => Paste(game, request),
             "build" => Build(game, request),
             "check" => Check(game, Convert.FromBase64String((string)request["data"]!)),
             "gifts" => GiftList(game, (bool?)request["all"] ?? false),
@@ -116,6 +118,188 @@ static partial class Program
         };
     }
 
+    // -- paste ----------------------------------------------------------------------------------
+
+    // Showdown or Smogon sets (a team export too), read by PKHeX's own parser in any language it knows, each as the
+    // wishes `build` takes for this game. An error is something the set asks for that cannot be had here (a line the
+    // parser cannot read, a species, form, move or item the game lacks, an ability the species cannot have); a note
+    // is something the builder leaves to PKHeX (IVs and EVs, Hidden Power's type) or a generation does not have.
+    static JsonObject Paste(Game game, JsonObject request)
+    {
+        var text = ((string?)request["text"] ?? "").Replace("\r", "");
+        // The parser reads names (Gen 2's items are numbered apart) in the context of the most recent trainer.
+        RecentTrainerCache.SetRecentTrainer(Trainer(game, request));
+        var sav = game.Save();
+        var source = new FilteredGameDataSource(sav, GameInfo.Sources, false);
+        var items = new Dictionary<int, string>();                  // a game's list can name one item twice
+        foreach (var item in source.Items.Where(i => i.Value > 0))
+            items.TryAdd(item.Value, item.Text);
+        var errorText = BattleTemplateParseErrorLocalization.Get("en");
+        var gen = game.Generation;
+        // A set is a run of lines between blank ones; a team export's "=== [gen7] Team ===" line would stop the
+        // parser reading anything, so it goes.
+        var blocks = new List<List<string>> { new() };
+        foreach (var line in text.Split('\n'))
+        {
+            if (line.TrimStart().StartsWith("==="))
+                continue;
+            if (!string.IsNullOrWhiteSpace(line))
+                blocks[^1].Add(line.Trim());
+            else if (blocks[^1].Count > 0)
+                blocks.Add([]);
+        }
+        var sets = new JsonArray();
+        foreach (var block in blocks.Where(b => b.Count > 0))
+        {
+            ShowdownParsing.TryParseAnyLanguage(block, out var set);    // false still gives its best reading
+            set ??= new ShowdownSet(block, BattleTemplateLocalization.Default);
+            var errors = new JsonArray();
+            var notes = new JsonArray();
+            foreach (var invalid in set.InvalidLines)
+                errors.Add(invalid.Humanize(errorText));
+            var species = set.Species;
+            if (species == 0)
+            {
+                if (errors.Count == 0)
+                    continue;                                       // nothing in it at all
+                errors.Insert(0, "The first line names no Pokemon.");
+                sets.Add(new JsonObject { ["usable"] = false, ["errors"] = errors, ["notes"] = notes,
+                                          ["text"] = string.Join("\n", block) });
+                continue;
+            }
+            var speciesName = Name(Strings.Species, species);
+            var reply = new JsonObject { ["species"] = species, ["species_name"] = speciesName,
+                                         ["text"] = string.Join("\n", block) };
+            if (species > sav.MaxSpeciesID)
+            {
+                errors.Add($"{speciesName} is not in this game.");
+                reply["usable"] = false;
+                reply["errors"] = errors;
+                reply["notes"] = notes;
+                sets.Add(reply);
+                continue;
+            }
+            var form = set.Form;
+            if (!sav.Personal.IsPresentInGame(species, form) || (form == 0 && set.FormName.Length > 0
+                    && ShowdownParsing.GetFormFromString(set.FormName, Strings, species, sav.Context) == 0
+                    && !string.Equals(set.FormName, ShowdownParsing.GetStringFromForm(0, Strings, species, sav.Context), StringComparison.OrdinalIgnoreCase)))
+            {
+                errors.Add($"{speciesName}-{set.FormName} is not in this game.");
+                form = 0;
+            }
+            reply["form"] = form;
+            reply["form_name"] = form == 0 ? "" : ShowdownParsing.GetStringFromForm(form, Strings, species, sav.Context);
+            reply["nickname"] = set.Nickname is { Length: > 0 } nick && nick != speciesName ? nick : "";
+            reply["level"] = Math.Clamp((int)set.Level, 1, 100);
+            if (set.Shiny)
+            {
+                if (gen == 1)
+                    notes.Add("Generation 1 has no shiny Pokemon.");
+                else
+                    reply["shiny"] = true;
+            }
+            if (set.Gender is 0 or 1)
+            {
+                if (gen == 1)
+                    notes.Add("Generation 1 has no genders.");
+                else
+                    reply["gender"] = set.Gender == 0 ? "male" : "female";
+            }
+            if ((int)set.Nature < 25)
+            {
+                if (gen < 3)
+                    notes.Add($"Natures start in Generation 3: {set.Nature} is left out.");
+                else
+                {
+                    reply["nature"] = (int)set.Nature;
+                    reply["nature_name"] = Name(Strings.Natures, (int)set.Nature);
+                }
+            }
+            if (set.Ability > 0)
+            {
+                var abilityName = Name(Strings.Ability, set.Ability);
+                if (gen < 3)
+                    notes.Add($"Abilities start in Generation 3: {abilityName} is left out.");
+                else
+                {
+                    var index = sav.Personal.GetFormEntry(species, (byte)form).GetIndexOfAbility(set.Ability);
+                    if (index < 0)
+                        errors.Add($"{speciesName} cannot have {abilityName} in this game.");
+                    else
+                    {
+                        reply["ability"] = index switch { 0 => "1", 1 => "2", _ => "hidden" };
+                        reply["ability_name"] = abilityName;
+                    }
+                }
+            }
+            if (set.HeldItem > 0)
+            {
+                if (gen == 1)
+                    notes.Add("Generation 1 has no held items: the item is left out.");
+                else if (!items.TryGetValue(set.HeldItem, out var itemName))
+                    errors.Add($"{Name(Strings.Item, set.HeldItem)} is not in this game.");
+                else
+                {
+                    reply["held_item"] = set.HeldItem;
+                    reply["held_item_name"] = itemName;
+                }
+            }
+            var moves = new JsonArray();
+            var moveNames = new JsonArray();
+            foreach (var move in set.Moves.Where(m => m != 0))
+            {
+                if (move > sav.MaxMoveID)
+                    errors.Add($"{Name(Strings.Move, move)} is not in this game.");
+                else
+                {
+                    moves.Add((int)move);
+                    moveNames.Add(Name(Strings.Move, move));
+                }
+            }
+            reply["moves"] = moves;
+            reply["move_names"] = moveNames;
+            PasteStats(game, set, reply, notes);
+            reply["usable"] = true;             // what else is wrong can be fixed by hand once it is in the builder
+            reply["errors"] = errors;
+            reply["notes"] = notes;
+            sets.Add(reply);
+        }
+        return new JsonObject { ["ok"] = true, ["sets"] = sets };
+    }
+
+    // A set's IVs and EVs (Showdown's order), as the builder takes them. From Gen 3 on a set without an IVs line means
+    // 31s, as Showdown reads it (and any IVs are legal for nearly every Gen 6/7 encounter). Gen 1/2 sets carry DVs and
+    // stat experience only when they name them (an IVs or EVs line, or Hidden Power): the DVs fix gender and shininess
+    // too. PKHeX's parser already moved the IVs to the Hidden Power type a set names.
+    static void PasteStats(Game game, ShowdownSet set, JsonObject reply, JsonArray notes)
+    {
+        var namedIVs = set.IVs.Any(v => v != 31) || set.HiddenPowerType >= 0;
+        if (set.HiddenPowerType >= 0)
+            reply["hidden_power"] = set.HiddenPowerType;
+        if (game.Generation >= 3)
+        {
+            reply["ivs"] = new JsonArray(set.IVs[0], set.IVs[1], set.IVs[2], set.IVs[4], set.IVs[5], set.IVs[3]);
+            reply["evs"] = new JsonArray(set.EVs[0], set.EVs[1], set.EVs[2], set.EVs[4], set.EVs[5], set.EVs[3]);
+            return;
+        }
+        // PKHeX turns the set into DVs (31 is 15) and stat experience (an EV squared) when it applies it to a record.
+        var pk = game.Blank();
+        pk.Species = set.Species;
+        pk.ApplySetDetails(set);
+        var gb = (GBPKM)pk;
+        if (namedIVs && game.Generation == 2 && set.Shiny)
+            notes.Add("A shiny Gen 2 Pokemon's DVs are fixed: the set's DVs are left out.");
+        else if (namedIVs)
+            reply["ivs"] = new JsonArray(-1, gb.IV_ATK, gb.IV_DEF, gb.IV_SPC, gb.IV_SPC, gb.IV_SPE);
+        // Showdown gives a Gen 1/2 set the most stat experience in every stat it does not name (an EV of 252), and a
+        // battle feeds all five, so none is left at 0.
+        static int Full(int named, int converted) => named > 0 ? converted : 65535;
+        reply["evs"] = new JsonArray(Full(set.EVs[0], gb.EV_HP), Full(set.EVs[1], gb.EV_ATK), Full(set.EVs[2], gb.EV_DEF),
+                                     Full(set.EVs[4], gb.EV_SPC), Full(set.EVs[4], gb.EV_SPC), Full(set.EVs[3], gb.EV_SPE));
+        if (set.HiddenPowerType >= 0 && game.Generation == 1)
+            notes.Add("Generation 1 has no Hidden Power.");
+    }
+
     // -- build ----------------------------------------------------------------------------------
 
     static SimpleTrainerInfo Trainer(Game game, JsonObject request)
@@ -146,7 +330,64 @@ static partial class Program
             } };
         if ((bool?)request["shiny"] == true)
             c = c with { Shiny = Shiny.Always };
+        if (game.Generation >= 3 && Stats(request, "ivs") is { } ivs)
+            c = c with { IV_HP = (sbyte)ivs[0], IV_ATK = (sbyte)ivs[1], IV_DEF = (sbyte)ivs[2],
+                         IV_SPA = (sbyte)ivs[3], IV_SPD = (sbyte)ivs[4], IV_SPE = (sbyte)ivs[5] };
         return c;
+    }
+
+    // IVs and EVs as Showdown orders them (HP, Atk, Def, SpA, SpD, Spe); an IV of -1 is left as the encounter rolled
+    // it. Gen 1/2: DVs 0-15 for Atk, Def, Spe and Special (in SpA; the HP DV comes from the other four), and stat
+    // experience 0-65535 (Special in SpA).
+    static int[]? Stats(JsonObject request, string key)
+    {
+        if (request[key]?.AsArray() is not { } array)
+            return null;
+        if (array.Count != 6)
+            throw new ArgumentException($"{key} takes six numbers: HP, Atk, Def, SpA, SpD, Spe");
+        return array.Select(v => (int)v!).ToArray();
+    }
+
+    static void ApplyStats(Game game, PKM pk, JsonObject request)
+    {
+        var ivs = Stats(request, "ivs");
+        var evs = Stats(request, "evs");
+        if (pk is GBPKM gb)
+        {
+            if (ivs is not null)
+            {
+                if (ivs.Any(v => v > 15))
+                    throw new ArgumentException("a DV is 0 to 15");
+                if (ivs[1] >= 0) gb.IV_ATK = ivs[1];
+                if (ivs[2] >= 0) gb.IV_DEF = ivs[2];
+                if (ivs[5] >= 0) gb.IV_SPE = ivs[5];
+                if (ivs[3] >= 0) gb.IV_SPC = ivs[3];
+            }
+            if (evs is not null)
+            {
+                if (evs.Any(v => v is < 0 or > 65535))
+                    throw new ArgumentException("stat experience is 0 to 65535");
+                (gb.EV_HP, gb.EV_ATK, gb.EV_DEF, gb.EV_SPE, gb.EV_SPC) = (evs[0], evs[1], evs[2], evs[5], evs[3]);
+            }
+            return;
+        }
+        if (ivs is not null)
+        {
+            if (ivs.Any(v => v > 31))
+                throw new ArgumentException("an IV is 0 to 31");
+            if (ivs[0] >= 0) pk.IV_HP = ivs[0];
+            if (ivs[1] >= 0) pk.IV_ATK = ivs[1];
+            if (ivs[2] >= 0) pk.IV_DEF = ivs[2];
+            if (ivs[3] >= 0) pk.IV_SPA = ivs[3];
+            if (ivs[4] >= 0) pk.IV_SPD = ivs[4];
+            if (ivs[5] >= 0) pk.IV_SPE = ivs[5];
+        }
+        if (evs is not null)
+        {
+            if (evs.Any(v => v is < 0 or > 252) || evs.Sum() > 510)
+                throw new ArgumentException("an EV is 0 to 252, and they total at most 510");
+            (pk.EV_HP, pk.EV_ATK, pk.EV_DEF, pk.EV_SPA, pk.EV_SPD, pk.EV_SPE) = (evs[0], evs[1], evs[2], evs[3], evs[4], evs[5]);
+        }
     }
 
     static JsonObject Build(Game game, JsonObject request)
@@ -181,6 +422,10 @@ static partial class Program
                     var nicknamed = pk.IsNicknamed;
                     pk.Species = species;
                     pk.Form = blank.Form;
+                    // The evolved species (or form: a Pikachu becomes an Alolan Raichu) has its own abilities; keep
+                    // the slot the encounter rolled, not the pre-evolution's ability.
+                    if (pk.Format >= 3)
+                        pk.RefreshAbility(pk.AbilityNumber >> 1);
                     if (!nicknamed)
                         pk.ClearNickname();
                 }
@@ -193,6 +438,11 @@ static partial class Program
         }
         var reason = tried == 0 ? "no encounter of this species in the game fits the moves and level asked for"
                                 : firstProblem ?? "no legal build found";
+        if (reason.Contains("Cannot receive EVs"))
+            reason += game.Generation <= 2
+                ? " In Gen 1 and 2 every battle gives stat experience to all five stats: give each at least 1, or leave "
+                  + "them all at 0."
+                : " A Pokemon still at the level it was met at has not battled: raise the level, or leave the EVs at 0.";
         return new JsonObject { ["ok"] = false, ["error"] = reason };
     }
 
@@ -234,6 +484,7 @@ static partial class Program
         {
             pk.SetNickname(nick);
         }
+        ApplyStats(game, pk, request);
         // Some encounters ignore the criteria's Shiny (Gen 2 eggs and gifts, whose shininess is only a DV
         // pattern): make it shiny here and let the legality check refuse it where the game fixes it.
         if ((bool?)request["shiny"] == true && !pk.IsShiny)
@@ -298,9 +549,11 @@ static partial class Program
             ["ivs"] = ivs,
             ["evs"] = new JsonArray(pk.EV_HP, pk.EV_ATK, pk.EV_DEF, pk.EV_SPA, pk.EV_SPD, pk.EV_SPE),
             ["stats"] = new JsonArray(pk.Stat_HPMax, pk.Stat_ATK, pk.Stat_DEF, pk.Stat_SPA, pk.Stat_SPD, pk.Stat_SPE),
-            ["held_item"] = pk.Format >= 2 ? Name(Strings.Item, pk.HeldItem) : null,
+            // Gen 2 numbers its items apart from the later games.
+            ["held_item"] = pk.Format >= 2 ? Name(Strings.GetItemStrings(pk.Context, game.Versions[0]), pk.HeldItem) : null,
             ["nature"] = pk.Format >= 3 ? Name(Strings.Natures, (int)pk.Nature) : null,
             ["ability"] = pk.Format >= 3 ? Name(Strings.Ability, pk.Ability) : null,
+            ["hidden_power"] = pk.Format >= 2 ? Name(Strings.types, pk.HPType + 1) : null,     // its type list opens with Normal
             ["ball"] = pk.Format >= 3 ? Name(Strings.balllist, pk.Ball) : null,
             ["origin"] = GameInfo.GetVersionName(pk.Version),
         };

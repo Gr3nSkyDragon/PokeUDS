@@ -151,8 +151,9 @@ class FakeHelper:
                            data).dex != 150
         return pkhex.Built(legal, "Legal!" if legal else "Invalid: no.", "Wild", "pk6", data, {})
 
-    def migrate(self, game, data, source, vc_game=None, trainer=None):
+    def migrate(self, game, data, source, vc_game=None, trainer=None, language=""):
         self.migrated.append((game, source, vc_game, trainer))
+        self.languages = getattr(self, "languages", []) + [language]
         return pkhex.Built(True, "Legal!", "Virtual Console Transfer", "pk7", pk6(species=6, ec=len(self.migrated)), {})
 
 
@@ -270,3 +271,24 @@ def test_an_older_bank_is_tidied_into_info(tmp_path):
     assert again.entries()[0].note == "from before" and again.entries()[0].source == "built"
     assert sorted(p.name for p in folder.iterdir()) == [".info", f"{entry.id}.pk6"]
     assert again._seen("x") == ["a.pk6"]
+
+
+def test_a_received_vc_pokemon_keeps_its_titles_language(b, tmp_path):
+    """The file name carries the language of the title it came from; the bank keeps it and migration hands it on."""
+    from pokeuds.vc import trade as vc_trade
+
+    assert bank.received_language("20261110-120000_gsc-de_trade1_155_CYNDA_00001.pk2") == "de"
+    assert bank.received_language("20261110-120000_timecapsule-jp_trade2_025_x_00001.pk1") == "jp"
+    assert bank.received_language("20261110-120000_rby_trade1_025_PIKA_00001.pk1") == ""        # an older file
+    assert bank.received_language("20261104-120000_xy_trade1_653_Fennekin_12345678.pk6") == ""
+    out = tmp_path / "received"
+    german = vc_trade.save(sample_mon(2, 155, 10, "FEURIGEL"), out, game="gsc", trade=1, stamp="20261110-120000",
+                           language="de")
+    plain = vc_trade.save(sample_mon(1, 25, 12, "PIKA"), out, game="rby", trade=2, stamp="20261110-120000")
+    assert "_gsc-de_trade1_" in german.name and "_rby_trade2_" in plain.name
+    added = {e.extension: e for e in b.sync_received(out)}
+    assert added["pk2"].meta["language"] == "de" and "language" not in added["pk1"].meta
+    helper = FakeHelper()
+    bank.migrate(b, added["pk2"], vc_game="gold", helper=helper)
+    bank.migrate(b, added["pk1"], vc_game="red", helper=helper)
+    assert helper.languages == ["de", ""]

@@ -5,7 +5,23 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from ..games import vc as vc_titles
 from .settings import Settings
+
+
+def _host_titles(generation: int) -> tuple[str, ...]:
+    """The Virtual Console titles PokeUDS can stand in for when it hosts: English first, then the other languages."""
+    found = [t for t in vc_titles.TITLES.values() if t.generation == generation]      # every language family
+    return tuple(t.key for t in sorted(found, key=lambda t: (t.language != "en", t.language)))
+
+
+def host_title_label(key: str) -> str:
+    """"Red" or "Gold (German)", for the Trade page's "PokeUDS stands in for"."""
+    title = vc_titles.TITLES.get(key)
+    if title is None:
+        return key.title()
+    game = key.split("-")[0].title()
+    return game if title.language == "en" else f"{game} ({vc_titles.LANGUAGES[title.language]})"
 
 
 @dataclass(frozen=True)
@@ -43,11 +59,11 @@ ENTRIES = (                    # the Trade page's order: Gen 6, Gen 7, then the 
     Entry("rby", "Red / Blue / Yellow", "Game Boy (Virtual Console)", "a Gen 1 VC game", ("pk1", "pk2"),
           "On the 3DS, choose Host in the VC link menu, then go to the Pokemon Center's Trade Center and sit at the table. PokeUDS joins.",
           'On the 3DS, choose Join in the VC link menu once PokeUDS is waiting, then go to the Trade Center and sit at the table.',
-          True, ("red", "blue", "yellow")),
+          True, _host_titles(1)),
     Entry("gsc", "Gold / Silver / Crystal", "Game Boy (Virtual Console)", "a Gen 2 VC game", ("pk2", "pk1"),
           "On the 3DS, choose Host in the VC link menu, then go to the Pokemon Center's Trade Center (or the Time Capsule for a .pk1) and sit at the table. PokeUDS joins.",
           'On the 3DS, choose Join in the VC link menu once PokeUDS is waiting, then go to the Trade Center (or the Time Capsule for a .pk1) and sit at the table.',
-          True, ("gold", "silver", "crystal")),
+          True, _host_titles(2)),
 )
 BY_KEY = {e.key: e for e in ENTRIES}
 

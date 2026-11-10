@@ -185,7 +185,7 @@ def demo_pk6() -> bytes:
 class DemoRadio(SimRadio):
     def __init__(self, spec: str) -> None:
         from ..games import vc as titles
-        from ..vc import link
+        from ..vc import gbtext, link
         from ..vc.model import Model3DS
 
         key = (spec or "red").lower()
@@ -201,14 +201,18 @@ class DemoRadio(SimRadio):
             raise ValueError(f"demo radio: unknown title {key!r}; use red, blue, yellow, gold, silver, crystal, x, y, or, as")
         self.title = titles.TITLES[key]
         gen = self.title.generation
+        if time_capsule and self.title.family == "kr":
+            raise ValueError("demo radio: Korean Gold and Silver have no Time Capsule")
         mode = link.TIME_CAPSULE if time_capsule or gen == 1 else link.GEN2
         wire_gen = mode.generation
         mons = ([sample_mon(1, 133, 25, "EEVEE"), sample_mon(1, 25, 18, "PIKACHU")] if wire_gen == 1
                 else [sample_mon(2, 175, 5, "TOGEPI"), sample_mon(2, 152, 12, "CHIKORITA")])
-        party = link.Party(gbpk.encode_name("DEMO"), 4242, mons)
+        language = self.title.language            # a Japanese or Korean demo holds its own language's Pokemon
+        mons = [m.in_language("en", language) for m in mons]
+        party = link.Party(gbtext.trainer_name("DEMO", language), 4242, mons)
         self.air = Air()
         super().__init__(self.air)
-        self.model = Model3DS(mode, party, console_generation=gen)
+        self.model = Model3DS(mode, party, console_generation=gen, family=self.title.family)
         self.console = SimulatedVcHost(self.air, DEMO_KEY, self.title, self.model)
 
     def describe(self) -> str:

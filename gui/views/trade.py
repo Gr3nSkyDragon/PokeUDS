@@ -35,8 +35,9 @@ class TradeView(View):
         self.queue: list[catalog.Offer] = []        # the trade queue: offered in order, one per trade
         self.show_log = False
         self.building = False                # the "Build one" panel is open
+        self.pasting = False                 # the "Import paste" panel is open
         self.note, self.note_color = "", t.GOOD
-        self.builder = BuilderPanel(app, key, self._built)
+        self.builder = BuilderPanel(app, key, self._built, self._pasted)
         self.tool = ""                       # a plugin tool on show instead of the game's trade
         self.tool_values: dict[str, dict] = {}
         self._load_offer()
@@ -199,6 +200,17 @@ class TradeView(View):
 
     def toggle_builder(self, e=None) -> None:
         self.building = not self.building
+        self.pasting = False
+        self.refresh()
+
+    def toggle_paste(self, e=None) -> None:
+        self.pasting = not self.pasting
+        self.building = False
+        self.refresh()
+
+    def _pasted(self) -> None:
+        """Import paste filled the builder: show it, to check and build."""
+        self.pasting, self.building = False, True
         self.refresh()
 
     def _built(self, entry, text: str) -> None:
@@ -360,7 +372,8 @@ class TradeView(View):
         if self.role == "host" and entry.host_titles:
             controls.append(ft.Row([
                 ft.Dropdown(label="PokeUDS stands in for", value=self.host_title or entry.host_titles[0], width=260,
-                            options=[ft.DropdownOption(key=k, text=k.title()) for k in entry.host_titles],
+                            options=[ft.DropdownOption(key=k, text=catalog.host_title_label(k))
+                                     for k in entry.host_titles],
                             on_select=self._host_title_changed, disabled=busy),
                 t.pill("experimental", t.WARN)], spacing=12))
         if not entry.complete:
@@ -371,10 +384,14 @@ class TradeView(View):
         controls.append(ft.Row([
             (t.primary if self.building else t.secondary)("Build one", self.toggle_builder, ft.Icons.AUTO_FIX_HIGH,
                                                          disabled=busy),
+            (t.primary if self.pasting else t.secondary)("Import paste", self.toggle_paste, ft.Icons.CONTENT_PASTE,
+                                                        disabled=busy),
             t.secondary("Add a file", self.choose_offer, ft.Icons.FOLDER_OPEN, disabled=busy),
             *([ft.TextButton("Clear the queue", icon=ft.Icons.CLEAR_ALL, on_click=self._clear, disabled=busy)]
               if len(self.queue) > 1 else []),
         ], spacing=10, wrap=True))
+        if self.pasting:
+            controls.append(self.builder.paste_control())
         if self.building:
             controls.append(self.builder.control())
         if self.note:

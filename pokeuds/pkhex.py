@@ -238,6 +238,10 @@ class Helper:
     def lists(self, game: str) -> dict:
         return self.request("lists", game=game)
 
+    def paste(self, game: str, text: str) -> list[dict]:
+        """Each Showdown set in ``text`` as this game's wishes (builder.Pasted.from_reply), with its errors and notes."""
+        return self.request("paste", game=game, text=text).get("sets", [])
+
     def build(self, game: str, species: int, **wish) -> Built:
         return self._built(self.request("build", game=game, species=species, **{k: v for k, v in wish.items() if v is not None}))
 
@@ -245,13 +249,15 @@ class Helper:
         return self._built(self.request("check", game=game, data=base64.b64encode(data).decode()))
 
     def migrate(self, game: str, data: bytes, source: str, *, vc_game: str | None = None,
-                trainer: dict | None = None) -> Built:
+                trainer: dict | None = None, language: str = "") -> Built:
         """A Gen 1/2/6 record (``source``: its helper game, rby/gsc/xy/oras) moved to Gen 7 (``game``: sm/usum) as
         Poke Transporter or Pokemon Bank does it (services/pkhex/Migrate.cs). ``vc_game`` is the Virtual Console game
         a Gen 1/2 Pokemon is transferred from (red, blue, yellow, gold, silver, crystal); ``trainer`` runs the app."""
         fields = {"from": source, "data": base64.b64encode(data).decode(), "trainer": trainer or {}}
         if vc_game:
             fields["source"] = vc_game
+        if language:                # of the VC title a Gen 1/2 record came from ("de", "jp"...): Transporter keeps it
+            fields["language"] = language
         return self._built(self.request("migrate", game=game, **fields))
 
     # Mystery Gift cards, Gen 6 and 7 (docs/mystery_gift.md).

@@ -500,19 +500,26 @@ def cmd_vc_trade(args) -> int:
 
     if len(args.offer) > MAX_QUEUE:
         raise SystemExit(f"a Game Boy party holds {MAX_QUEUE} Pokemon: queue at most {MAX_QUEUE} per session")
-    offers, mails = [], []
+    from .app.bank import language_of
+    from .vc import gbtext, link
+
+    offers, mails, languages = [], [], []
     args.offer = [_offer_file(p) for p in args.offer]
     for path in args.offer:                       # the trade queue, in order
-        offer = gbpk.load(path)
+        language = language_of(path)              # a record does not say; the bank or its size does
+        family = gbtext.family_of(language) if language else None
+        offer = gbpk.load(path, family)
         edit_game = {"gen1": "rby", "gen2": "gsc"}.get(args.partner or "", "rby" if offer.generation == 1 else "gsc")
         try:
             raw = plugins.edit_offer(edit_game, offer.to_file(), "rby" if offer.generation == 1 else "gsc", offer.extension)
         except ValueError as exc:
             raise SystemExit(str(exc))
-        offer = gbpk.Record.from_file(raw)
+        offer = gbpk.Record.from_file(raw, offer.family)
         mail_file = Path(path).with_suffix(".mail")
         offers.append(offer)
-        mails.append(mail_file.read_bytes()[:47] if offer.generation == 2 and mail_file.exists() else b"")
+        languages.append(language)
+        size = link.LAYOUTS[offer.family].mail
+        mails.append(mail_file.read_bytes()[:size] if offer.generation == 2 and mail_file.exists() else b"")
     if any(o.generation != offers[0].generation for o in offers):
         raise SystemExit("a Virtual Console queue is all .pk1 or all .pk2 (they trade in different rooms)")
     offer, mail = offers[0], mails[0]
@@ -524,7 +531,7 @@ def cmd_vc_trade(args) -> int:
     station.start(titles.CHANNEL if args.role == "host" else args.channel)
     status.emit("radio", description=station.radio.describe())
     trade = VcTrade(station, offer, Path(args.output), trades=args.trades, trainer_name=args.name, offer_mail=mail,
-                    queue=offers[1:], queue_mail=mails[1:])
+                    queue=offers[1:], queue_mail=mails[1:], languages=languages)
     try:
         if args.role == "host":
             title = titles.TITLES[args.as_title]
@@ -543,7 +550,7 @@ def cmd_vc_trade(args) -> int:
         status.emit("mode", mode=trade.mode.key)
         trade.run(args.run_seconds)
         status.emit("stopped", reason="session-ended")
-    except TimeoutError as exc:
+    except (TimeoutError, ValueError) as exc:     # no host heard, or one this queue cannot trade with
         print(f"stopped: {exc}", file=sys.stderr)
         status.emit("stopped", reason="timeout", message=str(exc))
         return 1
@@ -558,6 +565,12 @@ def cmd_vc_trade(args) -> int:
         station.close()
     print(f"{len(trade.saved)} file(s) written to {args.output}")
     return 130 if stopped else 0
+
+
+def _vc_host_titles() -> list[str]:
+    from .games import vc as titles
+
+    return list(titles.HOSTABLE)
 
 
 def cmd_board(args) -> int:
@@ -926,12 +939,15 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--output", default="received", help="folder for the Pokemon received (default: received/)")
     p.add_argument("--role", choices=["join", "host"], default="join",
                    help="join the 3DS's network (default; the 3DS chooses Host) or host one (experimental)")
-    p.add_argument("--as", dest="as_title", choices=["red", "blue", "yellow", "gold", "silver", "crystal"],
-                   help="as host: the title PokeUDS stands in for (its comm id)")
+    p.add_argument("--as", dest="as_title", choices=_vc_host_titles(), metavar="TITLE",
+                   help="as host: the title PokeUDS stands in for (its comm id): red, blue, yellow, gold, silver, "
+                        "crystal, or one in another language as GAME-LANGUAGE (red-de, gold-fr, crystal-it, green-jp, "
+                        "gold-jp, silver-kr; de, fr, es, it, jp, kr)")
     p.add_argument("--partner", choices=["gen1", "gen2"],
                    help="the 3DS's generation; join finds it from the beacon, host defaults to --as's")
     p.add_argument("--trades", type=int, help="how many trades before PokeUDS chooses Cancel (default: one per --offer)")
-    p.add_argument("--name", default="POKEUDS", help="trainer name the 3DS sees (Game Boy text, up to 7)")
+    p.add_argument("--name", default="POKEUDS", help="trainer name the 3DS sees (Game Boy text, up to 7; a Japanese "
+                                                     "game, which has no Latin letters, sees its own default name)")
     p.add_argument("--seconds", type=float, default=120.0, help="how long to wait for the 3DS")
     p.add_argument("--run-seconds", type=float, help="stop after this long (default: when the session ends)")
     p.set_defaults(func=cmd_vc_trade)

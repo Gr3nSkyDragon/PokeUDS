@@ -18,8 +18,9 @@ covers; hosting is experimental (below).
 | `.pk1` | Gold, Silver, Crystal in the Time Capsule | Time Capsule, PokeUDS as Gen 1 | Gen 1 blocks, no mail | `.pk1` |
 | `.pk2` | Red, Blue, Yellow | Time Capsule, PokeUDS as Gen 2 | Gen 1 blocks, no mail | the `.pk1` that arrived and the `.pk2` a Gen 2 game makes of it |
 
-When joining, the 3DS's generation comes from its beacon's comm id. When hosting, `--as` names the
-title PokeUDS stands in for and `--partner` the 3DS's generation if it differs.
+When joining, the 3DS's title (its generation and language) comes from its beacon's comm id. When hosting,
+`--as` names the title PokeUDS stands in for (`red`, `gold`, or one in another language as `red-de`,
+`gold-fr`, `crystal-it`) and `--partner` the 3DS's generation if it differs.
 
 ```bash
 python -m pokeuds vc trade --radio esp32 --keys aes_keys.txt --offer my.pk1
@@ -102,15 +103,80 @@ item number), Special Attack and Special Defense from Gen 2 base stats, friendsh
 - **Measured** (retail captures, Gr3nSkyDragon): the comm ids of Red `0x00171010`, Gold `0x00172610` and
   Silver `0x00172710`; every frame and message format; the joiner's handshake; the unit layout; the
   block window.
-- **Derived**: Blue, Yellow and Crystal's comm ids (title id + 0x10, unmeasured). Joining matches the
-  generation's family (`0x00171xxx`, `0x00172xxx`), so a wrong guess only matters when hosting.
+- **Derived**: every other title's comm id (title id + 0x10, unmeasured): English Blue, Yellow and Crystal, and
+  every non-English title (Languages, below). Joining matches the comm id against the title table, so a wrong
+  guess means that title is not found: `python -m pokeuds scan` shows the comm id a console really sends.
 - **Experimental: hosting.** The host's messages, including the mesh state and system data replayed
   from the retail host's frames, are what a retail host sends, and PokeUDS-as-host trades with the
   model. But Azahar hosting a retail joiner never completed a trade, for a cause not visible on the wire,
   and the host's 16 bytes of beacon application data are copied in shape only (`08`, seven random
   bytes, `01`, zeros). Prefer joining.
 - **Unknown**: whether a VC checks the application data; Gen 2 against a retail console over the air
-  (Gen 2 was measured through Azahar's local bridge); Crystal; Japanese releases (6-byte names).
+  (Gen 2 was measured through Azahar's local bridge); Crystal; everything about the non-English titles on
+  the air (Languages, below).
+
+## Languages
+
+The 39 Virtual Console titles (`pokeuds/games/vc.py`; title ids `0004000000xxxx00` from Bl4ckSh4rk's list, the
+comm id being the low 32 bits + 0x10):
+
+| | Japanese | English | German | French | Spanish | Italian | Korean |
+|---|---|---|---|---|---|---|---|
+| Red | `170C` | `1710` | `1713` | `1716` | `1719` | `171C` | none |
+| Green | `170D` | none | none | none | none | none | none |
+| Blue | `170E` | `1711` | `1714` | `1717` | `171A` | `171D` | none |
+| Yellow | `170F` | `1712` | `1715` | `1718` | `171B` | `171E` | none |
+| Gold | `1723` | `1726` | `1729` | `172C` | `172F` | `1732` | `1735` |
+| Silver | `1724` | `1727` | `172A` | `172D` | `1730` | `1733` | `1736` |
+| Crystal | `1725` | `1728` | `172B` | `172E` | `1731` | `1734` | none |
+
+Two titles trade when their generation fits (or the Time Capsule joins them) **and their language family
+agrees**: the family is how a game lays out the names and mail in its blocks. PokeUDS speaks all three
+(`pokeuds/vc/link.py` `LAYOUTS`, `pokeuds/vc/gbtext.py`), so it joins, or stands in for, any title in the table:
+
+| family | titles | names | party block (Gen 1 / Gen 2) | Gen 2 mail body |
+|---|---|---|---|---|
+| international | English, German, French, Spanish, Italian | 11 bytes: 10 characters and a terminator | 424 / 450 | `$20` run; 6 x 33-byte messages, 6 x 14-byte authors, the authors' patch list: 385 |
+| Japanese | Japanese | 6 bytes: 5 kana and a terminator | 359 / 385 | `$20` run; 6 x (33-byte message, 9-byte author), one patch list over all of it: 285 |
+| Korean | Korean Gold and Silver | 11 bytes: Hangul in 2 bytes, Latin letters in 1 | - / 450 | `$52` run; 6 x 65-byte messages, 6 x 14-byte authors, the authors' patch list: 577 |
+
+The structs, species and move indexes, items and the party patch lists are the same in every family. The
+layouts, the Japanese and Korean character maps and every language's species names come from Lorenzooone's
+[PokemonGB_Online_Trades](https://github.com/Lorenzooone/PokemonGB_Online_Trades) (MIT, `f2030e7`):
+`pokeuds/vc/gbtext_data.py` is generated from its `useful_data/text` files by `scripts/make_gbtext.py`, with its
+licence kept at the top.
+
+- **Why a table.** PokeUDS used to match a beacon by `comm id & 0xFFFFF000` against `0x00171000` and
+  `0x00172000`. Against the real ids that took Japanese Gold, Silver and Crystal (`001723xx` to `001725xx`) for
+  international Gen 2 and joined them with 11-byte names, which corrupts the trade; it missed Spanish Silver and
+  Crystal, every Italian Gen 2 title and both Korean ones (`00173xxx`), and all of Japanese Gen 1 (`00170xxx`).
+  The table fixes all of that, and each title now gets its own family's blocks.
+- **Files.** A Japanese `.pk1`/`.pk2` has 6-byte names, so 59 and 63 bytes, as PKHeX writes them. A Korean `.pk2`
+  is 73 bytes like an international one: what marks it Korean is the language the bank keeps beside it (from the
+  received file's name, `_gsc-kr_trade1_...`). PKHeX reads both, names and all, and finds them legal.
+- **Another language's Pokemon.** A queued Pokemon from a game of another language goes over as Lorenzooone's
+  project sends it: the structs as they are; a Pokemon that still has its species' name gets the console's name
+  for it (German GLUMANDA becomes French SALAMECHE or Japanese ヒトカゲ), so a trade evolution renames it as the game
+  expects; any other name is carried character by character, a character the console's family cannot show
+  becoming `?` (a Japanese game has no Latin letters, an international one no kana). Mail stays behind when the
+  families differ. The trainer name the console sees is `--name` where its family can show it, else that game's
+  own default (トレーナー for a Japanese game). What a trade brings is saved in the console's language and family.
+- **Korean games have no Time Capsule partner**: there is no Korean Gen 1 game. A `.pk1` queue is refused with
+  that reason before PokeUDS joins or hosts a Korean title.
+- **PKHeX and Korean trainers.** A Korean record migrates to Gen 7 legally with a Hangul OT. One whose OT is in
+  Latin letters (an international Pokemon traded into a Korean game) is found illegal there ("OT from Generation
+  1/2 uses unavailable characters"): PKHeX expects a Korean game's OT in its own characters.
+- **The language is kept.** A Pokemon received from a joined title is written as
+  `<stamp>_<game>-<language>_trade...` (`gsc-de`), the bank keeps `language` with the record, the GTS carries it
+  to whoever trades for it ([online.md](online.md)), and migrating it to Gen 7 hands that language to PKHeX's
+  Transporter, which keeps it in the `.pk7` (a Pokemon from German Gold stays German). When PokeUDS hosts, the
+  title it stands in for gives the language.
+- **Unmeasured.** Only English Red, Gold and Silver have been seen on the air. Every other title's comm id is
+  derived; the Japanese and Korean blocks are those of the cartridges as Lorenzooone's project trades with them,
+  never yet seen from a 3DS. Still to check on hardware: the comm ids and the 16 bytes of host application data
+  for a Japanese, a Korean and a non-English international title; whether the Japanese VC uses the same Pia
+  framing and `PokemonSIO` key; the Japanese block window; the Korean mail run's length, and whether Korean
+  mail replaces a `$FE` in a message with `$21` as the others do.
 
 ## Checking it on hardware
 

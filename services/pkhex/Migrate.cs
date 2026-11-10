@@ -26,6 +26,15 @@ static partial class Program
 
     static readonly object MigrateLock = new();
 
+    static int? VcLanguage(string? code) => code switch
+    {
+        "jp" => (int)LanguageID.Japanese, "en" => (int)LanguageID.English, "fr" => (int)LanguageID.French,
+        "it" => (int)LanguageID.Italian, "de" => (int)LanguageID.German, "es" => (int)LanguageID.Spanish,
+        "kr" => (int)LanguageID.Korean,
+        null or "" => null,
+        _ => throw new ArgumentException($"unknown language {code}"),
+    };
+
     static JsonObject Migrate(Game game, JsonObject request)
     {
         if (game.Generation != 7)
@@ -48,7 +57,10 @@ static partial class Program
             TID16 = (ushort)((int?)t["tid"] ?? 12345),
             SID16 = (ushort)((int?)t["sid"] ?? 54321),
             Gender = (byte)((int?)t["gender"] ?? 0),
-            Language = (int?)t["language"] ?? (int)LanguageID.English,
+            // A Gen 1/2 record has no language of its own: Transporter gives it the language of the Virtual Console
+            // title it came from, which PKHeX takes from the trainer doing the transfer. `language` is that title's
+            // ("de", "jp"...), when the bank knows it; else the trainer's, else English.
+            Language = VcLanguage((string?)request["language"]) ?? (int?)t["language"] ?? (int)LanguageID.English,
             Generation = 7,
             Context = EntityContext.Gen7,
         };
@@ -95,6 +107,27 @@ static partial class Program
                 EntityConverterResult.IncompatibleSpecies => "this species cannot move to Generation 7",
                 _ => $"PKHeX could not move it ({result})",
             });
+        if (from.Generation <= 2)
+        {
+            // A Virtual Console title is sold in one console region, and PKHeX checks the language against it: German
+            // and Italian only on a European 3DS, Japanese on a Japanese one, Korean on a Korean one. The transfer was
+            // made as an Americas console (English, French, Spanish); give the record the console its language needs.
+            var (console, country) = (LanguageID)pk7.Language switch
+            {
+                LanguageID.Japanese => (0, 1),          // Japan
+                LanguageID.Korean => (5, 136),          // Korea, South Korea
+                LanguageID.German => (2, 78),           // Europe, Germany
+                LanguageID.Italian => (2, 83),          // Europe, Italy
+                _ => ((int)pk7.ConsoleRegion, (int)pk7.Country),
+            };
+            if (console != pk7.ConsoleRegion)
+            {
+                pk7.ConsoleRegion = (byte)console;
+                pk7.Country = (byte)country;
+                pk7.Region = 0;
+                pk7.RefreshChecksum();
+            }
+        }
         if (from.Generation == 6)
         {
             // Withdrawn from Bank, a Gen 6 Pokemon is handled by the trainer who withdrew it, even its own OT (PKHeX

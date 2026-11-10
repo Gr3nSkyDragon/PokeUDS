@@ -3,7 +3,8 @@
 It plays the measured behaviour (mgba_LDN wiki/vc_link.md): host's first unit $EF, then one unit per
 exchange with the partner's reply to the same index; random numbers paced, party block, patch lists
 and mail sent in bursts; for a block whose first $FD it sends at index T it stores the partner's
-units from T-1. It decodes what it stores with the same rules as the ROM (pokeuds.vc.link.parse_*).
+units from T-1. It decodes what it stores with the same rules as the ROM (pokeuds.vc.link.parse_*). ``family``
+plays a Japanese or Korean game's blocks (pokeuds.vc.link, Languages).
 """
 
 from __future__ import annotations
@@ -14,8 +15,11 @@ from pokeuds.vc import link
 
 class Model3DS:
     def __init__(self, mode: link.LinkMode, party: link.Party, *, pick: int = 0, accept: bool = True,
-                 trades: int = 1, console_generation: int | None = None, role: str = "host") -> None:
+                 trades: int = 1, console_generation: int | None = None, role: str = "host",
+                 family: str = "intl") -> None:
         self.mode = mode
+        self.family = family
+        self.layout = link.LAYOUTS[family]
         self.party = party
         self.pick, self.accept, self.trades = pick, accept, trades
         self.console_generation = console_generation or mode.generation
@@ -88,26 +92,28 @@ class Model3DS:
             yield from self._x(0)
             rn_at = yield from self._block(link.rn_block())
             yield from self._x(0x00)
-            party_block, patch_block = link.party_blocks(party, self.mode.generation)
+            party_block, patch_block = link.party_blocks(party, self.mode.generation, self.family)
             party_at = yield from self._block(party_block)
             yield from self._x(0x00)
             patch_at = yield from self._block(patch_block)
             if self.mode.mail:
                 for _ in range(11):
                     yield from self._x(0x00)                          # patch-list leftovers
-                mail_at = yield from self._block(link.mail_block(party))
+                mail_at = yield from self._block(link.mail_block(party, self.family))
             for _ in range(10):
                 yield from self._x(link.NO_DATA)
             # What it stored of ours, from T-1 of each block.
             window = lambda at, size: self.ours[at - 1:at - 1 + size]
-            theirs = link.parse_party(window(party_at, self.mode.party_block), window(patch_at, 200), self.mode.generation)
+            theirs = link.parse_party(window(party_at, self.layout.party_block(self.mode.generation)), window(patch_at, 200),
+                                      self.mode.generation, self.family)
             self.partner_parties.append(theirs)
             if self.mode.mail:
-                stored = window(mail_at, 390)
-                i = stored.index(link.MAIL_PREAMBLE)
-                while i < len(stored) and stored[i] in (link.MAIL_PREAMBLE, link.NO_DATA):
+                run = self.layout.mail_preamble
+                stored = window(mail_at, 5 + self.layout.mail_body)
+                i = stored.index(run)
+                while i < len(stored) and stored[i] in (run, link.NO_DATA):
                     i += 1
-                self.partner_mail.append(link.parse_mail(stored[i:]))
+                self.partner_mail.append(link.parse_mail(stored[i:], self.family))
             pick = self.pick if self.trades > 0 else link.CANCEL
             their_pick = yield from self._sync(rng | pick)
             if pick == link.CANCEL or their_pick == link.CANCEL:

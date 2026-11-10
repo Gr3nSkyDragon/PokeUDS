@@ -47,7 +47,8 @@ BUNDLE_ID = "io.github.gr3nskydragon.pokeuds"
 MAC = sys.platform == "darwin"
 ENTRY = ROOT / "packaging" / "pokeuds_app.py"
 DEFAULT_ICON = ROOT / "gui" / "assets" / ("icon.icns" if MAC else "icon.ico")
-DATA = [("profiles", "profiles"), ("pokeuds/app/data", "pokeuds/app/data"), ("gui/assets", "gui/assets")]
+DATA = [("profiles", "profiles"), ("pokeuds/app/data", "pokeuds/app/data"), ("gui/assets", "gui/assets"),
+        ("LICENSE", ".")]       # the AGPL-3.0 inside the app (and beside PokeUDS.exe on Windows)
 BANK = "Bank"               # the Windows app's bank (pokeuds/app/bank.py): kept across builds, never zipped
 VIEW = "flet_view"          # the unpacked window, beside the app's Python in _internal (packaging/pokeuds_app.py)
 
@@ -179,6 +180,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"zipped {zip_app(built, a.dist / zip_name())}")
         return 0
     print(f"built {built / NAME}.exe")
+    shutil.copyfile(ROOT / "LICENSE", built / "LICENSE.txt")
     print(f"window unpacked to {unpack_view(built)}")
     if not a.no_zip:
         print(f"zipped {zip_folder(built, a.dist / zip_name())}")

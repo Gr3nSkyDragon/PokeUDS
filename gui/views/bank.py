@@ -14,13 +14,15 @@ import time
 import flet as ft
 
 from pokeuds.app import bank, catalog
+from pokeuds.games import vc as vc_titles
 
 from .. import theme as t
 from .common import View, awaiting, open_folder
 from .sprite import sprite
 
 FILTERS = (("all", "All"), ("gb", "Game Boy"), ("6", "Gen 6"), ("7", "Gen 7"), ("illegal", "Not legal"))
-SOURCE_COLORS = {"received": t.GOOD, "imported": t.MUTED, "built": t.INFO, "converted": t.WARN, "gift": t.ACCENT}
+SOURCE_COLORS = {"received": t.GOOD, "imported": t.MUTED, "built": t.INFO, "converted": t.WARN, "gift": t.ACCENT,
+                 "gts": t.GOOD}
 
 
 def _pkhex_ready() -> bool:
@@ -143,6 +145,8 @@ class BankView(View):
             ("Format", f".{e.extension} (Generation {e.generation})"),
             ("From", bank.SOURCES.get(e.source, e.source) + f", {e.when}"),
         ]
+        if e.generation <= 2 and e.meta.get("language") in vc_titles.LANGUAGES:
+            facts.append(("Language", f"{vc_titles.LANGUAGES[e.meta['language']]} (the game it came from)"))
         if e.has_mail:
             facts.append(("Mail", "holds mail (sent with it in Gen 2 trades)"))
         if e.source == "migrated" and (original := self.bank.find(e.meta.get("migrated_from", ""))):
@@ -188,6 +192,8 @@ class BankView(View):
         if target:
             rows += [ft.Divider(color=t.LINE), *self._migration(e, target, pkhex_ok)]
         actions = [t.secondary("Export...", awaiting(self._export, e), ft.Icons.FILE_DOWNLOAD_OUTLINED)]
+        if e.extension in ("pk1", "pk2", "pk6", "pk7") and not e.has_mail:
+            actions.insert(0, t.secondary("List on the GTS", lambda _, x=e: self._to_gts(x), ft.Icons.PUBLIC))
         if e.generation <= 2:
             actions.insert(0, t.secondary(f"Time Capsule copy (.pk{3 - e.generation})", lambda _, x=e: self._convert(x),
                                           ft.Icons.HISTORY))
@@ -334,6 +340,10 @@ class BankView(View):
         trade._add_and_say([str(entry.path)])
         trade.save()
         self.app.navigate("trade")
+
+    def _to_gts(self, entry: bank.Entry) -> None:
+        self.app.views["gts"].choose(entry.id)
+        self.app.navigate("gts")
 
     # -- the whole bank's legality --------------------------------------------------------------
 

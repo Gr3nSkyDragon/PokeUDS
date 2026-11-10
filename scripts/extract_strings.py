@@ -21,7 +21,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 GUI_FILES = sorted((ROOT / "gui").glob("*.py")) + sorted((ROOT / "gui" / "views").glob("*.py"))
 APP_FILES = [ROOT / "pokeuds" / "app" / n for n in ("catalog.py", "progress.py", "bank.py", "builder.py", "giftfile.py",
-                                                    "plugin_store.py", "settings.py")] + [ROOT / "pokeuds" / "pkhex.py"]
+                                                    "plugin_store.py", "settings.py", "gts.py")] + [ROOT / "pokeuds" / "pkhex.py"]
 OUT = ROOT / "pokeuds" / "app" / "data" / "strings.en.toml"
 CALLS = {"label", "title", "heading", "notice", "primary", "secondary", "pill", "Text", "TextButton", "FilledButton",
          "OutlinedButton", "ElevatedButton", "_say", "Checkbox", "Switch", "_dd", "_num", "_text", "name_field"}

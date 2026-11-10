@@ -22,11 +22,12 @@ from gui.views.board import BoardView  # noqa: E402
 from gui.views.bank import BankView  # noqa: E402
 from gui.views.debug import DebugView  # noqa: E402
 from gui.views.gifts import GiftsView  # noqa: E402
+from gui.views.gts import GtsView  # noqa: E402
 from gui.views.plugins import PluginsView  # noqa: E402
 from gui.views.settings import SettingsView  # noqa: E402
 from gui.views.trade import TradeView  # noqa: E402
 
-PAGES = (TradeView, BankView, GiftsView)          # the rail's top
+PAGES = (TradeView, BankView, GtsView, GiftsView)          # the rail's top
 BOTTOM = (PluginsView, BoardView, SettingsView)     # pinned to the rail's foot, Settings last; Debug before it when on
 
 
@@ -111,6 +112,7 @@ def main(page: ft.Page) -> None:
         page.theme.font_family = page.dark_theme.font_family = i18n.current().font_family
     shell = Shell(page, app)
     page.add(shell.build())
+    shell.views["gts"].settle()               # settles what is live on the GTS, in the background
     if not page.web:
         if t.ICON.is_file():
             page.window.icon = str(t.ICON)      # from source too; the packaged exe also carries it

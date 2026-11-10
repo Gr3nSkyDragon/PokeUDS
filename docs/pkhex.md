@@ -60,6 +60,7 @@ One JSON object per line each way. Every reply has `ok`; a refused request has `
 |---|---|
 | `{"cmd":"ping"}` | `{"ok":true,"pkhex":"26.10.18.0"}` |
 | `{"cmd":"lists","game":"xy"}` | the game's `species`, `moves`, `items`, `balls`, `natures`, `languages` as `[value, name]` lists |
+| `{"cmd":"paste","game":"xy","text":"..."}` | `sets`: each Showdown or Smogon set in the text as the wishes `build` takes for this game, with `errors` and `notes` (Import paste, below) |
 | `{"cmd":"build","game":"xy","species":25, ...wishes}` | a built record (below) |
 | `{"cmd":"check","game":"xy","data":"<base64>"}` | the same, for a record you have |
 | `{"cmd":"gifts","game":"oras"}` | the official Mystery Gift cards PKHeX.Core embeds for the game (Gen 6/7; `"all":true` for every card with its bytes) |
@@ -109,12 +110,71 @@ Gen 7: nothing official reaches Gen 6 from the Game Boy.
 ## Build one (the Trade page) and `pokeuds build`
 
 On the Trade page, **Build one** opens the builder for the chosen game. It collects the wishes (species,
-level, nickname, shiny, gender, nature, ability, held item, ball, up to four moves) and the original
-trainer, which it keeps for the next build.
+level, nickname, shiny, gender, nature, ability, held item, ball, up to four moves, and under **Set IVs and EVs**
+the IVs, EVs and Hidden Power) and the original trainer, which it keeps for the next build.
 The trainer is entered as each generation shows it: a five-digit ID (and SID from Gen 3 on), or from Gen
 7 the six-digit ID and four-digit SID. Build and offer it puts the result in the bank (source "built", with
-PKHeX's verdict) and makes it the trade's offer. Without the helper the panel says how to build it, with
-a button that runs `dotnet build` when the .NET SDK is installed.
+PKHeX's verdict) and queues it for the trade; Build and save in Bank only puts it in the bank, and the builder
+stays open for the next one. Running from source without PKHeX built, the panel says how
+to build it, with a button that runs `dotnet build` when the .NET SDK is installed.
+
+**Import paste**, beside Build one, fills the builder from a Showdown or Smogon set, the text team builders export:
+
+```
+Sparky (Raichu-Alola) (M) @ Aloraichium Z
+Ability: Surge Surfer
+Level: 50
+Shiny: Yes
+Timid Nature
+- Psychic
+- Thunderbolt
+```
+
+PKHeX's own parser (`ShowdownParsing`) reads it in any language it knows, in the chosen game's context (Gen 2
+numbers its items apart from the later games). A whole team can be pasted, a team export's `=== ... ===` line
+included; each set is listed and **Use this one** opens the builder filled with it, to check and build as usual. A set
+gives the species and form, nickname, level (Showdown's default is 100), shiny, gender, nature, ability (as the
+species' first, second or hidden slot), held item, moves, IVs and EVs (below); it names no ball, so the builder's
+stays.
+
+| the set asks for | it is |
+|---|---|
+| a line the parser cannot read | an error, and the line is left out |
+| a species, form, move or item the game lacks (an Alolan form or a Z-Crystal for X/Y) | an error, and it is left out; a species the game lacks cannot be used at all |
+| an ability the species cannot have here | an error, and the ability is left open |
+| a nature or ability in Gen 1/2, a shiny, gender or held item in Gen 1, Hidden Power in Gen 1 | a note: the generation has none |
+| DVs for a shiny Gen 2 Pokemon | a note: its DVs are fixed, so the set's are left out |
+
+IVs and EVs come as Showdown means them. From Gen 3 on, a set with no IVs line has 31s (any IVs are legal for
+nearly every Gen 6/7 encounter) and its EVs as written. A Gen 1/2 set gives DVs only when it names some (an IVs line
+or Hidden Power), since its DVs also fix gender and shininess; PKHeX turns its IVs into DVs (31 is 15) and its EVs
+into stat experience (an EV squared, 252 being the most), and a stat it does not name gets the most stat experience,
+as Showdown gives it. A Hidden Power type is already in the IVs: PKHeX's parser moves them to it.
+
+## IVs, EVs, DVs and Hidden Power
+
+The builder's **Set IVs and EVs** (Gen 1/2: **Set DVs and stat experience**) opens under the moves; a paste that
+brings them opens it. Empty IVs are left to the encounter; **Best IVs** sets them all to the most, and **Clear them**
+leaves everything to the encounter again.
+
+| | Gen 1/2 | Gen 6/7 |
+|---|---|---|
+| IVs | DVs of 0 to 15 for Attack, Defense, Speed and Special; the HP DV is made of the other four's lowest bits (shown, not set) | 0 to 31 for each stat |
+| EVs | stat experience of 0 to 65535 for HP, Attack, Defense, Speed and Special; every battle gives some to all five, so either every one is above 0 or all are 0 (PKHeX: `Cannot receive EVs`) | 0 to 252 each, 510 in all |
+| Hidden Power | Gen 2: from the Attack and Defense DVs' two lowest bits; Gen 1 has none | from every IV's lowest bit |
+
+**Hidden Power type** sets the IVs (or DVs) for a type, moving only their lowest bits, into the usual spread for
+it (Showdown's, PKHeX's `HiddenPower.DefaultLowBits`: Ice lowers Attack and Defense to 30); the IV already at 0
+stays. The section shows the type the IVs give once every IV it depends on is set, and a build reports it.
+
+Requests carry `ivs` and `evs` as six numbers in Showdown's order (HP, Atk, Def, SpA, SpD, Spe); an IV of -1 is left
+to the encounter, and Gen 1/2 read Special from SpA. From Gen 3 on the IVs also go into the encounter's criteria,
+so an encounter that rolls IVs rolls them; one with fixed IVs (some gifts and events) fails the legality check and the
+next encounter is tried. A shiny Gen 2 Pokemon has Defense, Speed and Special DVs of 10 and an Attack DV of 2, 3, 6, 7,
+10, 11, 14 or 15: the builder refuses other DVs with a shiny before asking PKHeX.
+
+A pasted form is built too: the builder sends `form`, and an evolved form takes its own ability in the slot the
+encounter rolled (a Pikachu met in Alola evolves into an Alolan Raichu with Surge Surfer).
 
 The same from the command line; names or numbers are accepted, `--out` takes a file or a folder, and
 without `--out` the result goes to the bank:

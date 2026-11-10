@@ -35,7 +35,7 @@ from .settings import data_dir
 EXTENSIONS = (".pk1", ".pk2", ".pk6", ".pk7")
 IMPORTABLE = EXTENSIONS + (".ek6", ".ek7")
 SOURCES = {"received": "Received", "imported": "Imported", "built": "Built", "converted": "Converted",
-           "gift": "Mystery Gift", "migrated": "Migrated"}
+           "gift": "Mystery Gift", "migrated": "Migrated", "gts": "GTS"}
 _UNSAFE = re.compile(r"[^\w\-]+", re.UNICODE)
 
 
@@ -45,6 +45,35 @@ INFO = ".info"              # inside a bank: the records' .json and received.jso
 SEEN = "received.json"
 _portable: dict[Path, Path | None] = {}
 _tidied: set[Path] = set()
+
+
+_RECEIVED_LANGUAGE = re.compile(r"_(?:rby|gsc|timecapsule)-([a-z]{2})_trade\d+_")
+
+
+def received_language(name: str) -> str:
+    """The language of the Virtual Console title a received file came from ("de", "jp"...), which pokeuds.vc.trade
+    keeps in the file's name; "" when the name carries none (older files, or PokeUDS hosted)."""
+    found = _RECEIVED_LANGUAGE.search(name)
+    return found.group(1) if found else ""
+
+
+def language_of(path: str | Path) -> str:
+    """The game language of a .pk1/.pk2 file: a Japanese record by its size, else what the bank keeps beside it
+    (``.info``), else what a received file's name says; "" when nothing does. A record does not hold its own."""
+    path = Path(path)
+    try:
+        if len(path.read_bytes()) in (gbpk.PK1_SIZE_JP, gbpk.PK2_SIZE_JP):
+            return "jp"
+    except OSError:
+        return ""
+    for meta in (path.parent / INFO / f"{path.stem}.json", path.with_suffix(".json")):
+        try:
+            language = json.loads(meta.read_text(encoding="utf-8")).get("language", "")
+        except (OSError, ValueError, AttributeError):
+            continue
+        if isinstance(language, str) and language:
+            return language
+    return received_language(path.name)
 
 
 def default_folder() -> Path:
@@ -141,22 +170,24 @@ class Parsed:
     tid: int
     held_item: int
     form: int = 0
+    family: str = "intl"     # a Game Boy record's language family (pokeuds.vc.gbtext); "intl" for Gen 6/7
 
 
-def parse(path: str | Path, raw: bytes | None = None) -> Parsed:
-    """Read a .pk1/.pk2/.pk6/.pk7/.ek6/.ek7, or raise ValueError saying why it is not one."""
+def parse(path: str | Path, raw: bytes | None = None, language: str = "") -> Parsed:
+    """Read a .pk1/.pk2/.pk6/.pk7/.ek6/.ek7, or raise ValueError saying why it is not one. ``language`` is a Game
+    Boy record's game language, which tells a Korean one (the size tells a Japanese one)."""
     path = Path(path)
     raw = Path(path).expanduser().read_bytes() if raw is None else raw
     ext = path.suffix.lower()
     if ext in (".pk1", ".pk2"):
-        record = gbpk.Record.from_file(raw)
+        record = gbpk.Record.from_file(raw, "kr" if language == "kr" else None)
         if record.dex == 0:
             raise ValueError(f"{path.name}: not a real species (index {record.data[0]:#04x})")
         if f".{record.extension}" != ext:
             raise ValueError(f"{path.name}: the file holds a Generation {record.generation} Pokemon")
         shiny = record.generation == 2 and _gen2_shiny(record.data[21:23])   # Gen 1 has no shininess
-        return Parsed(raw, ext[1:], record.generation, record.dex, gbpk.decode_name(record.nickname), record.level,
-                      shiny, gbpk.decode_name(record.ot_name), record.ot_id, record.held_item)
+        return Parsed(raw, ext[1:], record.generation, record.dex, record.nickname_text(), record.level,
+                      shiny, record.ot_text(), record.ot_id, record.held_item, family=record.family)
     if ext in (".pk6", ".pk7", ".ek6", ".ek7"):
         if len(raw) not in pkx.SIZES:
             raise ValueError(f"{path.name}: {len(raw)} bytes is not a Generation 6/7 record (232 or 260)")
@@ -270,11 +301,11 @@ class Bank:
         return None
 
     def _entry(self, path: Path) -> Entry | None:
+        meta = self._meta(path)
         try:
-            parsed = parse(path)
+            parsed = parse(path, language=str(meta.get("language", "")))
         except (OSError, ValueError):
             return None
-        meta = self._meta(path)
         return Entry(path.stem, path, parsed.extension, parsed.generation, parsed.dex, species.name(parsed.dex),
                      parsed.nickname, parsed.level, parsed.shiny, parsed.ot, parsed.tid, parsed.held_item,
                      meta.get("source", "imported"), float(meta.get("created", path.stat().st_mtime)),
@@ -335,7 +366,10 @@ class Bank:
     def deposit(self, content: bytes, extension: str, *, source: str, origin: str = "", mail: bytes | None = None,
                 note: str = "", extra: dict | None = None, digests: dict | None = None) -> tuple[Entry, bool]:
         """Keep a record; returns (entry, added). A Pokemon already in the bank (``identity``) is not added again."""
-        parsed = parse(Path(f"x.{extension}"), content)
+        extra = dict(extra or {})
+        parsed = parse(Path(f"x.{extension}"), content, extra.get("language", ""))
+        if parsed.family == "jp" and not extra.get("language"):
+            extra["language"] = "jp"            # a Japanese record says so by its size
         digest = hashlib.sha256(parsed.content).hexdigest()
         key = identity(parsed)
         digests = self._digests() if digests is None else digests
@@ -375,8 +409,10 @@ class Bank:
             try:
                 parsed = parse(path)
                 mail = path.with_suffix(".mail")
+                language = received_language(path.name)
                 entry, new = self.deposit(parsed.content, parsed.extension, source="received", origin=str(path),
-                                          mail=mail.read_bytes() if mail.exists() else None, digests=digests)
+                                          mail=mail.read_bytes() if mail.exists() else None, digests=digests,
+                                          extra={"language": language} if language else None)
             except (OSError, ValueError):
                 continue
             seen.add(path.name)
@@ -569,7 +605,10 @@ def migrate(bank: Bank, entry: Entry, *, vc_game: str | None = None, trainer: di
         from .. import pkhex
 
         helper = pkhex.shared()
-    built = helper.migrate("sm", entry.data(), pkhex_game(entry), vc_game=vc_game, trainer=trainer)
+    # Transporter keeps the language of the game a Gen 1/2 Pokemon came from: hand it over when the bank knows it.
+    language = entry.meta.get("language", "") if entry.extension in ("pk1", "pk2") else ""
+    built = helper.migrate("sm", entry.data(), pkhex_game(entry), vc_game=vc_game, trainer=trainer,
+                           **({"language": language} if language else {}))
     app = MIGRATION_APPS[entry.extension]
     copy, _ = bank.deposit(built.data, f"pk{target}", source="migrated", origin=entry.id,
                            note=f"{app} copy of {entry.describe()}",

@@ -1,9 +1,12 @@
 """Game Boy Pokemon records: Generation 1 (.pk1) and Generation 2 (.pk2), and the Time Capsule.
 
-Files use PKHeX's single-Pokemon list layout (international games, 11-byte names):
+Files use PKHeX's single-Pokemon list layout, the names as long as the game's language family has them
+(``pokeuds.vc.gbtext``: 11 bytes international and Korean, 6 Japanese):
 
-    .pk1  69 bytes: 01, Gen 1 species index, FF, the 44-byte party struct, OT name, nickname
-    .pk2  73 bytes: 01, national dex number, FF, the 48-byte party struct, OT name, nickname
+    .pk1  69 bytes (Japanese 59): 01, Gen 1 species index, FF, the 44-byte party struct, OT name, nickname
+    .pk2  73 bytes (Japanese 63): 01, national dex number, FF, the 48-byte party struct, OT name, nickname
+
+A Korean .pk2 is the size of an international one; what tells it apart is the language the bank keeps beside it.
 
 Struct layouts and the conversions follow pret: pokered ``constants/pokemon_data_constants.asm``
 and pokecrystal ``engine/link/link.asm`` (``Link_PrepPartyData_Gen1`` sends a Gen 2 Pokemon to a
@@ -17,44 +20,31 @@ import struct
 from dataclasses import dataclass
 from pathlib import Path
 
-from .vc import gbdata
+from .vc import gbdata, gbtext
 
-NAME_LENGTH = 11
+NAME_LENGTH = 11             # international and Korean; gbtext.NAME_LENGTH has each family's
 GEN1_STRUCT = 44
 GEN2_STRUCT = 48
 PK1_SIZE = 3 + GEN1_STRUCT + 2 * NAME_LENGTH   # 69
 PK2_SIZE = 3 + GEN2_STRUCT + 2 * NAME_LENGTH   # 73
+PK1_SIZE_JP = 3 + GEN1_STRUCT + 2 * 6          # 59
+PK2_SIZE_JP = 3 + GEN2_STRUCT + 2 * 6          # 63
 TERMINATOR = 0x50
 BASE_HAPPINESS = 70
 MAX_GEN1_MOVE = 165          # Struggle; moves above it do not exist in Gen 1.
 MAGNEMITE, MAGNETON = 81, 82
 
 _DEX_TO_INDEX = {dex: i for i, dex in enumerate(gbdata.GEN1_INDEX_TO_DEX) if dex}
-_DECODE = {v: k for k, v in gbdata.CHARMAP.items()}
 
 
 # -- text ------------------------------------------------------------------------------------------
 
-def encode_name(text: str, length: int = NAME_LENGTH) -> bytes:
-    out = bytearray()
-    for ch in text:
-        code = gbdata.CHARMAP.get(ch)
-        if code is None:
-            raise ValueError(f"{ch!r} has no Game Boy character")
-        out.append(code)
-    if len(out) > length - 1:
-        raise ValueError(f"{text!r} is longer than {length - 1} characters")
-    out.append(TERMINATOR)
-    return bytes(out).ljust(length, b"\x00")
+def encode_name(text: str, length: int | None = None, family: str = "intl") -> bytes:
+    return gbtext.encode(text, family, length)
 
 
-def decode_name(raw: bytes) -> str:
-    chars = []
-    for b in raw:
-        if b == TERMINATOR:
-            break
-        chars.append(_DECODE.get(b, "?"))
-    return "".join(chars)
+def decode_name(raw: bytes, family: str = "intl") -> str:
+    return gbtext.decode(raw, family)
 
 
 # -- species ---------------------------------------------------------------------------------------
@@ -82,8 +72,9 @@ class Record:
 
     generation: int
     data: bytes          # 44 (Gen 1) or 48 (Gen 2) bytes
-    ot_name: bytes       # 11 bytes, game text
-    nickname: bytes      # 11 bytes, game text
+    ot_name: bytes       # game text, the family's name length (11, Japanese 6)
+    nickname: bytes
+    family: str = "intl"             # "intl", "jp" or "kr" (pokeuds.vc.gbtext)
 
     @property
     def dex(self) -> int:
@@ -106,34 +97,60 @@ class Record:
     def held_item(self) -> int:
         return 0 if self.generation == 1 else self.data[1]
 
+    @property
+    def name_length(self) -> int:
+        return gbtext.NAME_LENGTH[self.family]
+
+    def nickname_text(self) -> str:
+        return decode_name(self.nickname, self.family)
+
+    def ot_text(self) -> str:
+        return decode_name(self.ot_name, self.family)
+
     def describe(self) -> str:
-        return (f"{species_name(self.dex)} (#{self.dex}) '{decode_name(self.nickname)}' Lv {self.level}, "
-                f"OT {decode_name(self.ot_name)} {self.ot_id:05d}")
+        return (f"{species_name(self.dex)} (#{self.dex}) '{self.nickname_text()}' Lv {self.level}, "
+                f"OT {self.ot_text()} {self.ot_id:05d}")
 
     def to_file(self) -> bytes:
         species = self.data[0]
         return bytes([1, species, 0xFF]) + self.data + self.ot_name + self.nickname
 
     @classmethod
-    def from_file(cls, raw: bytes) -> "Record":
-        if len(raw) == PK1_SIZE:
-            gen, size = 1, GEN1_STRUCT
-        elif len(raw) == PK2_SIZE:
-            gen, size = 2, GEN2_STRUCT
-        else:
-            raise ValueError(f"{len(raw)} bytes is neither a .pk1 ({PK1_SIZE}) nor a .pk2 ({PK2_SIZE})")
+    def from_file(cls, raw: bytes, family: str | None = None) -> "Record":
+        """A .pk1/.pk2. Its size tells a Japanese one; ``family`` "kr" marks a Korean one (the same size as an
+        international one)."""
+        sizes = {PK1_SIZE: (1, "intl"), PK2_SIZE: (2, "intl"), PK1_SIZE_JP: (1, "jp"), PK2_SIZE_JP: (2, "jp")}
+        if len(raw) not in sizes:
+            raise ValueError(f"{len(raw)} bytes is neither a .pk1 ({PK1_SIZE}, Japanese {PK1_SIZE_JP}) "
+                             f"nor a .pk2 ({PK2_SIZE}, Japanese {PK2_SIZE_JP})")
+        gen, found = sizes[len(raw)]
         if raw[0] != 1 or raw[2] != 0xFF:
             raise ValueError("not a single-Pokemon list (expected 01 <species> FF)")
+        if family == "kr" and found == "intl" and gen == 2:
+            found = "kr"
+        elif family == "jp" and found != "jp":
+            raise ValueError(f"{len(raw)} bytes is not a Japanese record ({PK1_SIZE_JP} or {PK2_SIZE_JP})")
+        size = GEN1_STRUCT if gen == 1 else GEN2_STRUCT
+        n = gbtext.NAME_LENGTH[found]
         body = raw[3:3 + size]
-        return cls(gen, body, raw[3 + size:3 + size + NAME_LENGTH], raw[3 + size + NAME_LENGTH:3 + size + 2 * NAME_LENGTH])
+        return cls(gen, body, raw[3 + size:3 + size + n], raw[3 + size + n:3 + size + 2 * n], found)
+
+    def in_language(self, source: str, target: str) -> "Record":
+        """This Pokemon as a game of ``target`` language holds it, from a game of ``source``: the same structs, the
+        names carried over (``gbtext.convert_name``). The same family and language give it back as it is."""
+        family = gbtext.family_of(target)
+        if family == self.family and (source or "en") == (target or "en"):
+            return self
+        return Record(self.generation, self.data, gbtext.convert_name(self.ot_name, source, target),
+                      gbtext.convert_name(self.nickname, source, target, dex=self.dex), family)
 
     @property
     def extension(self) -> str:
         return f"pk{self.generation}"
 
 
-def load(path: str | Path) -> Record:
-    record = Record.from_file(Path(path).expanduser().read_bytes())
+def load(path: str | Path, family: str | None = None) -> Record:
+    record = Record.from_file(Path(path).expanduser().read_bytes(), family)
     if record.dex == 0:
         raise ValueError(f"{path}: not a real species (index {record.data[0]:#04x})")
     return record
@@ -187,7 +204,9 @@ def gen2_to_gen1(record: Record) -> Record:
            + bytes([level]) + d[36:44]     # level, max HP, attack, defense, speed
            + struct.pack(">H", special))
     assert len(out) == GEN1_STRUCT
-    return Record(1, out, record.ot_name, record.nickname)
+    if record.family == "kr":
+        raise ValueError("Korean Gold and Silver have no Generation 1 game to send to: the Time Capsule is not for them")
+    return Record(1, out, record.ot_name, record.nickname, record.family)
 
 
 def catch_rate_item(catch_rate: int) -> int:
@@ -214,4 +233,4 @@ def gen1_to_gen2(record: Record) -> Record:
            + d[34:42]                                          # max HP, attack, defense, speed
            + struct.pack(">HH", calc_stat(base[4], spc_dv, spc_exp, level), calc_stat(base[5], spc_dv, spc_exp, level)))
     assert len(out) == GEN2_STRUCT
-    return Record(2, out, record.ot_name, record.nickname)
+    return Record(2, out, record.ot_name, record.nickname, record.family)

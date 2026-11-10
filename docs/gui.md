@@ -18,14 +18,15 @@ The window opens where it was last closed, at the same size (and maximized if it
 when that place is no longer on any screen, it opens centered (`gui/window.py`, Settings' `window`).
 
 
-The rail lists Trade, Bank and Gifts at the top, and Plugins, Board, Debug (when it is on) and Settings at
+The rail lists Trade, Bank, GTS and Gifts at the top, and Plugins, Board, Debug (when it is on) and Settings at
 its foot, Settings last. Plugin tools appear on the Trade page under their game. The app says "ESP32" for the board: esp32-uds-bridge runs on the ESP32-S3 today, and
 other chips can join the firmware list later without renaming anything.
 
 | page | what it does |
 |---|---|
 | Trade | pick the game, who hosts, the Pokemon to offer, the connection, Start; the session panel follows the run: radio, 3DS connected, link up, Pokemon received, what happened, the log |
-| Bank | every Pokemon the app keeps, received ones included: details, PKHeX legality, offer in a trade, Time Capsule copy, import, export, delete |
+| Bank | every Pokemon the app keeps, received ones included: details, PKHeX legality, offer in a trade, List on the GTS, Time Capsule copy, import, export, delete |
+| GTS | list a banked Pokemon against one to three wants, browse other players' listings by format and species and offer on one, and see where your listings and offers stand; Check now settles them (docs/online.md) |
 | Gifts | Gen 6/7 Mystery Gift cards: PKHeX's official events, a `.wc6`/`.wc7` (or full) file, or a custom card from the editor (every field, Customize any card, save as `.udsgift`, export `.wc6`/`.wc7`); the card's Pokemon into the bank and a trade; a Gen 6 or Gen 7 card sent over local wireless as an event distribution did (Gen 7 signed with the key from Settings) (Send over local wireless: Mystery Gift, Get via Local Wireless on the 3DS) (docs/mystery_gift.md, docs/wonder_cards.md) |
 | Debug | only with Settings, Debug tools on: the demo radio, a network scan, capture analysis |
 | Plugins | installed plugins: on and off, update, remove, add from a file or a followed source, the install screen (docs/plugins.md) |
@@ -43,8 +44,9 @@ On the Trade page:
 
 - **The offer** comes from the bank, from a file, or from **Build one**: the builder opens under the
   buttons, for the chosen game; PKHeX builds a legal Pokemon from your wishes (species, level, nickname,
-  shiny, gender, nature, ability, item, ball, moves) and the trainer, it is kept in the bank and becomes
-  the offer (docs/pkhex.md).
+  shiny, gender, nature, ability, item, ball, moves, IVs and EVs) and the trainer. **Build and offer it** keeps it
+  in the bank and queues it; **Build and save in Bank** only keeps it, for a trade later. **Import paste**, beside
+  Build one, reads a Showdown set first and opens the builder filled from it (docs/pkhex.md).
 - **The connection**, as pokeldn's Connection choice: the ESP32 board (found by its USB id, or the
   port the Board page set with Use for trades) or a USB Wi-Fi adapter through ldnd.exe 0.0.5 (Windows,
   with its pipe). Check runs `probe` and shows what answered. With the Debug demo radio on, the row says
