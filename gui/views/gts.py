@@ -72,7 +72,10 @@ class GtsView(View):
 
     @property
     def gts(self) -> gts.Gts:
-        return gts.Gts(self.bank, self.gts_root)
+        found = self.bank
+        # The other copy's bank and the received folder tell the player's own listings from someone else's.
+        near = gts.nearby(found.folder, self.app.settings.output) if self.gts_root is None else ()
+        return gts.Gts(found, self.gts_root, near=near)
 
     def trainer(self) -> str:
         s = self.app.settings
@@ -280,18 +283,20 @@ class GtsView(View):
         elif not self.found:
             rows.append(t.label("No open listings match.", size=12))
         else:
-            mine = self.gts.mine()
-            rows += [self._listing_row(listing, listing.pubkey in mine, busy) for listing in self.found[:100]]
+            here = self.gts
+            ours = here.ours()
+            rows += [self._listing_row(listing, ours.whose(listing, here.root), busy) for listing in self.found[:100]]
         return t.card(*rows, spacing=8)
 
-    def _listing_row(self, listing: wire.Listing, own: bool, busy: bool) -> ft.Control:
+    def _listing_row(self, listing: wire.Listing, own: str, busy: bool) -> ft.Control:
+        """``own``: why the listing is the player's own (``Ours.whose``), or ""."""
         p = listing.pokemon
         facts = " · ".join(str(x) for x in (p.get("nickname") and f"'{p['nickname']}'", p.get("nature"),
                                              p.get("ability"), p.get("held_item"), p.get("ot") and f"OT {p['ot']}")
                            if x)
         side: list[ft.Control]
         if own:
-            side = [t.pill("Yours", t.MUTED)]
+            side = [ft.Container(t.pill("Yours", t.MUTED), tooltip=own[0].upper() + own[1:])]
         else:
             fits = self.gts.fits(listing)
             if not fits:

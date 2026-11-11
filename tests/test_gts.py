@@ -352,7 +352,7 @@ def test_the_gts_page(world, monkeypatch, tmp_path):
     from pokeuds.app.settings import Settings
 
     monkeypatch.setattr(gts, "pkhex_check", legal)
-    monkeypatch.setattr(gts.Gts.__init__, "__defaults__", (None, legal, lambda: world.now[0]))
+    monkeypatch.setattr(gts.Gts.__init__, "__defaults__", (None, legal, lambda: world.now[0], ()))
 
     def page(name):
         app = App(None, Settings(bank=str(tmp_path / name / "bank"), trainer_name=name.upper(),
@@ -457,3 +457,56 @@ def test_browsing_every_format(world):
     assert [l.format for l in ben.browse(world.pool, None, has=4)] == ["pk1"]
     assert [l.format for l in ben.browse(world.pool, None, wants=133)] == ["pk6"]
     assert ben.browse(world.pool, "pk7") == []
+
+
+def test_two_copies_of_the_app_on_one_computer_never_trade_with_each_other(world, tmp_path, monkeypatch):
+    """A from-source copy keeps its bank in %APPDATA%, the packaged one beside the exe, and both write to one received
+    folder: neither may offer on the other's listing, and a lister refuses an offer that is already on its computer."""
+    from pokeuds.app import settings
+
+    monkeypatch.setattr(settings, "system_data_dir", lambda: tmp_path / "appdata")
+    received = tmp_path / "received"
+    for folder in (received, tmp_path / "appdata" / "bank", tmp_path / "app" / "Bank"):
+        folder.mkdir(parents=True)
+    source = gts.Gts(bank.Bank(tmp_path / "appdata" / "bank"), check=legal, clock=lambda: world.now[0])
+    exe = gts.Gts(bank.Bank(tmp_path / "app" / "Bank"), check=legal, clock=lambda: world.now[0])
+    source.near = gts.nearby(source.bank.folder, received)
+    exe.near = gts.nearby(exe.bank.folder, received)
+    assert source.near == [received] and exe.near == [tmp_path / "appdata" / "bank", received]
+    friend = world.app("friend")
+
+    # The exe lists a Pokemon it was traded: the source copy sees it as the player's, by its key (it finds the exe's
+    # GTS folder only through the received folder's copy of the record).
+    (received / "bunnelby.pk6").write_bytes(pk6(659, "UDS", ec=7))
+    exe.list_pokemon(exe.bank.deposit((received / "bunnelby.pk6").read_bytes(), "pk6", source="received")[0],
+                     [EEVEE], "Me")
+    exe.round(world.pool)
+    listing = friend.browse(world.pool)[0]
+    assert friend.whose(listing) == ""
+    with pytest.raises(ValueError, match="already on this computer"):
+        source.offer(put(source, 133, "Vee", ec=8), listing, "Me")
+    assert len(source.bank.entries()) == 1                          # nothing left the bank
+
+    # The source copy lists: the exe finds that copy's GTS folder in %APPDATA% and knows its key.
+    source.list_pokemon(put(source, 25, "Volt", ec=9), [EEVEE], "Me")
+    source.round(world.pool)
+    theirs = next(l for l in friend.browse(world.pool) if l.pokemon["species"] == 25)
+    assert "another copy of PokeUDS" in exe.whose(theirs) and exe.whose(listing) == "this is your own listing"
+    assert theirs.pubkey in exe.mine()
+
+    # An older copy that still sends the offer is refused by the lister: its Eevee sits in a GTS folder here.
+    old = gts.Gts(source.bank, check=legal, clock=lambda: world.now[0])
+    old.whose = lambda listing: ""
+    old.offer(put(old, 133, "Vee", ec=10), listing, "Me")
+    old.round(world.pool)
+    exe.round(world.pool)
+    old.round(world.pool)
+    back = [i for i in old.items() if i.kind == "offer"][0]
+    assert back.status == "returned" and "cannot trade with yourself" in back.state["reason"]
+    assert [i.status for i in exe.items()] == ["open"]
+
+    # Someone else's Eevee is still traded.
+    friend.offer(put(friend, 133, "Eve", ec=11), listing, "Friend")
+    friend.round(world.pool)
+    exe.round(world.pool)
+    assert next(i for i in exe.items() if i.kind == "listing").status == "traded"

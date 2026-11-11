@@ -60,13 +60,26 @@ Formats are `.pk1`, `.pk2`, `.pk6`, `.pk7`: a listing trades one format, and onl
 |---|---|---|
 | list | lister | PKHeX must find the Pokemon legal. It leaves the bank into the bank's hidden `.gts/listing-<id>/`; the listing is published. |
 | browse | anyone | the newest version of each listing, open and not expired; the page shows which banked Pokemon fit. |
-| offer | offerer | legal by PKHeX, of the listing's format and one of its wants (species, level range, shiny). It leaves the bank into `.gts/offer-<id>/`; the offer is sealed to the listing's key. One waiting offer per listing; never on your own listing. |
+| offer | offerer | legal by PKHeX, of the listing's format and one of its wants (species, level range, shiny). It leaves the bank into `.gts/offer-<id>/`; the offer is sealed to the listing's key. One waiting offer per listing; never on your own listing, nor on one of another copy of PokeUDS on this computer (Two copies on one computer). |
 | the lister's app opens | lister | the offers on the relays are answered oldest first. The first one that is valid (readable, the right listing and format, a real record, legal by PKHeX, what the listing asks for) is traded: the answer carries the listed record, the listing is republished as `traded`, the offered Pokemon joins the bank. Every other offer is refused, saying why. |
 | the offering app opens | offerer | the answer's record must match the listing's SHA-256; it joins the bank. A refusal returns the offered Pokemon. With no answer, the listing itself is read: withdrawn, traded to someone else, or ended returns the Pokemon too. The offer is then deleted from the relays. |
 | a listing ends | lister | taken down, or 30 days without a trade: the Pokemon returns to the bank, and later offers are refused. |
 
 Rounds happen when the app starts (if anything is live), when the GTS page opens, after each list or offer,
 and on "Check now". There is no background service: a trade waits until the lister's app next opens.
+
+### Two copies on one computer
+
+The packaged app keeps its bank beside PokeUDS.exe (`Bank`), an older or from-source copy in `%APPDATA%\PokeUDS\bank`,
+and each settles only its own `.gts`. Neither may trade with the other, which would only move a Pokemon between your
+own banks. The GTS page marks as **Yours** (its tooltip says why) and refuses an offer on:
+
+* a listing in this copy's `.gts`, or in the other bank's (the packaged app finds `%APPDATA%\PokeUDS\bank`);
+* a listing whose Pokemon (its SHA-256) is already a file in either bank, a GTS folder, or the received folder both
+  copies write to, which is how a from-source copy recognises the packaged app's listings.
+
+And a lister's app refuses an offer whose Pokemon already sits in a bank or GTS folder on its computer (an older copy
+may still send one): it goes back to the offering copy at its next round.
 
 ### Nothing is lost
 

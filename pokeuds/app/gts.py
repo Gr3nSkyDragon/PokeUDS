@@ -50,6 +50,63 @@ def default_root(bank: banking.Bank) -> Path:
     return bank.folder / FOLDER
 
 
+def nearby(bank_folder: str | Path, received: str | Path | None = None) -> list[Path]:
+    """Other folders on this computer whose Pokemon are the player's own: the bank an older or from-source copy of
+    PokeUDS keeps (``%APPDATA%\\PokeUDS\\bank`` and its ``.gts``) when it is not this one, and the received folder
+    trades write to. Each copy of the app has its own bank and settles only its own GTS folder; these let it tell a
+    listing of the other copy's, or a Pokemon already here, from someone else's."""
+    from .settings import system_data_dir
+
+    own = Path(bank_folder).resolve()
+    found: list[Path] = []
+    for folder in (system_data_dir() / "bank", received):
+        if not folder:
+            continue
+        folder = Path(folder)
+        try:
+            if folder.is_dir() and folder.resolve() != own and folder.resolve() not in [f.resolve() for f in found]:
+                found.append(folder)
+        except OSError:
+            continue
+    return found
+
+
+_digests: dict[tuple[str, int, int], str] = {}     # (path, size, mtime) -> SHA-256: a folder is hashed once
+
+
+def _digest(path: Path) -> str | None:
+    try:
+        st = path.stat()
+        key = (str(path), st.st_size, st.st_mtime_ns)
+        if key not in _digests:
+            _digests[key] = hashlib.sha256(path.read_bytes()).hexdigest()
+        return _digests[key]
+    except OSError:
+        return None
+
+
+@dataclass
+class Ours:
+    """What this computer holds: the keys of every listing in a GTS folder it has (-> that folder), and the SHA-256
+    of every Pokemon record in its banks, GTS folders and received folder (-> the file)."""
+    keys: dict[str, Path]
+    records: dict[str, Path]
+    held: set[str]              # the records' digests outside the received folder: in a bank or a GTS folder now
+
+    def whose(self, listing: wire.Listing, root: Path) -> str:
+        """Why ``listing`` is the player's own, or ""."""
+        folder = self.keys.get(listing.pubkey)
+        if folder is not None and folder == root:
+            return "this is your own listing"
+        if folder is not None:
+            return (f"this listing is from another copy of PokeUDS on this computer (its bank is {folder.parent}): "
+                    "open that copy to take it down")
+        if listing.sha256 in self.records:
+            return (f"this Pokemon is already on this computer ({self.records[listing.sha256]}): it was listed from "
+                    "another copy of PokeUDS here")
+        return ""
+
+
 def pkhex_check(fmt: str, data: bytes) -> tuple[bool, str, dict]:
     """What PKHeX says of a record: (legal, its report, the Pokemon as PKHeX reads it)."""
     from .. import pkhex
@@ -134,11 +191,13 @@ def _language(entry: banking.Entry) -> str:
 
 
 class Gts:
-    def __init__(self, bank: banking.Bank, root: str | Path | None = None, check=pkhex_check, clock=time.time) -> None:
+    def __init__(self, bank: banking.Bank, root: str | Path | None = None, check=pkhex_check, clock=time.time,
+                 near: list[Path] | tuple = ()) -> None:
         self.bank = bank
         self.root = Path(root) if root else default_root(bank)
         self.check = check
         self.clock = clock
+        self.near = [Path(p) for p in near]     # other banks and the received folder on this computer (``nearby``)
 
     # -- what we hold ---------------------------------------------------------------------------
 
@@ -159,8 +218,48 @@ class Gts:
         return any(item.live for item in self.items())
 
     def mine(self) -> set[str]:
-        """The keys of our own listings, so the page does not offer us our own Pokemon."""
-        return {i.state["pubkey"] for i in self.items() if i.kind == "listing"}
+        """The keys of our own listings, and of those in the other GTS folders on this computer."""
+        return set(self.ours().keys)
+
+    def ours(self) -> Ours:
+        """What this computer holds, so the page never offers the player their own Pokemon (``Ours.whose``)."""
+        keys: dict[str, Path] = {}
+        records: dict[str, Path] = {}
+        held: set[str] = set()
+        roots = [self.root] + [p / FOLDER for p in self.near if p / FOLDER != self.root]
+        for root in roots:
+            if not root.is_dir():
+                continue
+            for folder in root.iterdir():
+                try:
+                    state = json.loads((folder / "state.json").read_text(encoding="utf-8"))
+                except (OSError, ValueError):
+                    continue
+                if not isinstance(state, dict):
+                    continue
+                if state.get("kind") == "listing" and isinstance(state.get("pubkey"), str):
+                    keys.setdefault(state["pubkey"], root)
+                for path in folder.glob("*.pk?"):
+                    if (digest := _digest(path)) is not None:
+                        records.setdefault(digest, path)
+                        held.add(digest)
+        for folder in [self.bank.folder] + self.near:
+            try:
+                files = [p for p in folder.iterdir() if p.suffix.lower() in banking.EXTENSIONS and p.is_file()]
+            except OSError:
+                continue
+            is_bank = folder == self.bank.folder or (folder / banking.INFO).is_dir() or (folder / FOLDER).is_dir()
+            for path in files:
+                if (digest := _digest(path)) is not None:
+                    records.setdefault(digest, path)
+                    if is_bank:
+                        held.add(digest)
+        return Ours(keys, records, held)
+
+    def whose(self, listing: wire.Listing) -> str:
+        """Why ``listing`` is the player's own (this copy's, another copy's on this computer, or a Pokemon already
+        here), or ""."""
+        return self.ours().whose(listing, self.root)
 
     # -- leaving and joining the bank -----------------------------------------------------------
 
@@ -287,8 +386,8 @@ class Gts:
 
     def offer(self, entry: banking.Entry, listing: wire.Listing, trainer: str) -> Item:
         """Answer a listing with a banked Pokemon. It leaves the bank until the lister's app trades or refuses."""
-        if listing.pubkey in self.mine():
-            raise ValueError("this is your own listing")
+        if why := self.whose(listing):
+            raise ValueError(why)
         if any(i.kind == "offer" and i.status == "waiting" and i.state["listing"]["id"] == listing.id
                and i.state["listing"]["pubkey"] == listing.pubkey for i in self.items()):
             raise ValueError("you already have an offer waiting on this listing")
@@ -345,6 +444,9 @@ class Gts:
             return "not an offer for this listing", ""
         if body["format"] != s["format"]:
             return f"the listing trades .{s['format']} Pokemon", ""
+        if hashlib.sha256(body["record"]).hexdigest() in self.ours().held:
+            # In a bank or GTS folder on the lister's computer now: another copy of PokeUDS there offered it.
+            return "the Pokemon offered is already on the lister's computer: you cannot trade with yourself", ""
         try:
             parsed = banking.parse(Path(f"x.{s['format']}"), body["record"])
         except ValueError as exc:
