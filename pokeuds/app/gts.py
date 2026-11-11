@@ -273,6 +273,10 @@ class Gts:
             if key not in newest or newest[key].event["created_at"] < event["created_at"]:
                 newest[key] = listing
         found = [l for l in newest.values() if l.status == "open" and l.expires > now]
+        if fmt is None and has:                 # every format: the relays index a species per format, so filter here
+            found = [l for l in found if l.pokemon.get("species") == has]
+        if fmt is None and wants:
+            found = [l for l in found if any(w.species == wants for w in l.wants)]
         return sorted(found, key=lambda l: l.created, reverse=True)
 
     def fits(self, listing: wire.Listing) -> list[banking.Entry]:

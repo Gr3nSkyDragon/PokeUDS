@@ -443,3 +443,17 @@ def test_the_gts_folder_lives_in_the_bank(tmp_path):
     one.check = legal
     item = one.list_pokemon(put(one), [EEVEE], "Ann")
     assert item.path.parent == one.root and two.items() == [] and one.bank.entries() == []
+
+
+def test_browsing_every_format(world):
+    """All formats is the page's default: a .pk6 listing and a .pk1 one both show, and a species filter still works
+    (the relays index a species per format, so it is applied here)."""
+    ann, ben = world.app("ann"), world.app("ben")
+    ann.list_pokemon(put(ann), [EEVEE], "Ann")
+    ann.list_pokemon(ann.bank.deposit(sample_mon(1, 4, 10, "CHAR").to_file(), "pk1", source="imported")[0],
+                     [wire.Want(7, "Squirtle")], "Ann")
+    ann.round(world.pool)
+    assert sorted(l.format for l in ben.browse(world.pool)) == ["pk1", "pk6"]
+    assert [l.format for l in ben.browse(world.pool, None, has=4)] == ["pk1"]
+    assert [l.format for l in ben.browse(world.pool, None, wants=133)] == ["pk6"]
+    assert ben.browse(world.pool, "pk7") == []

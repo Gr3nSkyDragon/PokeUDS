@@ -18,15 +18,28 @@ from pokeuds.online import relays
 
 from .. import theme as t
 from .common import View
-from .picker import name_field
+from .pickbox import pick_box
 from .sprite import sprite
 
 FORMATS = tuple((f, f".{f} · {wire.FORMAT_NAMES[f]}") for f in wire.FORMATS)
+ALL = "all"
+FORMATS = ((ALL, "All formats"),) + FORMATS
+LEVELS = [(n, str(n)) for n in range(1, 101)]
+
+
+def no_relay(pool) -> str:
+    """Why nothing reached the relays, in a sentence the player can act on: each relay's own error."""
+    problems = pool.problems()[:3]
+    return ("No relay answered" + (": " + "; ".join(problems) if problems else "")
+            + ". If this computer is online, a firewall or antivirus may be blocking PokeUDS, or its clock may be "
+              "wrong (secure connections need it). Check the relays shows each one.")
 LAST_SPECIES = {"pk1": 151, "pk2": 251, "pk6": 721, "pk7": 807}
 _options: dict[str, list] = {}
 
 
 def species_options(fmt: str) -> list:
+    if fmt == ALL:
+        fmt = "pk7"                          # every format's species: Gen 7 has them all
     """(dex, name) for the species a format holds; the same list object each time (picker caches by id)."""
     if fmt not in _options:
         _options[fmt] = [(i, species.NAMES[i]) for i in range(1, LAST_SPECIES[fmt] + 1)]
@@ -44,9 +57,10 @@ class GtsView(View):
         self.working = ""                       # what runs in the background: "round", "browse", "list", "offer"
         self.listing_entry = ""                 # the bank entry chosen to list
         self.wants: list[dict] = [{"species": 0, "min_level": 1, "max_level": 100, "shiny": False}]
-        self.browse_format = "pk7"
+        self.browse_format = ALL                 # every format: a listing of any generation shows
         self.browse_species = 0
         self.found: list[wire.Listing] | None = None
+        self.relay_check: list[tuple[str, bool, str]] | None = None   # Check the relays' last answer
         self.offer_choice: dict[str, str] = {}  # listing id -> the bank entry chosen to offer
         self.opened = False
 
@@ -92,6 +106,8 @@ class GtsView(View):
         header = ft.Row([
             t.title("GTS"), ft.Container(expand=True),
             *([ft.ProgressRing(width=16, height=16), t.label(self._working_text(), size=12)] if busy else []),
+            t.secondary("Check the relays", lambda e: self._background("relays", self._check_relays), ft.Icons.WIFI_FIND,
+                        disabled=busy),
             t.secondary("Check now", lambda e: self._background("round", self._round_work), ft.Icons.SYNC, disabled=busy),
         ], spacing=8)
         controls: list[ft.Control] = [header, t.notice(
@@ -100,13 +116,41 @@ class GtsView(View):
             "listed; a changed app could keep yours. Only Pokemon PKHeX finds legal go on the GTS.", t.INFO)]
         if self.message:
             controls.append(t.notice(self.message, self.message_color))
+        if self.relay_check is not None:
+            controls.append(self._relay_card())
         controls += [self._mine(), self._list_card(busy), self._browse_card(busy)]
         return ft.Column(controls, spacing=12, scroll=ft.ScrollMode.AUTO,
                          horizontal_alignment=ft.CrossAxisAlignment.STRETCH)
 
     def _working_text(self) -> str:
         return {"round": "Talking to the relays...", "browse": "Looking...", "list": "Checking and listing...",
-                "offer": "Checking and offering..."}.get(self.working, "Working...")
+                "offer": "Checking and offering...", "relays": "Checking each relay..."}.get(self.working, "Working...")
+
+    def _check_relays(self) -> None:
+        with self.pool_factory() as pool:
+            self.relay_check = pool.check() if hasattr(pool, "check") else []
+
+    def _relay_card(self) -> ft.Control:
+        """Each relay, and whether it answered: what to look at when nothing does."""
+        answered = sum(ok for _, ok, _ in self.relay_check)
+        rows: list[ft.Control] = [ft.Row([t.heading(f"Relays: {answered} of {len(self.relay_check)} answered"),
+                                          ft.Container(expand=True),
+                                          ft.IconButton(ft.Icons.CLOSE, icon_size=18, tooltip="Close",
+                                                        on_click=lambda e: self._close_relay_check())])]
+        for url, ok, detail in self.relay_check:
+            rows.append(ft.Row([ft.Icon(ft.Icons.CHECK_CIRCLE if ok else ft.Icons.ERROR_OUTLINE,
+                                        color=t.GOOD if ok else t.BAD, size=16),
+                                ft.Text(url, size=13, color=t.TEXT, width=280, selectable=True),
+                                t.label(detail, size=12, selectable=True, expand=True)], spacing=8))
+        if not answered:
+            rows.append(t.label("None answered. If this computer is online, a firewall or antivirus may be blocking "
+                                "PokeUDS (allow PokeUDS.exe), or the computer's clock may be wrong: secure connections "
+                                "need the right date and time.", size=12))
+        return t.card(*rows, spacing=6)
+
+    def _close_relay_check(self) -> None:
+        self.relay_check = None
+        self.refresh()
 
     def _mine(self) -> ft.Control:
         items = self.gts.items()
@@ -147,8 +191,9 @@ class GtsView(View):
         options = species_options(chosen.extension)
         rows.append(t.label("Wanted in return: one to three Pokemon. Any of them will do.", size=12))
         for i, want in enumerate(self.wants):
-            row = [name_field(f"Want {i + 1}", want["species"], options, lambda v, i=i: self._want(i, "species", v), 200,
-                              disabled=busy),
+            row = [pick_box(f"Want {i + 1}", want["species"] or None, options,
+                            lambda e, i=i: self._want(i, "species", int(e.control.value or 0)), width=220,
+                            disabled=busy, redraw=self.refresh),
                    self._level(i, "min_level", "From Lv", busy), self._level(i, "max_level", "To Lv", busy)]
             if chosen.extension != "pk1":           # Gen 1 has no shininess
                 row.append(ft.Checkbox(label="Shiny only", value=want["shiny"], disabled=busy,
@@ -156,7 +201,7 @@ class GtsView(View):
             if len(self.wants) > 1:
                 row.append(ft.IconButton(ft.Icons.CLOSE, icon_size=18, tooltip="Remove", disabled=busy,
                                          on_click=lambda e, i=i: self._drop_want(i)))
-            rows.append(ft.Row(row, spacing=8, vertical_alignment=ft.CrossAxisAlignment.START))
+            rows.append(ft.Row(row, spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER))
         buttons = [t.primary("List it", lambda e: self._list(chosen), ft.Icons.PUBLISH, disabled=busy)]
         if len(self.wants) < wire.MAX_WANTS:
             buttons.insert(0, t.secondary("Another want", lambda e: self._add_want(), ft.Icons.ADD, disabled=busy))
@@ -165,9 +210,9 @@ class GtsView(View):
                          "without a trade, brings it back.", size=12)]
         return t.card(*rows)
 
-    def _level(self, i: int, key: str, label: str, busy: bool) -> ft.TextField:
-        return ft.TextField(label=label, value=str(self.wants[i][key]), width=90, dense=True, disabled=busy,
-                            on_blur=lambda e: self._want(i, key, e.control.value))
+    def _level(self, i: int, key: str, label: str, busy: bool) -> ft.Dropdown:
+        return pick_box(label, self.wants[i][key], LEVELS, lambda e: self._want(i, key, e.control.value), width=110,
+                        disabled=busy, redraw=self.refresh)
 
     def _pick_entry(self, e) -> None:
         self.listing_entry = e.control.value or ""
@@ -226,10 +271,10 @@ class GtsView(View):
         rows: list[ft.Control] = [t.heading("Browse"), ft.Row([
             ft.Dropdown(label="Format", value=self.browse_format, width=400, dense=True, disabled=busy,
                         options=[ft.DropdownOption(key=k, text=v) for k, v in FORMATS], on_select=self._pick_format),
-            name_field("Listing a", self.browse_species, options, self._pick_browse_species, 200, empty="any",
-                       disabled=busy),
+            pick_box("Offering", self.browse_species, [(0, "Any Pokemon")] + options, self._pick_browse_species,
+                     width=220, disabled=busy, redraw=self.refresh),
             t.secondary("Look", lambda e: self._background("browse", self._browse_work), ft.Icons.SEARCH, disabled=busy),
-        ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.START)]
+        ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER)]
         if self.found is None:
             rows.append(t.label("Look to see the open listings.", size=12))
         elif not self.found:
@@ -266,18 +311,20 @@ class GtsView(View):
             *side], spacing=12), padding=ft.Padding(4, 6, 4, 6))
 
     def _pick_format(self, e) -> None:
-        self.browse_format = e.control.value or "pk7"
+        self.browse_format = e.control.value or ALL
         self.browse_species, self.found = 0, None
         self.refresh()
 
-    def _pick_browse_species(self, value: int) -> None:
-        self.browse_species = value
+    def _pick_browse_species(self, e) -> None:
+        value = e.control.value
+        self.browse_species = int(value) if value and str(value).isdigit() else 0
 
     def _browse_work(self) -> None:
         with self.pool_factory() as pool:
-            self.found = self.gts.browse(pool, self.browse_format, has=self.browse_species or None)
+            fmt = None if self.browse_format == ALL else self.browse_format
+            self.found = self.gts.browse(pool, fmt, has=self.browse_species or None)
             if not pool.reached():
-                self._say("No relay answered. Is this computer online?", t.BAD)
+                self._say(no_relay(pool), t.BAD)
 
     def _offer(self, listing: wire.Listing) -> None:
         fits = {e.id: e for e in self.gts.fits(listing)}
@@ -322,7 +369,7 @@ class GtsView(View):
             if said:
                 self._say(" ".join(said), t.GOOD)
             elif not pool.reached():
-                self._say("No relay answered. Is this computer online?", t.BAD)
+                self._say(no_relay(pool), t.BAD)
 
     def _background(self, kind: str, work, keep_message: bool = False, redraw: bool = True) -> None:
         if self.working:

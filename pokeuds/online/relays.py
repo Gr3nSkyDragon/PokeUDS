@@ -376,6 +376,17 @@ class Pool:
     def problems(self) -> list[str]:
         return [f"{relay.url}: {relay.failed}" for relay in self.relays if relay.failed and relay.ws is None]
 
+    def check(self, timeout: float = REPLY_TIMEOUT) -> list[tuple[str, bool, str]]:
+        """Ask each relay for one GTS event: -> (address, answered, how long it took or why not), one per relay."""
+        def one(relay: Relay) -> tuple[str, bool, str]:
+            started = time.monotonic()
+            relay.fetch({"kinds": [30402], "#t": ["pokeuds-gts"], "limit": 1}, timeout)
+            if relay.ws is not None:
+                return relay.url, True, f"{(time.monotonic() - started) * 1000:.0f} ms"
+            return relay.url, False, relay.failed or "no connection"
+
+        return self._each(one)
+
     def close(self) -> None:
         for relay in self.relays:
             relay.close()

@@ -22,6 +22,7 @@ from pokeuds.app.builder import ABILITIES, GAMES, GENDERS, HIDDEN_POWER, STATS, 
 from .. import theme as t
 from ..translate import translate
 from .common import View
+from .pickbox import pick, pick_box  # noqa: F401  (pick: the builder's typed-text rule)
 from .sprite import sprite
 
 ANY = "-"
@@ -35,23 +36,6 @@ def _helper_ready() -> bool:
     from . import pkhex_setup
 
     return pkhex_setup.ready()
-
-
-def _fold(text: str) -> str:
-    return "".join(ch for ch in text.casefold() if ch.isalnum())
-
-
-def pick(text: str, choices: list[tuple[str, str]]) -> str | None:
-    """The entry typed text means: the one named exactly, else the first whose name starts with it, else the first
-    that contains it (the list's own filter puts that one on top); None for no text or no match."""
-    folded = _fold(text)
-    if not folded:
-        return None
-    for test in (lambda name: name == folded, lambda name: name.startswith(folded), lambda name: folded in name):
-        for key, name in choices:
-            if test(_fold(name)):
-                return key
-    return None
 
 
 class BuilderPanel(View):
@@ -225,32 +209,8 @@ class BuilderPanel(View):
 
     def _dd(self, label: str, value, options: list[tuple[str, str]], on_select, width: int = FIELD,
             disabled: bool = False) -> ft.Dropdown:
-        """A pick box you can also type in: the list filters to what is typed. A click picks an entry; leaving the
-        box (Tab, Enter, a click elsewhere) picks what was typed, the first match, the entry the list shows on top."""
-        choices = [(str(k), str(v)) for k, v in options]
-        typed: dict[str, str | None] = {"text": None}
-
-        def selected(e) -> None:
-            typed["text"] = None
-            on_select(e)
-
-        def text_changed(e) -> None:
-            typed["text"] = e.data if isinstance(e.data, str) else e.control.text
-
-        def left(e) -> None:
-            text, typed["text"] = typed["text"], None
-            if text is None:
-                return
-            key = pick(text, choices)
-            if key is not None and key != e.control.value:
-                e.control.value = key
-                on_select(e)
-            self.refresh()                   # the box shows the entry picked, or the one it had
-
-        return ft.Dropdown(label=label, value=value, width=width, dense=True, disabled=disabled, menu_height=360,
-                           options=[ft.DropdownOption(key=k, text=v) for k, v in choices], on_select=selected,
-                           on_text_change=text_changed, on_blur=left, editable=True, enable_filter=True,
-                           enable_search=True)
+        """A pick box you can also type in (gui/views/pickbox.py)."""
+        return pick_box(label, value, options, on_select, width=width, disabled=disabled, redraw=self.refresh)
 
     @staticmethod
     def _text(label: str, value: str, on_blur, width: int = FIELD, disabled: bool = False, max_length: int | None = None,
