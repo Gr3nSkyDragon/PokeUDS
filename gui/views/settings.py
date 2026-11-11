@@ -8,6 +8,7 @@ from pathlib import Path
 import flet as ft
 
 from pokeuds import __version__
+from pokeuds.app import update
 from pokeuds.app.settings import data_dir
 
 from .. import theme as t
@@ -94,12 +95,27 @@ class SettingsView(View):
                                        "already downloaded show.")],
                               spacing=4, expand=True),
                     ft.Switch(value=s.sprites, on_change=self._sprites)]))
+        root = update.install_root()
+        updates = t.card(
+            ft.Row([ft.Column([t.heading("Updates"),
+                               t.label("At start, PokeUDS asks GitHub whether a newer version is out and offers it "
+                                       "above the pages. Updating replaces only PokeUDS's own program files: your "
+                                       "Bank, GTS listings, settings and received Pokemon stay as they are."
+                                       if root is not None else
+                                       "At start, PokeUDS asks GitHub whether a newer version is out. Only the "
+                                       "Windows app updates itself; here the banner links to the download.")],
+                              spacing=4, expand=True),
+                    ft.Switch(value=s.updates, on_change=self._updates)]),
+            ft.Row([t.secondary("Check now", lambda e: self.app.updates.check() if getattr(self.app, "updates", None)
+                                else None, ft.Icons.SYSTEM_UPDATE_ALT),
+                    t.label(f"This is PokeUDS {__version__}.", size=12)], spacing=12))
         debug = t.card(
             ft.Row([ft.Column([t.heading("Debug tools"),
                                t.label("Adds a Debug page: the demo radio, a network scan and capture analysis.")],
                               spacing=4, expand=True),
                     ft.Switch(value=s.debug, on_change=self._debug)]))
-        return ft.Column([c for c in (t.title("Settings"), keys, gen7, output, trainer, language, helper, art, debug)
+        return ft.Column([c for c in (t.title("Settings"), keys, gen7, output, trainer, language, helper, art, updates,
+                                      debug)
                           if c is not None] + [
                           t.label(f"PokeUDS {__version__}", size=12)],
                          spacing=t.GAP, scroll=ft.ScrollMode.AUTO)
@@ -210,6 +226,10 @@ class SettingsView(View):
 
         self.app.settings.sprites = bool(e.control.value)
         sprites.CACHE.online = self.app.settings.sprites
+        self.app.save()
+
+    def _updates(self, e) -> None:
+        self.app.settings.updates = bool(e.control.value)
         self.app.save()
 
     def _debug(self, e) -> None:

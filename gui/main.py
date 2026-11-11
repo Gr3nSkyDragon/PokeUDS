@@ -18,6 +18,7 @@ from gui import window  # noqa: E402
 from gui.translate import translate  # noqa: E402
 from pokeuds.app import bank, i18n  # noqa: E402
 from gui.app import App  # noqa: E402
+from gui.updates import Updates  # noqa: E402
 from gui.views.board import BoardView  # noqa: E402
 from gui.views.bank import BankView  # noqa: E402
 from gui.views.debug import DebugView  # noqa: E402
@@ -37,6 +38,8 @@ class Shell:
         self.views = {cls.key: cls(app) for cls in (*PAGES, *BOTTOM, DebugView)}
         self.current = "trade"
         self.content = ft.Container(expand=True, padding=ft.Padding(0, t.GAP, t.GAP, t.GAP))
+        self.updates = Updates(app)
+        app.updates = self.updates
         self.rail = ft.NavigationRail(on_change=self._rail, bgcolor=t.PANEL, min_width=84, expand=True,
                                       label_type=ft.NavigationRailLabelType.ALL,
                                       leading=ft.Container(t.mark(), padding=ft.Padding(0, 18, 0, 18)))
@@ -73,7 +76,10 @@ class Shell:
         self.content.content = self.views[self.current].control()
         rails = ft.Container(ft.Column([self.rail, self.foot], spacing=0), bgcolor=t.PANEL,
                              padding=ft.Padding(0, 0, 0, 12))
-        return ft.Row([rails, self.content], spacing=t.GAP, expand=True,
+        # The update banner sits above every page (gui/updates.py); hidden until there is something to say.
+        body = ft.Column([ft.Container(self.updates.banner, padding=ft.Padding(0, t.GAP, t.GAP, 0)), self.content],
+                         spacing=0, expand=True)
+        return ft.Row([rails, body], spacing=t.GAP, expand=True,
                       vertical_alignment=ft.CrossAxisAlignment.STRETCH)
 
     def rebuild(self) -> None:
@@ -113,6 +119,8 @@ def main(page: ft.Page) -> None:
     shell = Shell(page, app)
     page.add(shell.build())
     shell.views["gts"].settle()               # settles what is live on the GTS, in the background
+    if not page.web:
+        shell.updates.at_start()              # the last update's outcome; a newer release, in the background
     if not page.web:
         if t.ICON.is_file():
             page.window.icon = str(t.ICON)      # from source too; the packaged exe also carries it

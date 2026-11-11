@@ -127,6 +127,28 @@ it is `<data folder>/bank`. Settings' `bank` overrides both.
 Levels of stored Gen 6/7 records (which carry no level byte) come from their experience and the species'
 growth rate (`pokeuds/species.py`, taken from PKHeX.Core).
 
+## Updates
+
+`pokeuds/app/update.py`, `gui/updates.py`. At start (Settings > Updates, on by default) the app asks GitHub for
+PokeUDS's releases; one above this version shows as a banner above every page: **Update now**, **What's new** (the
+release page), Not now. Settings > Updates > **Check now** asks again. The design is pokeldn's: the release's
+`SHA256SUMS` must list `PokeUDS-windows.zip`'s checksum (a mismatch is refused), the zip unpacks into
+`Data/update/new` (every name under `PokeUDS/`, none climbing out), and the new app runs as a helper
+(`PokeUDS.exe --apply-update`) that waits for the old app and its children (the window, PKHeX, a trade) to quit,
+replaces the app and opens it again.
+
+| | |
+|---|---|
+| what is replaced | only what the release ships: `PokeUDS.exe`, `_internal`, `LICENSE.txt` |
+| never touched | `Bank` (its `.gts` GTS listings and `.info` too), `Data`, `received`, and anything else in the folder |
+| a failure | the old files go back; the next start says what happened |
+| pre-releases | offered (PokeUDS's releases are `v0.*`); a draft never is |
+| the Mac app, a source run | the banner links to the release page instead |
+| an unwritable folder (Program Files) | Download instead of Update now |
+
+The checksum shows the download is whole; it does not prove who made the release. An app before 0.1.4 has no
+updater: from it, the next version is downloaded once by hand.
+
 ## Pokemon sprites
 
 The builder's preview, the bank (each row and the chosen Pokemon) and Mystery Gift (each card and the gift)

@@ -29,6 +29,16 @@ def keep_temp_out_of_sight() -> None:
 
 keep_temp_out_of_sight()
 
+if len(sys.argv) > 1 and sys.argv[1] == "--apply-update":
+    # The new version, unpacked in the old one's Data/update/new, replacing the old one's program files once it has
+    # quit (pokeuds/app/update.py). Nothing else is loaded: no window, no settings, no bank.
+    from pokeuds.app import update
+
+    new, root, pid, version = sys.argv[2:6]
+    # POKEUDS_UPDATE_NO_RELAUNCH: a test of the packaged helper swaps without opening the app afterwards.
+    relaunch = (lambda folder: None) if os.environ.get("POKEUDS_UPDATE_NO_RELAUNCH") else None
+    sys.exit(0 if update.apply(Path(new), Path(root), int(pid), version, relaunch=relaunch, helper=os.getpid()) else 1)
+
 if len(sys.argv) > 1 and sys.argv[1] == "--cli":
     del sys.argv[1]
     # The app reads the child line by line: UTF-8 and a flush per line, whatever the console's code page.
