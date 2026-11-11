@@ -200,7 +200,8 @@ gitignored local file — `rsa_d_key.txt` next to your `aes_keys.txt`, or the le
 `pokeuds/games/gen7/delivery_key.py`. Without it the verifier still works, but `fragments` raises a clear
 error instead of sending an unsigned message.
 
-- **Easiest:** run `python scripts/extract_gen7_key.py "Gen 7 Local Distributor.cxi" --keys aes_keys.txt`.
+- **Easiest:** run `python scripts/extract_gen7_key.py "Gen 7 Local Distributor.cxi" --keys aes_keys.txt`
+  (a decrypted CCI, `.cci` or `.3ds`, or the extracted `code.bin` work too: the key is found wherever it sits).
   It writes `rsa_d_key.txt` next to `aes_keys.txt` (or `--out`), and PokeUDS reads it there. The GUI's
   Settings page has a **Gen 7 Mystery Gift Key** section below Console keys that asks for the distributor,
   runs the same extraction, lets you choose where to save `rsa_d_key.txt`, and remembers it. Retail

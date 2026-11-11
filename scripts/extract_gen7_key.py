@@ -5,7 +5,8 @@ The private key exists only in the **Gen 7 Local Distributor** (title 0004000000
 Sun/Moon build that broadcasts events.  Retail Sun/Moon/USUM carry only the **public** key (the games
 verify with it), so pointing this at a retail CXI correctly reports that no private key is there.
 
-Point it at the distributor's decrypted CXI, its extracted `code.bin`, or the 461-byte PKCS#1 DER:
+Point it at the distributor's decrypted CXI or CCI (.cci/.3ds), its extracted `code.bin`, or the 461-byte PKCS#1
+DER (the key is found wherever the container puts it):
 
     python scripts/extract_gen7_key.py "Gen 7 Local Distributor.cxi" --keys aes_keys.txt
 
@@ -27,7 +28,7 @@ from pokeuds.games.gen7 import keyextract  # noqa: E402
 
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("source", help="the distributor's decrypted CXI, a code.bin, or the PKCS#1 DER")
+    p.add_argument("source", help="the distributor's decrypted CXI or CCI (.cci/.3ds), a code.bin, or the PKCS#1 DER")
     p.add_argument("--keys", help="the aes_keys.txt whose folder should receive rsa_d_key.txt")
     p.add_argument("--out", help="output path (default: next to --keys, else ./rsa_d_key.txt)")
     args = p.parse_args()

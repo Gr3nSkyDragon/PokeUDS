@@ -104,8 +104,9 @@ On macOS or Linux, activate with `. .venv/bin/activate`. `requirements.txt` alon
   - a **USB Wi-Fi adapter** through legacy **ldnd.exe 0.0.5** (Windows; not the ldnrs revision).
 - **`aes_keys.txt`** holding the keyslot 0x2D key (`slot0x2DKeyN`, or `slot0x2DKeyX`, `slot0x2DKeyY` and
   `generatorConstant`): the same file Azahar uses. Set it once in Settings. Only scanning works without it.
-- **For Gen 7 Mystery Gift distribution only:** a decrypted dump (`.cxi` or `code.bin`) of the Gen 7 Local
-  Distributor, from which Settings extracts the signing key once ([docs/mystery_gift.md](docs/mystery_gift.md)).
+- **For Gen 7 Mystery Gift distribution only:** a decrypted dump of the Gen 7 Local Distributor, as a CXI, a CCI
+  (`.cci`/`.3ds`) or its `code.bin`, from which Settings extracts the signing key once
+  ([docs/mystery_gift.md](docs/mystery_gift.md)).
 
 ## Trading from the app
 
@@ -151,8 +152,8 @@ python -m pokeuds gift distribute sm my.wc7 --radio esp32
 `scan` lists every 3DS network in range, `analyze` decodes an Azahar log or a capture, `build` makes a Pokemon with
 PKHeX, `gift` lists, edits, builds and distributes Mystery Gift cards (`--gen7-key` points at `rsa_d_key.txt` if it
 is not beside `aes_keys.txt`), `board` manages the ESP32, `pkhex` builds PKHeX in a source tree, `plugins` manages plugins.
-`python scripts/extract_gen7_key.py DISTRIBUTOR.cxi --keys aes_keys.txt` is the Settings key extraction from a
-terminal. Each game's protocol is in
+`python scripts/extract_gen7_key.py DISTRIBUTOR.cxi --keys aes_keys.txt` (or a `.cci`/`.3ds`, or `code.bin`) is the
+Settings key extraction from a terminal. Each game's protocol is in
 [docs/vc.md](docs/vc.md), [docs/gen6.md](docs/gen6.md) and [docs/gen7.md](docs/gen7.md).
 
 ## Layout
