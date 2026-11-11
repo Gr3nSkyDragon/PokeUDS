@@ -3,7 +3,7 @@
 # PokeUDS
 
 PokeUDS trades with retail Pokemon games on a Nintendo 3DS over local wireless (UDS), the way
-[pokeldn](https://github.com/Decryptu/pokeldn) does for the Switch. A computer with an ESP32-S3 board or a USB Wi-Fi
+[pokeldn](https://github.com/Decryptu/pokeldn) does for the Switch. A computer with an ESP32 board (S3; alpha: classic, C3, C6) or a USB Wi-Fi
 adapter stands in for a second console: the 3DS sees another player and trades with it. Nothing is installed on the
 3DS. It can also send Gen 6 and Gen 7 Mystery Gifts over local wireless, the way an event distribution did.
 
@@ -100,7 +100,8 @@ On macOS or Linux, activate with `. .venv/bin/activate`. `requirements.txt` alon
 
 - **A radio** ([docs/hardware.md](docs/hardware.md)):
   - an **ESP32-S3** with [esp32-uds-bridge](https://github.com/Gr3nSkyDragon/VC-Adapter/tree/main/firmware/esp32-uds-bridge)
-    firmware 1.8, on its native USB port (PokeUDS includes it: the Board page installs it); any OS; or
+    firmware 2.0-uds, on its native USB port (PokeUDS includes it: the Board page installs it; **alpha**: a
+    classic ESP32, C3 or C6, [docs/hardware.md](docs/hardware.md)); any OS; or
   - a **USB Wi-Fi adapter** through legacy **ldnd.exe 0.0.5** (Windows; not the ldnrs revision).
 - **`aes_keys.txt`** holding the keyslot 0x2D key (`slot0x2DKeyN`, or `slot0x2DKeyX`, `slot0x2DKeyY` and
   `generatorConstant`): the same file Azahar uses. Set it once in Settings. Only scanning works without it.

@@ -7,7 +7,7 @@
     pkx      show a .pk6/.pk7 (or .ek6/.ek7) file
     vc       Virtual Console Gen 1/2: trade, show or convert a .pk1/.pk2
     trade    trade with a retail console (xy, oras, sm, usum), joining or hosting
-    board    ESP32-S3 boards: list, check, or install esp32-uds-bridge 1.8 (included)
+    board    ESP32 boards (S3; alpha: classic, C3, C6): list, check, or install esp32-uds-bridge 2.0-uds (included)
     build    build a legal Pokemon with PKHeX (docs/pkhex.md)
     pkhex    PKHeX in a source tree: status, build
     plugins  installed plugins: list, install, remove, enable, disable; plugin run TOOL -- ARGS
@@ -585,18 +585,20 @@ def cmd_board(args) -> int:
             print("No ESP32 found (Espressif USB 303A:1001, or a CP210x/CH340 UART bridge).")
         return 0
     if args.board_command == "check":
-        port = args.port or next((p.device for p in board.ports() if p.native), None)
+        port = args.port or next((p.device for p in board.ports()), None)
         if not port:
-            print("No ESP32 on its native USB port. Plug in the port marked USB (not UART), or pass --port.")
+            print("No ESP32 found. Plug an S3, C3 or C6 board in by its native USB port, or a classic ESP32 by its "
+                  "USB port, or pass --port.")
             return 1
-        print(f"Asking the board on {port} for its firmware (1.8 restarts into its 3DS mode first)")
+        print(f"Asking the board on {port} for its firmware (it restarts into its 3DS mode first)")
         try:
             found = board.identify(port)
         except RuntimeError as exc:
             print(exc)
             return 1
         advice = board.advice(found)
-        build = {"gblink": "GB-Link build", "vcadapter": "VC-Adapter standalone build", "": "3DS only"}[found.build]
+        build = {"uds": "uds line", "aio": "aio line, VC-Adapter standalone board", "gblink": "GB-Link build",
+                 "vcadapter": "VC-Adapter standalone build", "": "3DS only"}[found.build]
         print(f"esp32-uds-bridge {found.firmware} ({build}) on {found.port}, MAC {found.mac}")
         if advice:
             print(f"{advice} Install it with `pokeuds board flash`.")
@@ -604,11 +606,7 @@ def cmd_board(args) -> int:
                     update=board.FIRMWARE if advice else "", advice=advice)
         return 0
     if args.board_command == "flash":
-        try:
-            image = Path(args.firmware) if args.firmware else board.firmware()
-        except OSError as exc:
-            print(exc)
-            return 1
+        image = Path(args.firmware) if args.firmware else None      # None: the bundled image for the chip found
         port = args.port or next((p.device for p in board.ports()), None)
         if not port:
             print("No board found. If it is plugged in, hold BOOT while plugging it in, then release it.")
@@ -970,9 +968,9 @@ def main(argv: list[str] | None = None) -> int:
     p = bsub.add_parser("check", help="read a board's firmware version and build")
     p.add_argument("--port")
     p.set_defaults(func=cmd_board)
-    p = bsub.add_parser("flash", help="install esp32-uds-bridge 1.8 (GB-Link build, included with PokeUDS) at 0x0")
+    p = bsub.add_parser("flash", help="install esp32-uds-bridge 2.0-uds (included with PokeUDS) for the chip found, at 0x0")
     p.add_argument("--port")
-    p.add_argument("--firmware", help="another merged ESP32-S3 .bin instead (for developers)")
+    p.add_argument("--firmware", help="another merged .bin for the board's chip instead (for developers)")
     p.set_defaults(func=cmd_board)
 
     p = sub.add_parser("build", help="build a legal Pokemon with PKHeX")

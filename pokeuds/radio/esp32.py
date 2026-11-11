@@ -1,4 +1,6 @@
-"""ESP32-S3 radio backend (VC-Adapter ``firmware/esp32-uds-bridge``) over its native USB port.
+"""ESP32 radio backend (VC-Adapter ``firmware/esp32-uds-bridge``): an S3, C3 or C6 on its native USB port, or a
+classic ESP32 through its board's USB-UART bridge (CP210x, CH340...) at 921600 baud, opened without pulsing DTR and
+RTS, which such boards wire to the chip's reset (firmware 2.0-uds; docs/hardware.md).
 
 The board captures and injects raw MPDUs and replays a beacon template on its own timer, so a slow
 USB round trip never shows up as a missing beacon. The protocol is in ``esp32_wire``; the
@@ -18,9 +20,14 @@ from .base import Radio, RxFrame, data_rate, is_group_addressed
 
 log = logging.getLogger(__name__)
 
-# Espressif USB Serial/JTAG, the S3's native USB port.
+# Espressif USB Serial/JTAG, the native USB port of the S3, C3 and C6.
 ESPRESSIF_VID = 0x303A
 ESPRESSIF_JTAG_PID = 0x1001
+# USB-UART bridges boards put on a UART: the classic ESP32's only way in.
+BRIDGES = {(0x10C4, 0xEA60): "CP210x", (0x1A86, 0x7523): "CH340", (0x1A86, 0x55D3): "CH343",
+           (0x0403, 0x6001): "FTDI", (0x0403, 0x6010): "FTDI"}
+NATIVE_BAUD = 3_000_000   # ignored by native USB
+BRIDGE_BAUD = 921_600     # the classic ESP32's UART, from boot (2.0-uds)
 
 PING_INTERVAL = 2.0
 PONG_TIMEOUT = 8.0
@@ -32,19 +39,49 @@ MIN_FIRMWARE = (1, 7)   # the first 3DS-only image with the screen; 1.8 adds the
 
 
 def find_port() -> str | None:
-    """The serial port of an attached ESP32-S3 (native USB), or None."""
+    """The serial port of an attached ESP32: a native USB port first (S3, C3, C6), else a USB-UART bridge (a
+    classic ESP32); None when there is neither."""
     from serial.tools import list_ports
 
-    for port in list_ports.comports():
+    ports = list(list_ports.comports())
+    for port in ports:
         if port.vid == ESPRESSIF_VID and port.pid == ESPRESSIF_JTAG_PID:
+            return port.device
+    for port in ports:
+        if (port.vid, port.pid) in BRIDGES:
             return port.device
     return None
 
 
+def is_bridge(device: str) -> bool:
+    """Whether ``device`` is a USB-UART bridge (a classic ESP32's port) rather than a chip's native USB."""
+    try:
+        from serial.tools import list_ports
+
+        return any(p.device == device and (p.vid, p.pid) in BRIDGES for p in list_ports.comports())
+    except (ImportError, OSError):
+        return False
+
+
+def open_serial(name: str, baud: int, bridge: bool):
+    """The port, opened. A bridge's DTR and RTS drive the board's EN and GPIO0 (auto-reset): they are set low before
+    the port opens, so opening it never resets the board."""
+    import serial
+
+    if not bridge:
+        return serial.Serial(name, baud, timeout=0.02, write_timeout=1.0)
+    port = serial.Serial(None, baud, timeout=0.02, write_timeout=1.0)
+    port.dtr = False
+    port.rts = False
+    port.port = name
+    port.open()
+    return port
+
+
 class Esp32Radio(Radio):
-    def __init__(self, port: str | None = None, baud: int = 3_000_000) -> None:
+    def __init__(self, port: str | None = None, baud: int | None = None) -> None:
         self.port_name = port
-        self.baud = baud
+        self.baud = baud               # None: the native USB's or the bridge's, by the port found
         self.serial = None
         self.hello: bytes | None = None
         self.firmware = "?"
@@ -80,13 +117,15 @@ class Esp32Radio(Radio):
         name = self.port_name or find_port()
         if not name:
             raise RuntimeError(
-                "No ESP32 found. Connect the board's native USB port (Espressif USB "
-                "Serial/JTAG, 303A:1001) or pass --port.")
+                "No ESP32 found. Connect an S3, C3 or C6 board's native USB port (Espressif USB Serial/JTAG, "
+                "303A:1001), or a classic ESP32 board's USB port (its CP210x or CH340), or pass --port.")
         deadline = time.monotonic() + OPEN_TIMEOUT
         restarted = opened = False
         while True:
             try:
-                self._attach(serial.Serial(name, self.baud, timeout=0.02, write_timeout=1.0))
+                bridge = is_bridge(name)
+                baud = self.baud or (BRIDGE_BAUD if bridge else NATIVE_BAUD)
+                self._attach(open_serial(name, baud, bridge))
                 opened = True
                 if self._say_hello(min(deadline, time.monotonic() + HELLO_WINDOW)):
                     break
