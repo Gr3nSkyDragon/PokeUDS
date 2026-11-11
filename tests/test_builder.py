@@ -65,8 +65,8 @@ def test_trade_page_builder_headless(tmp_path, monkeypatch):
 
 
 def test_species_field_survives_the_rebuild_its_pick_causes(tmp_path, monkeypatch):
-    """Picking a species rebuilds the builder, so the field whose blur picked it is gone by then; its blur used to
-    fail with "Control must be added to the page first"."""
+    """The Pokemon box is a pick box you can type in: leaving it picks what was typed (the first match), and its own
+    pick rebuilds the builder, which must not fail on a box no longer on the page."""
     flet = pytest.importorskip("flet")
     import dataclasses
     from types import SimpleNamespace
@@ -84,28 +84,30 @@ def test_species_field_survives_the_rebuild_its_pick_causes(tmp_path, monkeypatc
     trade.builder.lists["xy"] = {"species": [[25, "Pikachu"], [658, "Greninja"]], "moves": [[84, "Thunder Shock"]],
                                  "items": [[1, "Master Ball"]], "balls": [[4, "Poke Ball"]], "natures": [[3, "Adamant"]]}
 
-    def species_field(control, seen=None):
+    def box(control, label, seen=None):
         seen = seen if seen is not None else set()
         if id(control) in seen or not dataclasses.is_dataclass(control) or isinstance(control, type):
             return None
         seen.add(id(control))
-        if isinstance(control, flet.TextField) and control.label == "Species":
+        if isinstance(control, flet.Dropdown) and control.label == label:
             return control
         for f in dataclasses.fields(control):
             value = getattr(control, f.name, None)
             for child in value if isinstance(value, (list, tuple)) else [value]:
-                if (found := species_field(child, seen)) is not None:
+                if (found := box(child, label, seen)) is not None:
                     return found
         return None
 
-    field = species_field(trade.control())
-    assert field is not None
-    field.value = "gren"
+    field = box(trade.control(), "Pokemon")
+    assert field is not None and field.editable and field.enable_filter and len(field.options) == 2
+    field.on_text_change(SimpleNamespace(control=field, data="gren"))
     field.on_blur(SimpleNamespace(control=field))       # not on a page, as after the rebuild
-    assert trade.builder.wish.species == 658 and field.value == "Greninja" and field.error is None
-    field.value = "zzz"
+    assert trade.builder.wish.species == 658 and field.value == "658"
+    field.on_text_change(SimpleNamespace(control=field, data="zzz"))
     field.on_blur(SimpleNamespace(control=field))
-    assert field.error == "nothing matches" and trade.builder.wish.species == 658
+    assert trade.builder.wish.species == 658             # nothing matches: it keeps what it had
+    moves = [box(trade.control(), f"Move {i}") for i in (1, 2, 3, 4)]
+    assert all(m is not None and m.options[0].text == "None" for m in moves)
 
 
 @pytest.mark.skipif(pkhex.helper_path() is None, reason="the PKHeX helper is not built")
@@ -407,3 +409,35 @@ def test_the_language_a_pokemon_comes_from():
         builder.build(builder.Wish(game="gsc", species=25, level=20, language="jp"), builder.Trainer("ASH"), helper=object())
     pasted = builder.Pasted.from_reply({"species": 25, "species_name": "Pikachu", "level": 50, "usable": True})
     assert pasted.apply(builder.Wish(game="xy", language="de")).language == "de"
+
+
+def test_a_pick_box_takes_what_is_typed():
+    from gui.views.builder import pick
+
+    choices = [("0", "None"), ("6", "Charizard"), ("4", "Charmander"), ("5", "Charmeleon"), ("122", "Mr. Mime")]
+    assert pick("charizard", choices) == "6" and pick("charm", choices) == "4"      # exact, then the first that starts
+    assert pick("mrmime", choices) == "122" and pick("Mr. M", choices) == "122"   # spaces and dots ignored
+    assert pick("izard", choices) == "6" and pick("", choices) is None and pick("zzz", choices) is None
+
+
+def test_the_builder_follows_the_title_pokeuds_stands_in_for(tmp_path, monkeypatch):
+    """German Crystal: the builder opens in German; a language the player picks stays; the 3DS hosting gives English."""
+    pytest.importorskip("flet")
+    monkeypatch.setenv("POKEUDS_DATA", str(tmp_path))
+    from gui.app import App
+    from gui.views.trade import TradeView
+    from pokeuds.app.settings import Settings
+
+    trade = TradeView(App(None, Settings(output=str(tmp_path / "received"), last_game="gsc")))
+    trade.pick_game("gsc")
+    assert trade.builder.wish.language == "en"
+    trade.role = "host"
+    trade._host_title_changed(type("E", (), {"control": type("C", (), {"value": "crystal-de"})()})())
+    assert trade.builder.wish.language == "de"
+    trade._host_title_changed(type("E", (), {"control": type("C", (), {"value": "gold-kr"})()})())
+    assert trade.builder.wish.language == "kr"
+    trade.builder._language(type("E", (), {"control": type("C", (), {"value": "fr"})()})())     # the player's choice
+    trade._host_title_changed(type("E", (), {"control": type("C", (), {"value": "silver-it"})()})())
+    assert trade.builder.wish.language == "fr"
+    trade.pick_game("rby")                                  # another game: the console's language leads again
+    assert trade.builder.wish.language == "en"

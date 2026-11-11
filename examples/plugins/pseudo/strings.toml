@@ -185,6 +185,8 @@
 "Done" = "[!Dõñé!]"
 "Downgrade" = "[!Dõwñgràdé!]"
 "Downloading " = "[!Dõwñlõàdîñg !]"
+"Downloading sprites: " = "[!Dõwñlõàdîñg šprîtéš: !]"
+"Downloading sprites: {value0} of {value1}" = "[!Dõwñlõàdîñg šprîtéš: {value0} õf {value1}!]"
 "Downloading {value0} {value1}..." = "[!Dõwñlõàdîñg {value0} {value1}...!]"
 "Dragon" = "[!Dràgõñ!]"
 "ESP32 board" = "[!ÉŠP32 bõàrd!]"

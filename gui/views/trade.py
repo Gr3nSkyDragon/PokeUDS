@@ -10,6 +10,7 @@ import flet as ft
 import time
 
 from pokeuds import plugins
+from pokeuds.games import vc as vc_titles
 from pokeuds.app import catalog, i18n
 from pokeuds.app.builder import Trainer
 from pokeuds.app.progress import STEP_LABELS, STEPS
@@ -186,6 +187,7 @@ class TradeView(View):
         self.host_title = ""
         self.note = ""
         self.builder.set_game(key)
+        self._suggest_language()
         self._load_offer()
         self.save()
 
@@ -491,11 +493,21 @@ class TradeView(View):
 
     def _role_changed(self, e) -> None:
         self.role = next(iter(e.control.selected), "join")
+        self._suggest_language()
         self.refresh()
 
     def _host_title_changed(self, e) -> None:
         self.host_title = e.control.value
+        self._suggest_language()
         self.refresh()
+
+    def _suggest_language(self) -> None:
+        """When PokeUDS stands in for a VC title, the builder defaults to that title's language (German Crystal:
+        German). When the 3DS hosts, its language is known only once PokeUDS has joined, so English stays."""
+        title = None
+        if self.role == "host" and self.entry.host_titles:
+            title = vc_titles.TITLES.get(self.host_title or self.entry.host_titles[0])
+        self.builder.suggest_language(title.language if title else "en")
 
     def queue_control(self) -> ft.Control:
         """The trade queue: what PokeUDS offers, one Pokemon per trade, in this order."""

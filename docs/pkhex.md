@@ -145,7 +145,9 @@ repairs only is kept as usual. An imported paste goes through the same builder, 
 
 ## Build one (the Trade page) and `pokeuds build`
 
-On the Trade page, **Build one** opens the builder for the chosen game. It collects the wishes (species,
+On the Trade page, **Build one** opens the builder for the chosen game. Its pick boxes (Pokemon, moves, held item,
+ball, nature...) take typing too: the list filters to what is typed, and a click on an entry, or leaving the box,
+picks it (the first match). It collects the wishes (species,
 level, nickname, language, shiny, gender, nature, ability, held item, ball, up to four moves, and under **Set IVs
 and EVs** the IVs, EVs and Hidden Power) and the original trainer, which it keeps for the next build.
 
@@ -155,7 +157,9 @@ no nickname in that language (ピカチュウ, 피카츄, 皮卡丘). In Gen 1/2
 Japanese one has 6-byte names (a 59- or 63-byte file), and the bank keeps the language beside a Game Boy record,
 which does not hold it (docs/vc.md, Languages). A Japanese Game Boy game writes only kana, 5 at most, so its OT
 and nickname must be kana; PKHeX tells a Korean Gen 2 record by its OT's first character, so a Korean OT starts in
-Hangul. The builder says so before PKHeX is asked. A paste keeps the language chosen (Showdown sets name none);
+Hangul. The builder says so before PKHeX is asked. When PokeUDS stands in for a Virtual Console title, the builder
+starts in that title's language (German Crystal: German) until you pick one; it never forces it, so a Pokemon of
+another language can still be built. A paste keeps the language chosen (Showdown sets name none);
 `pokeuds build --language jp`.
 The trainer is entered as each generation shows it: a five-digit ID (and SID from Gen 3 on), or from Gen
 7 the six-digit ID and four-digit SID. Build and offer it puts the result in the bank (source "built", with

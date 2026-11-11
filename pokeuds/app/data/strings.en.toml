@@ -186,6 +186,8 @@
 "Done" = "Done"
 "Downgrade" = "Downgrade"
 "Downloading " = "Downloading "
+"Downloading sprites: " = "Downloading sprites: "
+"Downloading sprites: {value0} of {value1}" = "Downloading sprites: {value0} of {value1}"
 "Downloading {value0} {value1}..." = "Downloading {value0} {value1}..."
 "Dragon" = "Dragon"
 "ESP32 board" = "ESP32 board"

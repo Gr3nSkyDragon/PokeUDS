@@ -22,22 +22,36 @@ from pokeuds.app.builder import ABILITIES, GAMES, GENDERS, HIDDEN_POWER, STATS, 
 from .. import theme as t
 from ..translate import translate
 from .common import View
-from .picker import name_field
 from .sprite import sprite
 
 ANY = "-"
-TOP = ft.CrossAxisAlignment.START       # fields align by their boxes: a helper or counter line hangs below
-
-
-def beside(control: ft.Control) -> ft.Control:
-    """A switch at a dense field's height, so it sits level with the field's box rather than its helper line."""
-    return ft.Container(control, height=48, alignment=ft.Alignment.CENTER_LEFT)
+NONE = "0"                              # a move slot or held item left empty
+FIELD = 220                             # the width of the builder's main boxes: species, nickname and the pick boxes
+MIDDLE = ft.CrossAxisAlignment.CENTER   # a row's boxes and switches share their middle: no helper or counter lines
+BOX_PADDING = ft.Padding(12, 12, 12, 12)  # a dense text box as tall as a dense pick box
 
 
 def _helper_ready() -> bool:
     from . import pkhex_setup
 
     return pkhex_setup.ready()
+
+
+def _fold(text: str) -> str:
+    return "".join(ch for ch in text.casefold() if ch.isalnum())
+
+
+def pick(text: str, choices: list[tuple[str, str]]) -> str | None:
+    """The entry typed text means: the one named exactly, else the first whose name starts with it, else the first
+    that contains it (the list's own filter puts that one on top); None for no text or no match."""
+    folded = _fold(text)
+    if not folded:
+        return None
+    for test in (lambda name: name == folded, lambda name: name.startswith(folded), lambda name: folded in name):
+        for key, name in choices:
+            if test(_fold(name)):
+                return key
+    return None
 
 
 class BuilderPanel(View):
@@ -59,6 +73,7 @@ class BuilderPanel(View):
         self.result = None                  # pkhex.Built
         self.saved: bank.Entry | None = None
         self.closest = None                 # a closest legal build waiting for Keep this one (services/pkhex/Fix.cs)
+        self.language_chosen = False        # the player picked a language (suggest_language no longer changes it)
         self.closest_offer = True           # what its build button asked: offer it, or only save it
         self.message, self.message_color = "", t.INFO
         # Import paste: its text, a read in progress, and the sets read from it.
@@ -82,6 +97,16 @@ class BuilderPanel(View):
         """Follow the Trade page's game (ids of moves and items are each game's own)."""
         if game in GAMES and game != self.wish.game:
             self._apply_game(game)
+            self.language_chosen = False
+
+    def suggest_language(self, language: str) -> None:
+        """The console's language (the VC title PokeUDS stands in for), as the builder's default: followed until the
+        player picks a language, so a Pokemon of another language can still be built for it."""
+        if self.language_chosen or language not in builder.languages_for(builder.generation(self.wish.game)):
+            return
+        if language != self.wish.language:
+            self.wish.language = language
+            self.closest = None
 
     def build(self) -> ft.Control:
         name = GAMES[self.wish.game][0]
@@ -198,56 +223,87 @@ class BuilderPanel(View):
 
         return pkhex_setup.card(self.app, head)
 
-    @staticmethod
-    def _dd(label: str, value, options: list[tuple[str, str]], on_select, width: int = 220, search: bool = False,
+    def _dd(self, label: str, value, options: list[tuple[str, str]], on_select, width: int = FIELD,
             disabled: bool = False) -> ft.Dropdown:
+        """A pick box you can also type in: the list filters to what is typed. A click picks an entry; leaving the
+        box (Tab, Enter, a click elsewhere) picks what was typed, the first match, the entry the list shows on top."""
+        choices = [(str(k), str(v)) for k, v in options]
+        typed: dict[str, str | None] = {"text": None}
+
+        def selected(e) -> None:
+            typed["text"] = None
+            on_select(e)
+
+        def text_changed(e) -> None:
+            typed["text"] = e.data if isinstance(e.data, str) else e.control.text
+
+        def left(e) -> None:
+            text, typed["text"] = typed["text"], None
+            if text is None:
+                return
+            key = pick(text, choices)
+            if key is not None and key != e.control.value:
+                e.control.value = key
+                on_select(e)
+            self.refresh()                   # the box shows the entry picked, or the one it had
+
         return ft.Dropdown(label=label, value=value, width=width, dense=True, disabled=disabled, menu_height=360,
-                           options=[ft.DropdownOption(key=k, text=v) for k, v in options], on_select=on_select,
-                           enable_filter=search, editable=search)
+                           options=[ft.DropdownOption(key=k, text=v) for k, v in choices], on_select=selected,
+                           on_text_change=text_changed, on_blur=left, editable=True, enable_filter=True,
+                           enable_search=True)
+
+    @staticmethod
+    def _text(label: str, value: str, on_blur, width: int = FIELD, disabled: bool = False, max_length: int | None = None,
+              number: bool = False) -> ft.TextField:
+        """A text box the pick boxes' size; a length limit shows no counter line under it (rows stay level)."""
+        return ft.TextField(label=label, value=value, width=width, dense=True, disabled=disabled, on_blur=on_blur,
+                            max_length=max_length, counter=ft.Text("", size=0) if max_length else None,
+                            content_padding=BOX_PADDING, keyboard_type=ft.KeyboardType.NUMBER if number else None)
 
     def _pokemon(self, lists: dict) -> list[ft.Control]:
         w, gen = self.wish, builder.generation(self.wish.game)
         busy = self.building
         form = [t.label(f"Form: {self.form_name}", size=12)] if w.form and self.form_name else []
+        species = [(v, n) for v, n in lists["species"]]
         names = ft.Column([
-            ft.Row([name_field("Species", w.species, lists["species"], self._pick_species, 200, disabled=busy),
-                    ft.TextField(label="Level", value=str(w.level), width=100, dense=True, on_blur=self._level,
-                                 disabled=busy, keyboard_type=ft.KeyboardType.NUMBER),
-                    beside(ft.Switch(label="Shiny", value=w.shiny, on_change=self._shiny, disabled=busy or gen == 1))],
-                   spacing=12, vertical_alignment=TOP),
+            ft.Row([self._dd("Pokemon", str(w.species), species, self._species, disabled=busy),
+                    self._text("Level", str(w.level), self._level, 100, busy, number=True),
+                    ft.Switch(label="Shiny", value=w.shiny, on_change=self._shiny, disabled=busy or gen == 1)],
+                   spacing=12, vertical_alignment=MIDDLE),
             *form,
-            ft.Row([ft.TextField(label="Nickname", value=w.nickname, width=200, dense=True, disabled=busy,
-                                 max_length=builder.NAME_LIMITS[gen][0], on_blur=self._nickname),
+            ft.Row([self._text("Nickname", w.nickname, self._nickname, disabled=busy, max_length=builder.NAME_LIMITS[gen][0]),
                     self._dd("Language", w.language, [(k, builder.LANGUAGES[k][0]) for k in builder.languages_for(gen)],
-                             self._language, 200, disabled=busy)],
-                   spacing=12, vertical_alignment=TOP),
-        ], spacing=8)
+                             self._language, disabled=busy)],
+                   spacing=12, vertical_alignment=MIDDLE),
+        ], spacing=12)
         preview = sprite(self.app, w.species, shiny=w.shiny and gen >= 2, size=112, on_ready=self.refresh)
-        rows: list[ft.Control] = [ft.Row([names, ft.Container(expand=True), preview], spacing=24, vertical_alignment=TOP)]
+        rows: list[ft.Control] = [ft.Row([names, ft.Container(expand=True), preview], spacing=24,
+                                         vertical_alignment=ft.CrossAxisAlignment.START)]
         wishes: list[ft.Control] = [self._dd("Gender", w.gender or ANY, [(k or ANY, v) for k, v in GENDERS.items()],
-                                             self._gender, 140, disabled=busy)]
+                                             self._gender, disabled=busy)]
         if gen >= 3:
             wishes.append(self._dd("Nature", ANY if w.nature is None else str(w.nature),
                                    [(ANY, "Any")] + [(str(v), n) for v, n in sorted(lists["natures"], key=lambda x: x[1])],
-                                   self._nature, 160, disabled=busy))
+                                   self._nature, disabled=busy))
             wishes.append(self._dd("Ability", w.ability or ANY, [(k or ANY, v) for k, v in ABILITIES.items()],
-                                   self._ability, 180, disabled=busy))
-        rows.append(ft.Row(wishes, wrap=True, spacing=12, vertical_alignment=TOP))
+                                   self._ability, disabled=busy))
+        rows.append(ft.Row(wishes, wrap=True, spacing=12, vertical_alignment=MIDDLE))
         carried: list[ft.Control] = []
         if gen >= 3:
             carried.append(self._dd("Ball", str(w.ball) if w.ball else ANY,
-                                    [(ANY, "Any")] + [(str(v), n) for v, n in lists["balls"]], self._ball, 180,
-                                    disabled=busy))
+                                    [(ANY, "Any")] + [(str(v), n) for v, n in lists["balls"]], self._ball, disabled=busy))
         if gen >= 2:
-            carried.append(name_field("Held item", w.held_item or 0, lists["items"], self._pick_item, 200, empty="none",
-                                      disabled=busy))
+            carried.append(self._dd("Held item", str(w.held_item or 0), [(NONE, "None")] + list(lists["items"]),
+                                    self._item, disabled=busy))
         if carried:
-            rows.append(ft.Row(carried, wrap=True, spacing=12, vertical_alignment=TOP))
+            rows.append(ft.Row(carried, wrap=True, spacing=12, vertical_alignment=MIDDLE))
         current = (w.moves + [0, 0, 0, 0])[:4]
+        moves = [(NONE, "None")] + list(lists["moves"])
+        boxes = [self._dd(f"Move {i + 1}", str(m), moves, lambda e, i=i: self._move(i, e), disabled=busy)
+                 for i, m in enumerate(current)]
         rows.append(t.label("Moves: leave them empty for the moves it would know at that level."))
-        rows.append(ft.Row([name_field(f"Move {i + 1}", m, lists["moves"], lambda v, i=i: self._pick_move(i, v), 190,
-                                       empty="none", disabled=busy)
-                            for i, m in enumerate(current)], wrap=True, spacing=12, vertical_alignment=TOP))
+        rows += [ft.Row(boxes[:2], spacing=12, vertical_alignment=MIDDLE),           # Move 1, Move 2
+                 ft.Row(boxes[2:], spacing=12, vertical_alignment=MIDDLE)]           # Move 3, Move 4
         rows += self._stats(gen, busy)
         return rows
 
@@ -299,7 +355,7 @@ class BuilderPanel(View):
                    else "Hidden Power: set the Attack and Defense DVs to see its type" if gen == 2
                    else "Hidden Power: set every IV to see its type")
             rows.append(ft.Row([self._dd("Hidden Power type", ANY, [(ANY, "Keep the IVs" if gen >= 3 else "Keep the DVs")]
-                                         + [(str(i), n) for i, n in enumerate(HIDDEN_POWER)], self._hidden_power, 220,
+                                         + [(str(i), n) for i, n in enumerate(HIDDEN_POWER)], self._hidden_power,
                                          disabled=busy),
                                 t.label(now, size=12)], spacing=12, vertical_alignment=ft.CrossAxisAlignment.CENTER))
         return rows
@@ -364,9 +420,7 @@ class BuilderPanel(View):
     def _trainer(self) -> list[ft.Control]:
         tr, gen = self.trainer, builder.generation(self.wish.game)
         busy = self.building
-        fields: list[ft.Control] = [ft.TextField(label="OT name", value=tr.ot, width=180, dense=True, disabled=busy,
-                                                 max_length=builder.NAME_LIMITS[gen][1],
-                                                 on_blur=self._ot)]
+        fields: list[ft.Control] = [self._text("OT name", tr.ot, self._ot, 180, busy, builder.NAME_LIMITS[gen][1])]
         if gen >= 7:
             fields += [ft.TextField(label="TID (6 digits)", value=tr.shown_id(7), width=140, dense=True, disabled=busy,
                                     on_blur=lambda e: self._g7_id(e, None)),
@@ -379,10 +433,10 @@ class BuilderPanel(View):
                 fields.append(ft.TextField(label="SID", value=f"{tr.sid:05d}", width=110, dense=True, disabled=busy,
                                            on_blur=lambda e: self._id(e, "sid")))
         if gen >= 2:
-            fields.append(beside(ft.Switch(label="Female OT", value=tr.female, on_change=self._ot_gender, disabled=busy)))
+            fields.append(ft.Switch(label="Female OT", value=tr.female, on_change=self._ot_gender, disabled=busy))
         return [t.label("Original trainer: shown on its summary. Use your own to make it yours; kept for the next build.",
                         color=t.TEXT),
-                ft.Row(fields, wrap=True, spacing=12, vertical_alignment=TOP)]
+                ft.Row(fields, spacing=12, vertical_alignment=MIDDLE)]       # name, IDs and Female OT on one row
 
     # -- the helper -----------------------------------------------------------------------------
 
@@ -532,6 +586,7 @@ class BuilderPanel(View):
 
     def _language(self, e) -> None:
         self.wish.language = e.control.value or "en"
+        self.language_chosen = True         # the player's own choice: the console's language no longer overrides it
         self._changed()
 
     def _nickname(self, e) -> None:
@@ -552,7 +607,7 @@ class BuilderPanel(View):
 
     def _item(self, e) -> None:
         value = e.control.value
-        self.wish.held_item = int(value) if value and value.isdigit() else None
+        self.wish.held_item = (int(value) or None) if value and value.isdigit() else None
 
     def _ball(self, e) -> None:
         self.wish.ball = None if e.control.value == ANY else int(e.control.value)
