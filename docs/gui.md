@@ -138,6 +138,9 @@ own (Alolan forms, Unown's letters, Rotom, Arceus's types...) get theirs; other 
 A sprite is never needed: offline, the preview keeps a placeholder and the app does not ask again for a minute;
 a sprite PokeAPI does not have is not asked for again for a week. Only a small, plain PNG is kept, rebuilt from
 the chunks that draw it. **Settings > Pokemon sprites** turns downloading off; the sprites already kept still show.
+A sprite that arrives is drawn into its own placeholder: the page is not rebuilt, so a long list (Mystery Gift's
+cards) neither flickers nor scrolls back to the top while its sprites come in, and Mystery Gift shows a bar,
+"Downloading sprites: 40 of 100", the first time they download (`gui/views/sprite.py`).
 Code: `pokeuds/app/sprites.py` (the cache), `gui/views/sprite.py` (the preview).
 
 ## The demo radio

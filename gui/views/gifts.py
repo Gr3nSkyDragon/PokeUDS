@@ -13,19 +13,22 @@ card's Pokemon matches no real event, so PKHeX flags it; the page says so.
 
 from __future__ import annotations
 
+import time
+
 import threading
 from pathlib import Path
 
 import flet as ft
 
 from pokeuds import pkx
-from pokeuds.app import bank, catalog, giftfile
+from pokeuds.app import i18n, bank, catalog, giftfile
 from pokeuds.app.settings import data_dir
 from pokeuds.app.builder import Trainer
 
 from .. import theme as t
 from .common import View, awaiting, log_box
 from .gift_editor import GiftEditor
+from .sprite import progress as sprite_progress
 from .sprite import sprite
 
 GAMES = {"xy": "X / Y", "oras": "Omega Ruby / Alpha Sapphire", "sm": "Sun / Moon", "usum": "Ultra Sun / Ultra Moon"}
@@ -55,6 +58,8 @@ class GiftsView(View):
         self.working = False
         self.message, self.message_color = "", t.INFO
         self.editor = GiftEditor(app, self.game, self.trainer, self._editor_result)
+        self.sprite_status = ft.Container(visible=False)   # the cards' sprites downloading (the first time)
+        self._watching = False
 
     @property
     def generation(self) -> int:
@@ -109,8 +114,7 @@ class GiftsView(View):
         for c in shown[:SHOWN]:
             chosen = c["key"] == self.selected
             rows.append(ft.Container(ft.Row([
-                sprite(self.app, c.get("species", 0), form=c.get("form", 0), shiny=c.get("shiny") == "always", size=44,
-                       on_ready=self.refresh),
+                sprite(self.app, c.get("species", 0), form=c.get("form", 0), shiny=c.get("shiny") == "always", size=44),
                 t.pill(f"{c['card_id']:04d}", t.ACCENT),
                 ft.Column([ft.Text(c["title"] or "(untitled)", size=14, color=t.TEXT),
                            t.label(" · ".join(x for x in (
@@ -120,7 +124,49 @@ class GiftsView(View):
                           spacing=1, expand=True),
             ], spacing=12), padding=8, border_radius=8, bgcolor=t.RAISED if chosen else None, ink=True,
                 on_click=lambda e, k=c["key"]: self._pick(k)))
+        rows.insert(2, self._sprite_progress())     # the sprite() calls above have started any downloads
         return t.card(*rows, spacing=4, padding=12)
+
+    # -- the sprites' first download ------------------------------------------------------------
+
+    def _sprite_progress(self) -> ft.Control:
+        """A bar while the cards' sprites download, drawn again in place as they come (the page is not rebuilt, so
+        the list keeps its place)."""
+        self.sprite_status = ft.Container(visible=False)
+        self._draw_progress()
+        if not self._watching and sprite_progress()[1]:
+            self._watching = True
+            threading.Thread(target=self._watch_sprites, daemon=True, name="gift-sprites").start()
+        return self.sprite_status
+
+    def _draw_progress(self) -> None:
+        done, total = sprite_progress()
+        if total:
+            self.sprite_status.visible = True
+            self.sprite_status.content = ft.Row([
+                ft.ProgressBar(value=done / total, width=220, color=t.ACCENT, bgcolor=t.LINE),
+                t.label(i18n.tr(f"Downloading sprites: {done} of {total}"), size=12)], spacing=12)
+        elif self.sprite_status.content is not None:
+            # Done: the bar's place stays empty until the page is next drawn, so the list does not move under you.
+            self.sprite_status.content = ft.Container(height=16)
+
+    def _watch_sprites(self) -> None:
+        try:
+            while True:
+                time.sleep(0.25)
+                running = sprite_progress()[1] > 0
+                self.app.ui(self._redraw_progress)
+                if not running:
+                    return
+        finally:
+            self._watching = False
+
+    def _redraw_progress(self) -> None:
+        self._draw_progress()
+        try:
+            self.sprite_status.update()
+        except (RuntimeError, AssertionError):  # the page was left or rebuilt meanwhile
+            pass
 
     def _file(self) -> ft.Control:
         return t.card(

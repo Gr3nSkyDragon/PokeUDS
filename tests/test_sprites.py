@@ -54,3 +54,34 @@ def test_fetched_once_then_kept(tmp_path):
     (source / "25.png").write_bytes(png())
     assert offline.get(25) is None                           # downloads off: only the cache is read
     assert cache.clear() == 1 and cache.cached(25) is None
+
+
+def test_a_sprite_fills_its_placeholder_in_place(monkeypatch):
+    """A missing sprite is fetched and drawn into the placeholder it returned, with no page rebuilt; two boxes for
+    the same sprite share one download; progress counts it and resets."""
+    import time
+
+    import flet as ft
+
+    from gui.views import sprite as view
+    from pokeuds.app import sprites
+
+    calls = []
+    monkeypatch.setattr(sprites.CACHE, "online", True)
+    monkeypatch.setattr(sprites.CACHE, "cached", lambda key, shiny=False: None)
+
+    def get(key, shiny=False):
+        calls.append(key)
+        time.sleep(0.2)
+        return b"\x89PNG fake"
+
+    monkeypatch.setattr(sprites.CACHE, "get", get)
+    app = type("A", (), {"ui": staticmethod(lambda fn: fn())})()
+    one, two = view.sprite(app, 25, size=44), view.sprite(app, 25, size=96)
+    assert isinstance(one.content, ft.Icon) and view.progress() == (0, 1)
+    for _ in range(100):
+        if isinstance(two.content, ft.Image):
+            break
+        time.sleep(0.02)
+    assert isinstance(one.content, ft.Image) and isinstance(two.content, ft.Image) and two.content.width == 96
+    assert len(calls) == 1 and view.progress() == (0, 0)
