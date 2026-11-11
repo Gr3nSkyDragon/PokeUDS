@@ -130,8 +130,10 @@ growth rate (`pokeuds/species.py`, taken from PKHeX.Core).
 ## Updates
 
 `pokeuds/app/update.py`, `gui/updates.py`. At start (Settings > Updates, on by default) the app asks GitHub for
-PokeUDS's releases; one above this version shows as a banner above every page: **Update now**, **What's new** (the
-release page), Not now. Settings > Updates > **Check now** asks again. The design is pokeldn's: the release's
+PokeUDS's releases; one above this version adds a green **Update** entry at the foot of the rail, as pokeldn's
+does: clicking it asks to update now (or, for the Mac app and a source run, opens the release page). A bar above
+the pages shows only the download's progress and the restart, and once, how the last update went. Settings >
+Updates > **Check now** asks again. The design is pokeldn's: the release's
 `SHA256SUMS` must list `PokeUDS-windows.zip`'s checksum (a mismatch is refused), the zip unpacks into
 `Data/update/new` (every name under `PokeUDS/`, none climbing out), and the new app runs as a helper
 (`PokeUDS.exe --apply-update`) that waits for the old app and its children (the window, PKHeX, a trade) to quit,

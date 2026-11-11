@@ -1,9 +1,10 @@
-"""The update banner above every page (pokeuds/app/update.py, docs/gui.md, Updates).
+"""Updates, in the app (pokeuds/app/update.py, docs/gui.md, Updates).
 
-At start, unless Settings turns it off, the app asks GitHub for a newer release in the background. One shows as a
-banner: Update now (the packaged Windows app: download, check, restart into the new version, the player's Bank,
-Data and received folders untouched), What's new (the release page), Not now. The Mac app and a source run get
-Download instead. After an update the banner says how it went, once.
+At start, unless Settings turns it off, the app asks GitHub for a newer release in the background. One adds a green
+Update entry at the foot of the rail, as pokeldn's does, and nothing else: clicking it offers Update now (the
+packaged Windows app: download, check, restart into the new version, the player's Bank, Data and received folders
+untouched) or, for the Mac app and a source run, opens the release page. A bar above the pages shows only what
+follows a click (the download's progress, the restart) and, once, how the last update went.
 """
 
 from __future__ import annotations
@@ -29,6 +30,7 @@ class Updates:
         self.detail = ""
         self.progress = (0, 0)
         self.cancel = False
+        self.on_available = lambda: None    # the shell shows its green Update entry
 
     # -- checking -------------------------------------------------------------------------------
 
@@ -57,9 +59,22 @@ class Updates:
                     self.app.ui(lambda: self._show("current", "PokeUDS is up to date."))
                 return
             self.release = release
-            self.app.ui(lambda: self._show("available"))
+            self.app.ui(lambda: (self._show(""), self.on_available()))     # the rail's Update entry, no banner
 
         threading.Thread(target=work, daemon=True, name="update-check").start()
+
+    def available(self) -> bool:
+        """A newer release is out (the rail's Update entry shows while it is)."""
+        return self.release is not None and self.state != "restarting"
+
+    def offer(self) -> None:
+        """The rail's Update entry: update now where the app can, else open the release page."""
+        if self.release is None:
+            return
+        if not updating.blocker(self.root) and self.release.installable:
+            self._confirm()
+        else:
+            webbrowser.open(self.release.page)
 
     # -- the banner -----------------------------------------------------------------------------
 
@@ -75,16 +90,6 @@ class Updates:
     def _content(self) -> ft.Control | None:
         r = self.release
         close = ft.IconButton(ft.Icons.CLOSE, icon_size=18, tooltip=i18n.tr("Not now"), on_click=lambda e: self._show(""))
-        if self.state == "available" and r is not None:
-            blocked = updating.blocker(self.root)
-            actions: list[ft.Control] = []
-            if not blocked and r.installable:
-                actions.append(t.primary(i18n.tr("Update now"), lambda e: self._confirm(), ft.Icons.SYSTEM_UPDATE_ALT))
-            else:
-                actions.append(t.primary(i18n.tr("Download"), lambda e: webbrowser.open(r.page), ft.Icons.OPEN_IN_NEW))
-            actions.append(t.secondary(i18n.tr("What's new"), lambda e: webbrowser.open(r.page), ft.Icons.ARTICLE))
-            text = i18n.tr(f"PokeUDS {r.version} is out (you have {updating.__version__}).")
-            return self._row(ft.Icons.NEW_RELEASES, t.ACCENT, text, actions + [close])
         if self.state == "downloading" and r is not None:
             done, total = self.progress
             bar = ft.ProgressBar(value=done / total if total else None, width=220, color=t.ACCENT, bgcolor=t.LINE)
@@ -148,7 +153,7 @@ class Updates:
                 new = updating.prepare(release, root, progress, lambda: self.cancel)
                 updating.start_swap(new, root, release.version)
             except updating.Cancelled:
-                self.app.ui(lambda: self._show("available"))
+                self.app.ui(lambda: self._show(""))
                 return
             except OSError as exc:
                 self.app.ui(lambda: self._show("error", i18n.tr(f"The update failed: {exc}")))

@@ -39,6 +39,7 @@ class Shell:
         self.current = "trade"
         self.content = ft.Container(expand=True, padding=ft.Padding(0, t.GAP, t.GAP, t.GAP))
         self.updates = Updates(app)
+        self.updates.on_available = self._update_rail      # a newer release: the green Update entry appears
         app.updates = self.updates
         self.rail = ft.NavigationRail(on_change=self._rail, bgcolor=t.PANEL, min_width=84, expand=True,
                                       label_type=ft.NavigationRailLabelType.ALL,
@@ -54,11 +55,25 @@ class Shell:
         return [cls.key for cls in PAGES]
 
     def foot_keys(self) -> list[str]:
-        """Plugins, Board, then Debug when Settings turns it on, then Settings at the very bottom."""
-        return ["plugins", "board"] + (["debug"] if self.app.settings.debug else []) + ["settings"]
+        """Update (green, only while a newer release is out), Plugins, Board, then Debug when Settings turns it on,
+        then Settings at the very bottom."""
+        return ((["update"] if self.updates.available() else []) + ["plugins", "board"]
+                + (["debug"] if self.app.settings.debug else []) + ["settings"])
 
     def _destination(self, key: str) -> ft.NavigationRailDestination:
+        if key == "update":                 # not a page: it offers the update, as pokeldn's does
+            return ft.NavigationRailDestination(icon=ft.Icon(ft.Icons.DOWNLOAD, color=t.GOOD),
+                                                label=ft.Text(i18n.tr("Update"), color=t.GOOD))
         return ft.NavigationRailDestination(icon=self.views[key].icon, label=i18n.tr(self.views[key].label))
+
+    def _update_rail(self) -> None:
+        self.foot.destinations = [self._destination(k) for k in self.foot_keys()]
+        self.foot.height = 85 * len(self.foot_keys())
+        self._select()
+        try:
+            self.page.update()
+        except (RuntimeError, AssertionError):
+            pass
 
     def _select(self) -> None:
         """Mark the current page on whichever rail holds it; the other shows nothing chosen."""
@@ -96,7 +111,13 @@ class Shell:
         self.navigate(self.keys()[e.control.selected_index])
 
     def _foot(self, e) -> None:
-        self.navigate(self.foot_keys()[e.control.selected_index])
+        key = self.foot_keys()[e.control.selected_index]
+        if key == "update":
+            self._select()                  # the page shown stays chosen
+            self.page.update()
+            self.updates.offer()
+            return
+        self.navigate(key)
 
     def _changed(self) -> None:
         self.views[self.current].refresh()

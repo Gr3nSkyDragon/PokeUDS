@@ -169,3 +169,24 @@ def test_who_can_update(tmp_path):
     assert update.install_root(frozen=False) is None and update.install_root(str(tmp_path / "x.exe"), True, "darwin") is None
     assert update.install_root(str(tmp_path / "PokeUDS.exe"), True, "win32") == tmp_path.resolve()
     assert "packaged Windows app" in update.blocker(None) and update.blocker(tmp_path) == ""
+
+
+def test_a_newer_release_adds_the_rail_entry_and_no_banner(tmp_path, monkeypatch):
+    pytest.importorskip("flet")
+    import time
+
+    monkeypatch.setenv("POKEUDS_DATA", str(tmp_path))
+    from gui.app import App
+    from gui.updates import Updates
+    from pokeuds.app.settings import Settings
+
+    monkeypatch.setattr(update, "check", lambda *a, **k: update.Release("9.0.0", "v9.0.0", PAGE + "v9.0.0", "", "", ""))
+    shown = []
+    updates = Updates(App(None, Settings()))
+    updates.on_available = lambda: shown.append(True)
+    updates.check(quiet=True)
+    for _ in range(100):
+        if shown:
+            break
+        time.sleep(0.02)
+    assert shown and updates.available() and not updates.banner.visible
