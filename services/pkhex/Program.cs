@@ -432,6 +432,11 @@ static partial class Program
         var personal = blank.PersonalInfo;
         blank.Gender = personal.Genderless ? (byte)2 : personal.OnlyFemale ? (byte)1 : personal.OnlyMale ? (byte)0
                      : (string?)request["gender"] == "female" ? (byte)1 : (byte)0;
+        // The encounter itself rolls its gender: a pre-evolution of the other gender (a male Snorunt, half of them)
+        // cannot evolve into it, and six such rolls in a row would leave the wild encounter for an egg. A species of one
+        // gender asks its encounter for that gender, unless the request names one.
+        if (!Asked(request, "gender") && (personal.OnlyFemale || personal.OnlyMale))
+            criteria = criteria with { Gender = personal.OnlyFemale ? Gender.Female : Gender.Male };
         var outcome = new Outcome();
         // PKHeX lists an evolved species' own encounters before its pre-evolutions' (a Machamp event before a wild
         // Machop): every encounter that is not a Mystery Gift goes first, whatever species it is of.

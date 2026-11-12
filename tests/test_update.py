@@ -86,7 +86,7 @@ def test_check_and_download(server, tmp_path):
                                                  {"name": "SHA256SUMS", "browser_download_url": base + "/SHA256SUMS"}]}]).encode()
     files["/PokeUDS-windows.zip"] = data
     files["/SHA256SUMS"] = f"{hashlib.sha256(data).hexdigest()}  PokeUDS-windows.zip\n".encode()
-    found = update.check(base + "/releases", "0.1.3")
+    found = update.check(base + "/releases", "0.1.3", "win32")              # the Windows app, whatever runs the tests
     assert found.version == "9.0.0" and found.installable
     root = tmp_path / "app"
     root.mkdir()

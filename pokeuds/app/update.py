@@ -147,14 +147,14 @@ def newest(replies: list, current: str = __version__, system: str = sys.platform
                    download or "", checksums or "")
 
 
-def check(url: str = RELEASES, current: str = __version__) -> Release | None:
+def check(url: str = RELEASES, current: str = __version__, system: str = sys.platform) -> Release | None:
     """Ask GitHub; -> the newer release, or None. OSError when GitHub does not answer."""
     with _open(url, TIMEOUT) as reply:
         data = reply.read(MAX_JSON + 1)
     if len(data) > MAX_JSON:
         raise OSError("GitHub's answer is too large")
     try:
-        return newest(json.loads(data.decode("utf-8")), current)
+        return newest(json.loads(data.decode("utf-8")), current, system)
     except ValueError as exc:
         raise OSError(f"GitHub's answer is not JSON: {exc}") from exc
 
