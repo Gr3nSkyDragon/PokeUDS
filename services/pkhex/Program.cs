@@ -7,12 +7,14 @@
 //                                                       "fix": true, the closest legal one when none fits (Fix.cs)
 //   {"cmd":"check","data":"<base64>","game":"xy"}    -> summary and legality report of a record
 //   {"cmd":"gifts","game":"xy"}                      -> the official Mystery Gift cards PKHeX knows for the game
-//   {"cmd":"gift","game":"xy","key":"..."|"data":..} -> a card (official, or a .wc6/.wc7/full file) made into its Pokemon
+//   {"cmd":"gift","game":"xy","key":"..."|"data":..} -> a card (official, or a .wc6/.wc7/full file) made into its Pokemon;
+//                                                       for a DS game (.pcd/.pgf/.myg/.bin), with its Wi-Fi gift file
 //   {"cmd":"card","game":"xy",...}                   -> a card from the editor's fields (CardEditor.cs), and what it gives
 //   {"cmd":"card_fields","game":"xy","data":...}     -> any card (or an official key) as the editor's fields
 //   {"cmd":"migrate","game":"sm","from":"rby",...}   -> a Gen 1/2/6 record moved to Gen 7 as Transporter/Bank do (Migrate.cs)
 //
-// Every reply has "ok"; a failed request has "error" instead. Games: rby, gsc, xy, oras, sm, usum.
+// Every reply has "ok"; a failed request has "error" instead. Games: rby, gsc, xy, oras, sm, usum; and for Mystery
+// Gifts only so far, dp, pt, hgss, bw, b2w2.
 // Legality is PKHeX.Core's (LegalityAnalysis); the build tries the species' encounters in PKHeX's
 // order and keeps the first that stays legal with everything asked for (docs/pkhex.md).
 
@@ -28,6 +30,12 @@ static partial class Program
     {
         ["rby"] = new("rby", [GameVersion.RD, GameVersion.BU, GameVersion.YW], () => new PK1(), () => new SAV1(LanguageID.English, GameVersion.RD), 1),
         ["gsc"] = new("gsc", [GameVersion.GD, GameVersion.SI, GameVersion.C], () => new PK2(), () => new SAV2(LanguageID.English, GameVersion.C), 2),
+        // The DS games, for their Wi-Fi Mystery Gifts (Gifts.cs, docs/mystery_gift.md "DS Wi-Fi gift files").
+        ["dp"] = new("dp", [GameVersion.D, GameVersion.P], () => new PK4(), () => new SAV4DP(), 4),
+        ["pt"] = new("pt", [GameVersion.Pt], () => new PK4(), () => new SAV4Pt(), 4),
+        ["hgss"] = new("hgss", [GameVersion.HG, GameVersion.SS], () => new PK4(), () => new SAV4HGSS(), 4),
+        ["bw"] = new("bw", [GameVersion.B, GameVersion.W], () => new PK5(), () => new SAV5BW(), 5),
+        ["b2w2"] = new("b2w2", [GameVersion.B2, GameVersion.W2], () => new PK5(), () => new SAV5B2W2(), 5),
         ["xy"] = new("xy", [GameVersion.X, GameVersion.Y], () => new PK6(), () => new SAV6XY(), 6),
         ["oras"] = new("oras", [GameVersion.OR, GameVersion.AS], () => new PK6(), () => new SAV6AO(), 6),
         ["sm"] = new("sm", [GameVersion.SN, GameVersion.MN], () => new PK7(), () => new SAV7SM(), 7),
@@ -550,7 +558,8 @@ static partial class Program
     {
         var context = game.Generation switch
         {
-            1 => EntityContext.Gen1, 2 => EntityContext.Gen2, 6 => EntityContext.Gen6, _ => EntityContext.Gen7,
+            1 => EntityContext.Gen1, 2 => EntityContext.Gen2, 4 => EntityContext.Gen4, 5 => EntityContext.Gen5,
+            6 => EntityContext.Gen6, _ => EntityContext.Gen7,
         };
         var pk = EntityFormat.GetFromBytes(data, context)
                  ?? throw new ArgumentException("not a Pokemon record PKHeX can read");

@@ -51,6 +51,8 @@ included, on every push.
 | `oras` | Omega Ruby, Alpha Sapphire | PK6 | `.pk6` |
 | `sm` | Sun, Moon | PK7 | `.pk7` |
 | `usum` | Ultra Sun, Ultra Moon | PK7 | `.pk7` |
+| `dp`, `pt`, `hgss` | Diamond, Pearl; Platinum; HeartGold, SoulSilver | PK4 | Mystery Gift cards only so far (`.pcd`, Wi-Fi `.myg`) |
+| `bw`, `b2w2` | Black, White; Black 2, White 2 | PK5 | Mystery Gift cards only so far (`.pgf`, Wi-Fi `.bin`) |
 
 ## Protocol
 
@@ -63,8 +65,8 @@ One JSON object per line each way. Every reply has `ok`; a refused request has `
 | `{"cmd":"paste","game":"xy","text":"..."}` | `sets`: each Showdown or Smogon set in the text as the wishes `build` takes for this game, with `errors` and `notes` (Import paste, below) |
 | `{"cmd":"build","game":"xy","species":25, ...wishes}` | a built record (below), with `fixes`; `"fix": true` returns the closest legal one when none fits, with `changes` |
 | `{"cmd":"check","game":"xy","data":"<base64>"}` | the same, for a record you have |
-| `{"cmd":"gifts","game":"oras"}` | the official Mystery Gift cards PKHeX.Core embeds for the game (Gen 6/7; `"all":true` for every card with its bytes) |
-| `{"cmd":"gift","game":"oras","key":"0547-384-0"}` or `"data":"<base64>"` | a card (official, or a `.wc6`/`.wc7`/full file) and the Pokemon it gives the trainer |
+| `{"cmd":"gifts","game":"oras"}` | the official Mystery Gift cards PKHeX.Core embeds for the game (Gen 4 to 7; `"all":true` for every card with its bytes) |
+| `{"cmd":"gift","game":"oras","key":"0547-384-0"}` or `"data":"<base64>"` | a card (official, or a `.wc6`/`.wc7`/full file; `.pcd`/`.myg`, `.pgf`/`.bin` for the DS games, with `wifi_data`, the Wi-Fi gift file) and the Pokemon it gives the trainer; `distribution_text` replaces the full or Wi-Fi file's text |
 | `{"cmd":"card","game":"usum","species":778, ...}` | a card from the editor's fields and its Pokemon (docs/wonder_cards.md) |
 | `{"cmd":"card_fields","game":"usum","data":"<base64>"}` | any card as the editor's fields, which `card` turns back into the same bytes |
 | `{"cmd":"migrate","game":"sm","from":"rby","source":"red","data":"<base64>","trainer":{...}}` | a Gen 1/2/6 record moved to Gen 7 (below), described as `check` describes one |

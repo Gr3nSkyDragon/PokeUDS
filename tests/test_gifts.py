@@ -80,8 +80,12 @@ def test_refusals(helper):
         helper.gift("xy", data=bytes(100))
     with pytest.raises(ValueError, match="empty"):
         helper.gift("xy", data=bytes(264))
-    with pytest.raises(ValueError, match="Gen 6 and 7"):
+    with pytest.raises(ValueError, match="Gen 4 to 7"):
         helper.gifts("gsc")
+    with pytest.raises(ValueError, match="neither a .pcd"):
+        helper.gift("dp", data=bytes(264))
+    with pytest.raises(ValueError, match="neither a .pgf"):
+        helper.gift("bw", data=bytes(264))
     with pytest.raises(ValueError, match="not in this game"):
         helper.card("xy", species=722)
 
@@ -219,3 +223,75 @@ def test_official_cards_keep_their_own_full_file(helper):
             assert int.from_bytes(g.full_data[0x202:0x204], "little") == full_crc(g.full_data)
             texts.append(distribution_text(g.full_data))
         assert any("will be given" not in t for t in texts)      # some carry an official text of their own
+
+
+# -- the DS games' Wi-Fi gift files (docs/mystery_gift.md, "DS Wi-Fi gift files") ------------------------------------
+
+DS_GAMES = {"dp": 936, "pt": 936, "hgss": 936, "bw": 720, "b2w2": 720}
+
+
+def ds_trainer(card: dict) -> dict:
+    """The receiver in the card's own language when it has one (a Gen 5 card is often for one language only)."""
+    return {**TRAINER, "language": card.get("restrict_language") or 2}
+
+
+def undated(game: str, card: bytes) -> bytes:
+    """A Gen 5 Wi-Fi file holds its card with no received date (0xAC); a Gen 4 card has none to drop."""
+    return card if game in ("dp", "pt", "hgss") else card[:0xAC] + b"\0" * 4 + card[0xB0:]
+
+
+@pytest.mark.parametrize("game", DS_GAMES)
+def test_ds_cards_make_wifi_files_that_open_again(helper, game):
+    cards = helper.gifts(game, all=True)
+    assert len(cards) > 50
+    for card in cards[::max(1, len(cards) // 25)]:
+        g = helper.gift(game, data=base64.b64decode(card["card_data"]), trainer=ds_trainer(card))
+        assert g.extension == ("pcd" if game in ("dp", "pt", "hgss") else "pgf") and not g.full_data
+        assert len(g.wifi_data) == DS_GAMES[game]
+        again = helper.gift(game, data=g.wifi_data, trainer=ds_trainer(card))
+        assert again.card_data == undated(game, g.card_data) and again.wifi_data == g.wifi_data
+        if card["kind"] in ("pokemon", "egg"):
+            assert g.pokemon.legal, (card["title"], g.pokemon.report)
+
+
+def wifi_crc(data: bytes) -> int:
+    crc = 0xFFFF                                            # CRC-16/CCITT-FALSE, as the Gen 6 full file's
+    for b in data:
+        crc ^= b << 8
+        for _ in range(8):
+            crc = ((crc << 1) ^ 0x1021) & 0xFFFF if crc & 0x8000 else (crc << 1) & 0xFFFF
+    return crc
+
+
+def test_gen5_wifi_file_layout(helper):
+    card = next(c for c in helper.gifts("b2w2", all=True) if c["kind"] == "pokemon" and c["restrict_version"])
+    g = helper.gift("b2w2", data=base64.b64decode(card["card_data"]), trainer=ds_trainer(card),
+                    distribution_text="Line one\nLine two")
+    f = g.wifi_data
+    assert f[:0xCC] == g.card_data[:0xAC] + b"\0" * 4 + g.card_data[0xB0:]            # the card, its date zero
+    assert int.from_bytes(f[0xCC:0xD0], "little") == card["restrict_version"] << 20
+    assert f[0xD0:0xD0 + 34] == "Line one".encode("utf-16-le") + b"\xfe\xff" + "Line two".encode("utf-16-le")
+    assert set(f[0xD0 + 34:0x2CA]) == {0xFF} and f[0x2CB] == ds_trainer(card)["language"]
+    assert int.from_bytes(f[0x2CE:], "little") == wifi_crc(f[:0x2CE])
+
+
+# SHA-256 of files dwc_network_server_emulator serves (dlc/ADAE/10dp.myg, dlc/IPGE/24dppgsAU.myg,
+# dlc/IRAO/G0028_darkrai_en.bin): what PokeUDS makes from PKHeX's card is the real file, byte for byte.
+REAL_FILES = [
+    ("dp", 10, "", "7fd166b5e09ba951562fbdd302720831adf759d240ea27062ec5e586a4abbf8a"),
+    ("hgss", 24, "", "e5419afec658e989ed4f6b51d8efd09aad811ecf671a5b4f388d3f4b772e9281"),
+    ("bw", 28, "Here's Darkrai!\nIt's a super-popular and\nMythical Pokémon!",
+     "90b23c93905f0e9046b70dd2ad2c0510ed6ce3bb455b4cf23d28bfe2df1049c9"),
+]
+
+
+@pytest.mark.parametrize("game,card_id,text,sha", REAL_FILES)
+def test_ds_wifi_files_match_the_real_ones(helper, game, card_id, text, sha):
+    import hashlib
+
+    made = set()
+    for card in helper.gifts(game, all=True):
+        if card["card_id"] == card_id:
+            g = helper.gift(game, data=base64.b64decode(card["card_data"]), trainer=ds_trainer(card), distribution_text=text)
+            made.add(hashlib.sha256(g.wifi_data).hexdigest())
+    assert sha in made

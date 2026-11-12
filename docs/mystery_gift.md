@@ -14,6 +14,7 @@ OPSSR signature are decoded and reproduced).
 | Gold / Silver / Crystal (VC) | the 3DS's **infrared** port, between two consoles | items and decorations | no: infrared, not wireless |
 | X / Y, Omega Ruby / Alpha Sapphire | **local wireless** from a distributor (store and event distributions), and the internet | Pokemon, items | possibly: the radio side is the same UDS PokeUDS speaks; the gift protocol is unknown |
 | Sun / Moon, Ultra Sun / Ultra Moon | **local wireless** from a distributor (event distributions), and the internet | Pokemon, items, Festival Coins, Poke Beans, BP | yes: the beacon and the OPSSR signature are decoded; PokeUDS signs its Gen 7 cards (see below) |
+| Diamond / Pearl / Platinum, HeartGold / SoulSilver, Black / White, Black 2 / White 2 (DS) | **Nintendo WFC** (Wi-Fi, through a DNS change), and DS local wireless | Pokemon, items, Gen 4 seals, accessories and Pokétch apps | the gift files, yes (below); the server they come from is planned (POKEUDS_ROADMAP.md, Part 5) |
 
 The Switch games' local gifts run over LDN, which is pokeldn's territory; the 3DS games use UDS.
 
@@ -232,6 +233,55 @@ same 314 bytes, signature included.
 
 PokeUDS will not use or point to leaked copies of Nintendo's distribution software.
 
+## Gen 4 and 5 (DS): Nintendo WFC
+
+The DS games' Wi-Fi Mystery Gift ("Receive via Wi-Fi", "Receive via Nintendo WFC") logs in to
+`nas.nintendowifi.net`, then lists and downloads gift files from `dls1.nintendowifi.net`. Nintendo WFC closed in
+2014. Wiimmfi, Kaeru WFC and the dwc_network_server_emulator project stand in for it, and a retail DS reaches them
+through a DNS change and the "nds-constrain't" certificate bug. What PokeUDS would need to do the same is in
+POKEUDS_ROADMAP.md, Part 5. What it does today is the files those servers send.
+
+### DS Wi-Fi gift files
+
+The helper makes each official Gen 4/5 card PKHeX.Core embeds (`MGDB_G4`, `MGDB_G5`) into the file the game
+downloads, and opens such files again (`gift` with game `dp`, `pt`, `hgss`, `bw` or `b2w2`; its `wifi_data`).
+Both layouts were worked out by comparing PKHeX's cards with the files dwc_network_server_emulator serves
+(2026-11-12). Of the files PKHeX has the card for, 238 of 240 Gen 4 files and all 52 Gen 5 files match the
+layouts below byte for byte. The two Gen 4 files that differ are both card 153 (one byte in the PGT's
+unencrypted head). All 339 files the helper opened came back byte for byte, including the 47 whose cards PKHeX
+lacks.
+
+**Gen 4 `.myg`, 936 bytes.**
+
+| offset | what |
+|---|---|
+| 0x000 | the card information's first 0x50 bytes (the PCD's 0x104-0x153: its title onward) |
+| 0x050 | the 856-byte `.pcd` as PKHeX writes it, the PGT's Pokemon encrypted as the game keeps it |
+
+There is no checksum of its own. A card's games are its `CardCompatibility`, a bit per game id (HeartGold 7,
+SoulSilver 8, Diamond 10, Pearl 11, Platinum 12): `0xC00` is Diamond and Pearl, `0x1D80` all five. PKHeX.Core
+26.10.18's `PCD.CanBeReceivedByVersion` reads it otherwise (no card for Pearl, Platinum or SoulSilver), so the
+helper reads the bits itself.
+
+**Gen 5 `.bin`, 720 bytes.**
+
+| offset | what |
+|---|---|
+| 0x000 | the 204-byte `.pgf`, its received date (0xAC, four bytes) zero |
+| 0x0CC | the games that may receive it, u32: the card's `RestrictVersion` << 20 (`0x300000` Black and White, `0xC00000` Black 2 and White 2; written `0xF00000` for a card with none). 50 of the 52 files match; the other two are French re-releases sent to all four games |
+| 0x0D0 | the distribution text, 0x1FA bytes: UTF-16, `0xFFFE` a line break, `0xFFFF` its end and the fill after it |
+| 0x2CA | zero in every file seen (as are 0x2CC and 0x2CD); meaning unknown |
+| 0x2CB | the language it is for: the card's `RestrictLanguage` (every file); for a card with none, the trainer's |
+| 0x2CE | CRC-16/CCITT-FALSE of bytes 0x000-0x2CD, little-endian (every file) |
+
+PKHeX keeps a `.pgf`'s `RestrictVersion` and `RestrictLanguage` beside its 204 bytes, not in them: a `.bin` carries
+both, and a bare `.pgf` takes them from PKHeX's copy of the same card. A made `.bin`'s text is what the card gives
+("Darkrai\nwill be given to you as a gift!") unless `distribution_text` is given. The official texts are not in
+PKHeX. A Gen 5 card opened from a `.bin` is undated, as the file holds it.
+
+Unmeasured: whether the games check anything these files don't show (the three zero bytes), and the gender signs
+and other characters the game draws from its own code points, which the text writer doesn't map.
+
 ## What works today
 
 ### Cards
@@ -302,6 +352,20 @@ all of them and writes each as a file, about a minute; it also rebuilds each fro
 | Sun / Moon | 668 | all | | |
 | Ultra Sun / Ultra Moon | 484 | all | | |
 | total | 2,627 | 2,132 | 454 | 41 |
+
+The DS games' cards, each made into its Wi-Fi file and opened again (2026-11-12; the trainer in the card's own
+language where it has one; not part of `scripts/check_gifts.py` yet):
+
+| game | cards | Pokemon and eggs legal | items and other |
+|---|---:|---:|---:|
+| Diamond / Pearl | 529 | all 233 | 296 |
+| Platinum | 161 | all 139 | 22 |
+| HeartGold / SoulSilver | 154 | all 128 | 26 |
+| Black / White | 613 | all 604 | 9 |
+| Black 2 / White 2 | 224 | all 224 | |
+
+Every one comes back byte for byte from its Wi-Fi file. `tests/test_gifts.py` also pins the SHA-256 of three real
+files (Diamond/Pearl card 10, HeartGold/SoulSilver card 24, Black/White card 28) and makes each from PKHeX's card.
 
 Every card comes back byte for byte from its `.wc6`/`.wc7` and from its full file. Three things the run
 found and PokeUDS now handles:

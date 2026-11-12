@@ -323,6 +323,7 @@ static partial class Program
     static string GameName(Game game) => game.Key switch
     {
         "rby" => "Red/Blue/Yellow", "gsc" => "Gold/Silver/Crystal", "xy" => "X/Y", "oras" => "Omega Ruby/Alpha Sapphire",
-        "sm" => "Sun/Moon", _ => "Ultra Sun/Ultra Moon",
+        "sm" => "Sun/Moon", "dp" => "Diamond/Pearl", "pt" => "Platinum", "hgss" => "HeartGold/SoulSilver",
+        "bw" => "Black/White", "b2w2" => "Black 2/White 2", _ => "Ultra Sun/Ultra Moon",
     };
 }

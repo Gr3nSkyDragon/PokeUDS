@@ -1,4 +1,4 @@
-// Mystery Gift cards for Gen 6 and 7 (docs/mystery_gift.md): the official cards PKHeX.Core embeds, a card opened
+// Mystery Gift cards for Gen 6 and 7, and Gen 4 and 5's for their Wi-Fi files (below; docs/mystery_gift.md): the official cards PKHeX.Core embeds, a card opened
 // from a file, and custom cards built from a form. Every card can be made into the Pokemon it gives, as the
 // requested trainer would receive it, and checked; a custom card's Pokemon matches no real event, so PKHeX's
 // check refuses it ("custom" says so).
@@ -15,6 +15,11 @@
 //              422 Gen 6 and 801 Gen 7 full files matches)
 //   0x205      Gen 6: 0x46; Gen 7: a weight for random sets, mostly 0
 //   0x206      0x46 0x46
+//
+// Gen 4 and 5 (the DS games) have their cards here too, for the files their in-game Wi-Fi Mystery Gift downloads
+// (docs/mystery_gift.md, "DS Wi-Fi gift files"): a .pcd (856 bytes) or .pgf (204) card, and the Wi-Fi file around it,
+// a 936-byte .myg or a 720-byte .bin. Both layouts were matched against the files dwc_network_server_emulator serves
+// (238 of the 240 Gen 4 and all 52 Gen 5 files PKHeX has the card for, 2026-11-12).
 
 using System.Text.Json.Nodes;
 using PKHeX.Core;
@@ -34,18 +39,36 @@ static partial class Program
 
     static MysteryGift[] Table(Game game) => game.Generation switch
     {
+        4 => EncounterEvent.MGDB_G4,
+        5 => EncounterEvent.MGDB_G5,
         6 => EncounterEvent.MGDB_G6,
         7 => EncounterEvent.MGDB_G7,
-        _ => throw new ArgumentException("Mystery Gift cards are Gen 6 and 7 here (Gen 2's went by infrared)"),
+        _ => throw new ArgumentException("Mystery Gift cards are Gen 4 to 7 here (Gen 2's went by infrared)"),
     };
 
     static bool ForGame(Game game, MysteryGift gift) => game.Versions.Any(v => Reaches(gift, v));
 
     static bool Reaches(MysteryGift gift, GameVersion version) => gift switch
     {
+        // A PCD's CardCompatibility has a bit per game, by its id (HG 7, SS 8, D 10, P 11, Pt 12): 0xC00 Diamond and
+        // Pearl, 0x1D80 all five. PKHeX.Core's own CanBeReceivedByVersion (26.10.18) reads it otherwise and finds no
+        // card at all for Pearl, Platinum or SoulSilver.
+        PCD p => ((p.CardCompatibility >> (int)version) & 1) != 0,
+        PGF p => p.CanBeReceivedByVersion(version),
         WC6 w => w.CanBeReceivedByVersion(version),
         WC7 w => w.CanBeReceivedByVersion(version),
         _ => true,
+    };
+
+    static string CardExtension(Game game) => game.Generation switch { 4 => "pcd", 5 => "pgf", 6 => "wc6", _ => "wc7" };
+
+    // The card as its file holds it: a .pcd keeps its Pokemon encrypted, as the game and PKHeX's own export do; the
+    // other cards are their bytes.
+    static byte[] CardBytes(MysteryGift gift) => gift switch
+    {
+        PCD p => p.Clone().Write().ToArray(),
+        DataMysteryGift d => d.Data.ToArray(),
+        _ => [],
     };
 
     static string GiftKey(MysteryGift g) => $"{g.CardID:0000}-{g.Species}-{g.Form}";
@@ -64,8 +87,8 @@ static partial class Program
                 continue;
             var info = CardInfo(game, gift, key);
             Undated(info);
-            if (all && gift is DataMysteryGift data)
-                info["card_data"] = Convert.ToBase64String(data.Data.ToArray());
+            if (all && gift is DataMysteryGift)
+                info["card_data"] = Convert.ToBase64String(CardBytes(gift));
             list.Add(info);
         }
         return new JsonObject { ["ok"] = true, ["gifts"] = list };
@@ -82,7 +105,7 @@ static partial class Program
         {
             ["key"] = key.Length > 0 ? key : GiftKey(gift),
             ["card_id"] = gift.CardID,
-            ["text"] = gift is DataMysteryGift raw ? raw.Data[0x50] : 0,      // the card text index (CardEditor.cs)
+            ["text"] = gift is WC6 or WC7 && gift is DataMysteryGift raw ? raw.Data[0x50] : 0,   // the card text index (CardEditor.cs)
             ["title"] = gift.CardTitle.Trim(),
             ["kind"] = gift.IsEntity ? (gift.IsEgg ? "egg" : "pokemon") : gift.IsItem ? "item" : gift switch
             {
@@ -91,12 +114,13 @@ static partial class Program
             ["games"] = new JsonArray(game.Versions.Where(v => Reaches(gift, v))
                 .Select(v => (JsonNode)GameInfo.GetVersionName(v)).ToArray()),
         };
-        if (gift is DataMysteryGift data && data is WC6 or WC7)
+        if (gift is WC6 or WC7 or PGF)
         {
-            var (restrictVersion, restrictLanguage, date, multi) = data switch
+            var (restrictVersion, restrictLanguage, date, multi) = gift switch
             {
                 WC6 w => (w.RestrictVersion, w.RestrictLanguage, w.Date, w.MultiObtain),
                 WC7 w => (w.RestrictVersion, w.RestrictLanguage, w.Date, w.MultiObtain),
+                PGF w => (w.RestrictVersion, w.RestrictLanguage, w.Date, w.MultiObtain),
                 _ => default,
             };
             info["restrict_version"] = restrictVersion;
@@ -114,7 +138,7 @@ static partial class Program
             info["held_item"] = gift.HeldItem > 0 ? Name(Strings.Item, gift.HeldItem) : "";
             // A card with its own OT gives a Pokemon traded from that trainer; without one, the receiver is its OT.
             info["ot"] = gift.OriginalTrainerName;
-            var language = gift switch { WC6 w => w.Language, WC7 w => w.Language, _ => 0 };
+            var language = gift switch { WC6 w => w.Language, WC7 w => w.Language, PGF w => w.Language, _ => 0 };
             info["language"] = language == 0 ? "" : ((LanguageID)language).ToString();
             info["moves"] = new JsonArray(new[] { gift.Moves.Move1, gift.Moves.Move2, gift.Moves.Move3, gift.Moves.Move4 }
                 .Where(m => m != 0).Select(m => (JsonNode)Name(Strings.Move, m)).ToArray());
@@ -131,9 +155,12 @@ static partial class Program
 
     static MysteryGift CardFromBytes(Game game, byte[] data) => CardFromBytes(game, data, out _);
 
-    // ``header``: a full file's distribution header (its first 0x208 bytes), or null for a bare card.
+    // ``header``: a full file's distribution header (its first 0x208 bytes), a Gen 5 Wi-Fi file's trailer (the 516
+    // bytes after its card), or null for a bare card.
     static MysteryGift CardFromBytes(Game game, byte[] data, out byte[]? header)
     {
+        if (game.Generation is 4 or 5)
+            return DsCardFromBytes(game, data, out header);
         header = data.Length == FullSize ? data[..FullCardAt] : null;
         var restrictions = (byte)0;
         var language = (byte)0;
@@ -184,12 +211,15 @@ static partial class Program
     static JsonObject GiftReply(Game game, MysteryGift gift, JsonObject request, bool custom, byte[]? header = null)
     {
         var reply = new JsonObject { ["ok"] = true, ["card"] = CardInfo(game, gift), ["custom"] = custom };
-        if (gift is DataMysteryGift data)
+        if (gift is DataMysteryGift)
         {
-            var bytes = data.Data.ToArray();
+            var bytes = CardBytes(gift);
             reply["card_data"] = Convert.ToBase64String(bytes);
-            reply["full_data"] = Convert.ToBase64String(FullFile(game, gift, bytes, request, header));
-            reply["card_extension"] = game.Generation == 6 ? "wc6" : "wc7";
+            if (game.Generation >= 6)
+                reply["full_data"] = Convert.ToBase64String(FullFile(game, gift, bytes, request, header));
+            else
+                reply["wifi_data"] = Convert.ToBase64String(WifiFile(game, gift, request, header));
+            reply["card_extension"] = CardExtension(game);
         }
         if (!gift.IsEntity)
         {
@@ -200,11 +230,12 @@ static partial class Program
         var versions = game.Versions.Where(v => Reaches(gift, v)).DefaultIfEmpty(game.Versions[0]);
         // A card with no date would give a Pokemon met on day zero, which no game makes: date a copy today, as the
         // day the save receives it.
-        if (gift is WC6 { Date: null } or WC7 { Date: null })
+        if (gift is WC6 { Date: null } or WC7 { Date: null } or PGF { Date: null })
         {
-            gift = gift is WC6 c6 ? (MysteryGift)c6.Clone() : ((WC7)gift).Clone();
+            gift = gift switch { WC6 c6 => c6.Clone(), WC7 c7 => c7.Clone(), _ => ((PGF)gift).Clone() };
             if (gift is WC6 d6) d6.Date = DateOnly.FromDateTime(DateTime.Today);
             if (gift is WC7 d7) d7.Date = DateOnly.FromDateTime(DateTime.Today);
+            if (gift is PGF d5) d5.Date = DateOnly.FromDateTime(DateTime.Today);
         }
         PKM? pk = null;
         LegalityAnalysis? la = null;
@@ -302,16 +333,22 @@ static partial class Program
         : gift.IsItem ? $"{Name(Strings.Item, gift.ItemID)}\nwill be given to you as a gift!"
         : gift.CardTitle.Trim();
 
-    static void RefreshFullChecksum(byte[] full)
+    static ushort Crc16(ReadOnlySpan<byte> data)
     {
-        full[FullChecksumAt] = full[FullChecksumAt + 1] = 0;
         ushort crc = 0xFFFF;                                   // CRC-16/CCITT-FALSE, as gflnet's
-        foreach (var b in full)
+        foreach (var b in data)
         {
             crc ^= (ushort)(b << 8);
             for (var i = 0; i < 8; i++)
                 crc = (crc & 0x8000) != 0 ? (ushort)((crc << 1) ^ 0x1021) : (ushort)(crc << 1);
         }
+        return crc;
+    }
+
+    static void RefreshFullChecksum(byte[] full)
+    {
+        full[FullChecksumAt] = full[FullChecksumAt + 1] = 0;
+        var crc = Crc16(full);
         full[FullChecksumAt] = (byte)crc;
         full[FullChecksumAt + 1] = (byte)(crc >> 8);
     }
@@ -356,6 +393,109 @@ static partial class Program
             }
             return files.GetValueOrDefault(Convert.ToHexString(card)) ?? files.GetValueOrDefault(UndatedKey(card));
         }
+    }
+
+    // -- DS Wi-Fi gift files (docs/mystery_gift.md, "DS Wi-Fi gift files") ------------------------
+    //
+    // Gen 4 .myg, 936 bytes: the first 0x50 bytes of the card's information (its title onward, from 0x104), then the
+    //   .pcd as PKHeX writes it (its PGT's Pokemon encrypted). Nothing else, and no checksum.
+    // Gen 5 .bin, 720 bytes:
+    //   0x000  the .pgf, its received date (0xAC, four bytes) zero
+    //   0x0CC  the games that may receive it, u32: the card's RestrictVersion << 20 (Black 1, White 2, White 2 4,
+    //          Black 2 8, as PKHeX's bits; 0 is all four, written 0xF)
+    //   0x0D0  the distribution text, 0x1FA bytes: UTF-16, 0xFFFE a line break, 0xFFFF its end and the fill after
+    //   0x2CA  zero in every file seen (0x2CC and 0x2CD too)
+    //   0x2CB  the language it is for: the card's RestrictLanguage (LanguageID)
+    //   0x2CE  CRC-16/CCITT-FALSE of bytes 0x000-0x2CD, little-endian
+    // PKHeX keeps a .pgf's RestrictVersion and RestrictLanguage beside its 204 bytes, not in them: a .bin carries
+    // both, and a bare .pgf takes them from PKHeX's copy of the same card.
+    const int PcdSize = 0x358, MygSize = 0x3A8, MygHead = 0x50, PcdInfoAt = 0x104, PgtPokemonAt = 0x08, Pk4PartySize = 236;
+    const int PgfSize = 0xCC, BinSize = 0x2D0, PgfDateAt = 0xAC, BinGamesAt = 0xCC, BinTextAt = 0xD0, BinTextSize = 0x1FA,
+              BinLanguageAt = 0x2CB, BinChecksumAt = 0x2CE;
+
+    static MysteryGift DsCardFromBytes(Game game, byte[] data, out byte[]? trailer)
+    {
+        trailer = null;
+        if (game.Generation == 4)
+        {
+            if (data.Length == MygSize)
+                data = data[MygHead..];
+            if (data.Length != PcdSize)
+                throw new ArgumentException($"{data.Length} bytes is neither a .pcd card (856) nor a Wi-Fi gift file (936)");
+            data = data.ToArray();
+            // PKHeX's PCD reads its Pokemon as stored: a file's is encrypted, as the game keeps it.
+            if (new PCD(data.ToArray()).IsEntity)
+                PokeCrypto.DecryptIfEncrypted45(data.AsSpan(PgtPokemonAt, Pk4PartySize));
+            var pcd = new PCD(data);
+            return pcd.IsEmpty ? throw new ArgumentException("the card is empty") : pcd;
+        }
+        if (data.Length == BinSize)
+        {
+            trailer = data[PgfSize..];
+            data = data[..PgfSize];
+        }
+        if (data.Length != PgfSize)
+            throw new ArgumentException($"{data.Length} bytes is neither a .pgf card (204) nor a Wi-Fi gift file (720)");
+        var pgf = new PGF(data.ToArray());
+        if (pgf.IsEmpty)
+            throw new ArgumentException("the card is empty");
+        if (trailer is not null)
+        {
+            var games = (byte)((BitConverter.ToUInt32(trailer, BinGamesAt - PgfSize) >> 20) & 0xF);
+            pgf.RestrictVersion = games == 0xF ? (byte)0 : games;
+            pgf.RestrictLanguage = trailer[BinLanguageAt - PgfSize];
+        }
+        else if (Table(game).OfType<PGF>().FirstOrDefault(p => UndatedPgf(p.Data) == UndatedPgf(data)) is { } official)
+            (pgf.RestrictVersion, pgf.RestrictLanguage) = (official.RestrictVersion, official.RestrictLanguage);
+        return pgf;
+    }
+
+    static string UndatedPgf(ReadOnlySpan<byte> card)
+    {
+        var copy = card.ToArray();
+        Array.Clear(copy, PgfDateAt, 4);
+        return Convert.ToHexString(copy);
+    }
+
+    // The file the game's Wi-Fi Mystery Gift downloads. A Gen 5 file opened from a .bin keeps its own trailer; else
+    // the trailer is made from the card, the text defaulting to what it gives and the language, for a card any
+    // language may receive, to the trainer's. Request field distribution_text replaces the text.
+    static byte[] WifiFile(Game game, MysteryGift gift, JsonObject request, byte[]? trailer)
+    {
+        if (gift is PCD pcd)
+            return [.. pcd.Data.Slice(PcdInfoAt, MygHead), .. pcd.Clone().Write()];
+        var pgf = (PGF)gift;
+        var file = new byte[BinSize];
+        pgf.Data.CopyTo(file);
+        Array.Clear(file, PgfDateAt, 4);
+        if (trailer is not null)
+            trailer.CopyTo(file, PgfSize);
+        else
+        {
+            var games = pgf.RestrictVersion == 0 ? 0xFu : pgf.RestrictVersion;
+            BitConverter.TryWriteBytes(file.AsSpan(BinGamesAt), games << 20);
+            file[BinLanguageAt] = pgf.RestrictLanguage != 0 ? pgf.RestrictLanguage : (byte)Trainer(game, request).Language;
+            SetWifiText(file, DefaultDistributionText(gift));
+        }
+        if ((string?)request["distribution_text"] is { Length: > 0 } text)
+            SetWifiText(file, text);
+        var crc = Crc16(file.AsSpan(0, BinChecksumAt));
+        file[BinChecksumAt] = (byte)crc;
+        file[BinChecksumAt + 1] = (byte)(crc >> 8);
+        return file;
+    }
+
+    // Gen 5 text: UTF-16 with 0xFFFE for a line break, ended and filled with 0xFFFF. Gender signs and the game's other
+    // own characters are not mapped (nothing official seen uses them in this text).
+    static void SetWifiText(byte[] file, string text)
+    {
+        var chars = text.Replace("\r\n", "\n");
+        if (chars.Length > BinTextSize / 2 - 1)
+            throw new ArgumentException($"the distribution text is at most {BinTextSize / 2 - 1} characters");
+        var area = file.AsSpan(BinTextAt, BinTextSize);
+        area.Fill(0xFF);
+        for (var i = 0; i < chars.Length; i++)
+            BitConverter.TryWriteBytes(area[(2 * i)..], chars[i] == '\n' ? (ushort)0xFFFE : chars[i]);
     }
 
     // -- a custom card: CardEditor.cs ------------------------------------------------------------

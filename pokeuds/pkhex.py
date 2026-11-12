@@ -201,11 +201,12 @@ class Built:
 @dataclass
 class Gift:
     card: dict                # card_id, title, kind, games, species_name, level, shiny, ot, moves, ...
-    card_data: bytes          # the 264-byte card (.wc6 / .wc7)
-    full_data: bytes          # the 784-byte distribution file (.wc6full / .wc7full)
-    extension: str            # "wc6" or "wc7"
+    card_data: bytes          # the card: 264 bytes (.wc6 / .wc7), 856 (.pcd) or 204 (.pgf)
+    full_data: bytes          # Gen 6/7: the 784-byte distribution file (.wc6full / .wc7full); else empty
+    extension: str            # "wc6", "wc7", "pcd" or "pgf"
     pokemon: Built | None     # None for an item, BP or beans card
     custom: bool
+    wifi_data: bytes = b""    # Gen 4/5: what the game's Wi-Fi Mystery Gift downloads (.myg 936 / .bin 720 bytes)
 
 
 class Helper:
@@ -262,16 +263,22 @@ class Helper:
             fields["language"] = language
         return self._built(self.request("migrate", game=game, **fields))
 
-    # Mystery Gift cards, Gen 6 and 7 (docs/mystery_gift.md).
+    # Mystery Gift cards, Gen 6 and 7, and Gen 4 and 5 for their Wi-Fi gift files (games dp, pt, hgss, bw, b2w2;
+    # docs/mystery_gift.md).
 
     def gifts(self, game: str, all: bool = False) -> list[dict]:
         """The official Pokemon cards PKHeX knows that reach the game's versions, newest card id first, one per
         card, species and form; ``all`` lists every card (items and revisions too) with its bytes (``card_data``)."""
         return self.request("gifts", game=game, all=all)["gifts"]
 
-    def gift(self, game: str, *, key: str | None = None, data: bytes | None = None, trainer: dict | None = None) -> "Gift":
-        """An official card (by key) or a .wc6/.wc7/full file's bytes, made into its Pokemon for the trainer."""
+    def gift(self, game: str, *, key: str | None = None, data: bytes | None = None, trainer: dict | None = None,
+             distribution_text: str = "") -> "Gift":
+        """An official card (by key) or a card file's bytes (.wc6/.wc7/full file; .pcd/.myg for Gen 4, .pgf/.bin for
+        Gen 5), made into its Pokemon for the trainer. ``distribution_text`` replaces the text of the full or Wi-Fi
+        file made with it."""
         fields = {"key": key} if key else {"data": base64.b64encode(data or b"").decode()}
+        if distribution_text:
+            fields["distribution_text"] = distribution_text
         return self._gift(self.request("gift", game=game, trainer=trainer or {}, **fields))
 
     def card(self, game: str, trainer: dict | None = None, **fields) -> "Gift":
@@ -288,7 +295,8 @@ class Helper:
     def _gift(self, reply: dict) -> "Gift":
         pokemon = self._built({**reply["pokemon"]}) if reply.get("pokemon") else None
         return Gift(reply["card"], base64.b64decode(reply.get("card_data", "")), base64.b64decode(reply.get("full_data", "")),
-                    reply.get("card_extension", ""), pokemon, bool(reply.get("custom")))
+                    reply.get("card_extension", ""), pokemon, bool(reply.get("custom")),
+                    base64.b64decode(reply.get("wifi_data", "")))
 
     @staticmethod
     def _built(reply: dict) -> Built:
