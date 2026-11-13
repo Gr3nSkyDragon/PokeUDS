@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pokeuds"
-version = "0.1.4"
+version = "0.1.5"
 description = "Local wireless (UDS) trading with retail Nintendo 3DS Pokemon games through an ESP32-S3 or a USB Wi-Fi adapter (ldnd.exe)"
 readme = "README.md"
 license = "AGPL-3.0-only"

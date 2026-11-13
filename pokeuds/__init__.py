@@ -9,4 +9,4 @@ Layers, bottom up (see docs/architecture.md):
 - ``pokeuds.capture``: tools that turn emulator logs and sniffed traffic into transcripts.
 """
 
-__version__ = "0.1.4"
+__version__ = "0.1.5"
