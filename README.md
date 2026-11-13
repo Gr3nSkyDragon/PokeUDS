@@ -191,12 +191,20 @@ python -m pytest -q
 
 PokeUDS follows [pokeldn](https://github.com/Decryptu/pokeldn) by [Decryptu](https://github.com/Decryptu), which
 does the same for the Switch: the app's shape and design, its PKHeX integration and updater, and code taken from it
-under the AGPL-3.0. The 3DS protocols were read off logs of retail trades; AI tools helped reverse engineer them and
-write parts of the code.
+under the AGPL-3.0. pokeldn is a fork of
+[MercuryEnigma/frlg-ldn-trade](https://github.com/MercuryEnigma/frlg-ldn-trade), itself a fork of
+[tornadus/frlg-ldn-trade](https://github.com/tornadus/frlg-ldn-trade): Tornadus's proof of concept, a computer
+trading FireRed and LeafGreen with a real Switch over local wireless, is the other heavy influence on PokeUDS and the
+thing that started its research in the first place. PokeUDS asks the same question of the 3DS.
+
+The 3DS protocols were read off logs of retail trades; AI tools helped reverse engineer them and write parts of the
+code.
 
 Contributors:
 
 - [Gr3nSkyDragon](https://github.com/Gr3nSkyDragon): PokeUDS, and its testing on retail hardware
+- **Claude Opus 5.5** (Anthropic): the rest of the repository, from the Gen 6/7 and Virtual Console trades and the
+  app to the GTS and the DS Wi-Fi stand-in, as `Co-authored-by` on its commits
 - **DeepSeek Harness** (DeepSeek): the Gen 7 Mystery Gift support: the distributor's beacon and OPSSR signing,
   the key extraction and the Settings flow ([CONTRIBUTORS.md](CONTRIBUTORS.md))
 
@@ -210,6 +218,11 @@ Local wireless and the radio:
 - [unlimitedcoder2](https://github.com/unlimitedcoder2): ldnd, the Windows USB Wi-Fi adapter daemon
 - [martin-ger/esp32_nat_router](https://github.com/martin-ger/esp32_nat_router): the AP+STA+NAPT pattern behind
   the board's DS Wi-Fi access point, and a stand-in for it
+- [GB-Link/GB-Link-Switch-LDN](https://github.com/GB-Link/GB-Link-Switch-LDN): the Switch LDN side of the board's
+  firmware and the `ldn/` it vendors (AGPL-3.0); its ESP32 LDN code comes from
+  [easyworld/frlg-ldn-trade-esp32](https://github.com/easyworld/frlg-ldn-trade-esp32), a port of Tornadus's project
+- [kinnay/NintendoClients](https://github.com/kinnay/NintendoClients): the NEX PRUDP V1 packet layout the Gen 6/7
+  transport is ported from, and the Pia pages on its wiki (MIT)
 
 Pokemon and the games:
 
@@ -220,7 +233,6 @@ Pokemon and the games:
 - [mgba_LDN](https://github.com/Gr3nSkyDragon/mgba_LDN): the Virtual Console link measurements
 - [Lorenzooone/PokemonGB_Online_Trades](https://github.com/Lorenzooone/PokemonGB_Online_Trades): the Japanese and
   Korean Game Boy games' text tables and layouts (MIT)
-- [Project Pokemon](https://github.com/projectpokemon): theSLAYER's map of the local wireless event header
 - [PokeAPI/sprites](https://github.com/PokeAPI/sprites): the sprites the app downloads
 
 DS Wi-Fi Mystery Gifts:
@@ -238,6 +250,13 @@ DS Wi-Fi Mystery Gifts:
 Online:
 
 - [Nostr](https://github.com/nostr-protocol/nips): the protocol the GTS runs on, over public relays
+
+Reference documentation:
+
+- [Project Pokemon's technical documents](https://projectpokemon.org/home/docs/gen-6/6th-and-7th-generation-wonder-card-map-r4/):
+  theSLAYER's map of the local wireless event header, which the full-card layout follows
+- [3dbrew](https://www.3dbrew.org): the UDS, Download Play and CRO notes used to read the captures, and to rule out
+  the DS Download Play route
 
 Libraries: [Flet](https://github.com/flet-dev/flet) (the app), [esptool](https://github.com/espressif/esptool)
 (flashing the board), [PyCryptodome](https://github.com/Legrandin/pycryptodome),
