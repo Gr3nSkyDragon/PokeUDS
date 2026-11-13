@@ -103,3 +103,28 @@ See [vc.md](vc.md).
 
 As in pokeldn, each received record is written the moment it arrives (`received.save`), decrypted, in
 the 232-byte box format PKHeX opens, one file per trade.
+
+## Code layout
+
+| Path | Contents |
+|---|---|
+| `pokeuds/radio/` | The ESP32 serial protocol, the ldnd pipe and nl80211 monitor, radiotap, a simulated air |
+| `pokeuds/uds/` | 802.11 frames, beacons, CCMP and key derivation, SecureData, EAPoL, the station (host and client), the sniffer |
+| `pokeuds/nex/` | NEX's PRUDP V1 as Gen 6/7 run it over Pia's local UDS layer |
+| `pokeuds/games/` | Game registry and profiles; `gen6/` the PSS and X/Y-ORAS trade, `gen7/` the Festival Plaza and Sun/Moon-USUM trade |
+| `pokeuds/vc/` | Virtual Console: Pia frames and session, the Game Boy trade engine |
+| `pokeuds/online/` | Nostr signing and relays, and the GTS's events ([online.md](online.md)) |
+| `pokeuds/pkx.py`, `gbpk.py` | Gen 6/7 and Gen 1/2 records, the Time Capsule conversions |
+| `pokeuds/capture/` | Azahar-log and sniff transcripts, the protocol decoders behind `analyze` |
+| `pokeuds/games/gen6/delivery.py`, `gen7/delivery.py` | Local-wireless Mystery Gift: the beacon fragments, LZ10, Gen 7's OPSSR signing |
+| `gui/`, `pokeuds/app/` | The app (Flet) and what it shares with the command line; `gui/assets/` holds the icon |
+| `packaging/`, `scripts/build_exe.py` | The Windows exe's entry point, the icon artwork and the build ([release.md](release.md)) |
+| `services/pkhex/` | PKHeX's side (a .NET program the app runs): building and checking Pokemon, Mystery Gift cards, migration |
+| `profiles/` | Each game's network constants, from captures |
+| `docs/` | [The app](gui.md), [command line](cli.md), [UDS](uds.md), [Gen 6](gen6.md), [Gen 7](gen7.md), [Virtual Console](vc.md), [hardware](hardware.md), [captures](captures.md), [PKHeX](pkhex.md), [online and the GTS](online.md), [Mystery Gift](mystery_gift.md), [Wonder Cards](wonder_cards.md), [plugins](plugins.md), [releases](release.md), [code signing](code_signing.md) |
+
+The tests:
+
+```bash
+python -m pytest -q
+```

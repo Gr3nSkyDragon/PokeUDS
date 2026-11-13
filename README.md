@@ -45,13 +45,10 @@ Poke Transporter and Pokemon Bank do.
     the distributor app's private key. That key is not shipped: the **Gen 7 Mystery Gift Key** card in Settings
     reads it from your own dump of the Gen 7 Local Distributor (00040000001A8900) and keeps it in `rsa_d_key.txt`
     beside `aes_keys.txt`. Retail game dumps hold only the public key.
-- **DS Wi-Fi Mystery Gifts (Gen 4/5), pre-alpha**: a DNS and Nintendo WFC stand-in for Diamond, Pearl, Platinum,
-  HeartGold, SoulSilver, Black, White, Black 2 and White 2. The player points the DS's DNS at PokeUDS; it answers
-  the connection test, the NAS login and the DLS1 download over the DS's SSL 3.0, with a server certificate made
-  from the player's own Wii certificate (the "nds-constrain't" flaw), and sends PKHeX's official cards. Needs a Wii
-  certificate dump and either an open (or WEP) access point or the board's own open AP
-  ([docs/ds_wifi_ap.md](docs/ds_wifi_ap.md)); `tlslite-ng` for the DS's SSL; **not yet tried on a DS**
-  ([docs/ds_wifi.md](docs/ds_wifi.md)).
+- **DS Wi-Fi Mystery Gifts (Gen 4/5), pre-alpha**: Diamond, Pearl, Platinum, HeartGold, SoulSilver, Black, White,
+  Black 2 and White 2 receive PKHeX's official cards over Wi-Fi from PokeUDS standing in for Nintendo WFC. Needs a
+  Wii certificate dump and an open (or WEP) access point, or the board's own; **not yet tried on a DS**, and for
+  now run from the [command line](docs/cli.md#mystery-gift) only ([docs/ds_wifi.md](docs/ds_wifi.md)).
 - **GTS**: list a banked Pokemon against what you want, or offer on someone else's listing, bank to bank over
   public Nostr relays; a trade settles when the lister's app next opens ([docs/online.md](docs/online.md)). New and
   not yet tried over the public relays.
@@ -81,7 +78,7 @@ notarized by Apple, so the first time it is refused: open it once, then System S
 **Open Anyway**. Your Pokemon are kept in `~/Library/Application Support/PokeUDS/bank`, outside the app, so replacing
 `PokeUDS.app` with a newer one leaves them alone (Settings can point the bank somewhere else).
 
-**Linux:** there is no packaged app; run PokeUDS from source, below.
+**Linux:** there is no packaged app; run it from source, below.
 
 **From source** (any OS, Python 3.11 or newer):
 
@@ -101,7 +98,8 @@ pip install -r requirements-gui.txt
 python -m gui
 ```
 
-On macOS or Linux, activate with `. .venv/bin/activate`. `requirements.txt` alone is enough for the command line.
+On macOS or Linux, activate with `. .venv/bin/activate`. To use PokeUDS from a terminal instead, see the
+[command-line instructions](docs/cli.md).
 
 ## What you need
 
@@ -116,7 +114,7 @@ On macOS or Linux, activate with `. .venv/bin/activate`. `requirements.txt` alon
   (`.cci`/`.3ds`) or its `code.bin`, from which Settings extracts the signing key once
   ([docs/mystery_gift.md](docs/mystery_gift.md)).
 
-## Trading from the app
+## Trading
 
 1. Settings: choose `aes_keys.txt`, and set your trainer (name, TID/SID) for Pokemon you build.
 2. Trade: pick the game and the connection (ESP32 board or USB Wi-Fi adapter).
@@ -126,7 +124,7 @@ On macOS or Linux, activate with `. .venv/bin/activate`. `requirements.txt` alon
    - **X/Y, ORAS**: open the PSS with local wireless on, then ask PokeUDS for a trade (or accept its request).
    - **Sun/Moon, USUM**: open the Festival Plaza, then invite PokeUDS to a Link Trade (or accept its invite).
 
-What the 3DS sends lands in the bank. See [docs/gui.md](docs/gui.md) for every page.
+What the 3DS sends lands in the bank. [docs/gui.md](docs/gui.md) describes every page of the app.
 
 ## Sending a Mystery Gift
 
@@ -134,58 +132,21 @@ What the 3DS sends lands in the bank. See [docs/gui.md](docs/gui.md) for every p
 2. For Sun/Moon or USUM, set up the Gen 7 Mystery Gift Key in Settings first (once).
 3. Send over local wireless, then on the 3DS: Mystery Gift, Receive Gift, Get via Local Wireless.
 
-## The command line
+## Documentation
 
-```bash
-python -m pokeuds scan --radio esp32 --seconds 30
-```
-
-```bash
-python -m pokeuds trade sm --radio esp32 --offer my.pk7
-```
-
-```bash
-python -m pokeuds trade xy --role host --radio esp32 --offer my.pk6 --partner Serena
-```
-
-```bash
-python -m pokeuds vc trade --radio esp32 --offer my.pk1
-```
-
-```bash
-python -m pokeuds gift distribute sm my.wc7 --radio esp32
-```
-
-`--offer` repeats for a queue; `--keys` defaults to the app's Settings; `-v` (before the command) shows what happens.
-`scan` lists every 3DS network in range, `analyze` decodes an Azahar log or a capture, `build` makes a Pokemon with
-PKHeX, `gift` lists, edits, builds and distributes Mystery Gift cards (`--gen7-key` points at `rsa_d_key.txt` if it
-is not beside `aes_keys.txt`), `board` manages the ESP32, `pkhex` builds PKHeX in a source tree, `plugins` manages plugins.
-`python scripts/extract_gen7_key.py DISTRIBUTOR.cxi --keys aes_keys.txt` (or a `.cci`/`.3ds`, or `code.bin`) is the
-Settings key extraction from a terminal. Each game's protocol is in
-[docs/vc.md](docs/vc.md), [docs/gen6.md](docs/gen6.md) and [docs/gen7.md](docs/gen7.md).
-
-## Layout
-
-| Path | Contents |
+| Topic | Guide |
 |---|---|
-| `pokeuds/radio/` | The ESP32 serial protocol, the ldnd pipe and nl80211 monitor, radiotap, a simulated air |
-| `pokeuds/uds/` | 802.11 frames, beacons, CCMP and key derivation, SecureData, EAPoL, the station (host and client), the sniffer |
-| `pokeuds/nex/` | NEX's PRUDP V1 as Gen 6/7 run it over Pia's local UDS layer |
-| `pokeuds/games/` | Game registry and profiles; `gen6/` the PSS and X/Y-ORAS trade, `gen7/` the Festival Plaza and Sun/Moon-USUM trade |
-| `pokeuds/vc/` | Virtual Console: Pia frames and session, the Game Boy trade engine |
-| `pokeuds/online/` | Nostr signing and relays, and the GTS's events ([docs/online.md](docs/online.md)) |
-| `pokeuds/pkx.py`, `gbpk.py` | Gen 6/7 and Gen 1/2 records, the Time Capsule conversions |
-| `pokeuds/capture/` | Azahar-log and sniff transcripts, the protocol decoders behind `analyze` |
-| `pokeuds/games/gen6/delivery.py`, `gen7/delivery.py` | Local-wireless Mystery Gift: the beacon fragments, LZ10, Gen 7's OPSSR signing |
-| `gui/`, `pokeuds/app/` | The app (Flet) and what it shares with the command line; `gui/assets/` holds the icon |
-| `packaging/`, `scripts/build_exe.py` | The Windows exe's entry point, the icon artwork and the build ([docs/release.md](docs/release.md)) |
-| `services/pkhex/` | PKHeX's side (a .NET program the app runs): building and checking Pokemon, Mystery Gift cards, migration |
-| `profiles/` | Each game's network constants, from captures |
-| `docs/` | [The app](docs/gui.md), [architecture](docs/architecture.md), [UDS](docs/uds.md), [Gen 6](docs/gen6.md), [Gen 7](docs/gen7.md), [Virtual Console](docs/vc.md), [hardware](docs/hardware.md), [captures](docs/captures.md), [PKHeX](docs/pkhex.md), [online and the GTS](docs/online.md), [Mystery Gift](docs/mystery_gift.md), [Wonder Cards](docs/wonder_cards.md), [plugins](docs/plugins.md), [releases](docs/release.md), [code signing](docs/code_signing.md) |
-
-```bash
-python -m pytest -q
-```
+| Every page of the app, updates | [The app](docs/gui.md) |
+| Boards, firmware and USB Wi-Fi adapters | [Hardware](docs/hardware.md) |
+| Building Pokemon, legality, Showdown sets | [PKHeX](docs/pkhex.md) |
+| Mystery Gift cards and distributions | [Mystery Gift](docs/mystery_gift.md), [Wonder Cards](docs/wonder_cards.md) |
+| DS Wi-Fi Mystery Gifts (Gen 4/5) | [DS Wi-Fi](docs/ds_wifi.md), [the board's access point](docs/ds_wifi_ap.md) |
+| The GTS | [Online and the GTS](docs/online.md) |
+| Installing or writing plugins and language packs | [Plugins](docs/plugins.md) |
+| Using PokeUDS from a terminal | [Command-line instructions](docs/cli.md) |
+| Code layout and tests | [Architecture](docs/architecture.md) |
+| Local wireless protocols and captures | [UDS](docs/uds.md), [Gen 6](docs/gen6.md), [Gen 7](docs/gen7.md), [Virtual Console](docs/vc.md), [captures](docs/captures.md) |
+| Building and signing a release | [Releases](docs/release.md), [code signing](docs/code_signing.md) |
 
 ## Credits
 
