@@ -843,7 +843,6 @@
 "dotnet build -c Release services/pkhex" = "dotnet build -c Release services/pkhex"
 "dotnet not found: install the .NET 10 SDK to publish the helper" = "dotnet not found: install the .NET 10 SDK to publish the helper"
 "esp32-uds-bridge {value0} for the {value1}" = "esp32-uds-bridge {value0} for the {value1}"
-"experimental" = "experimental"
 "found by its USB id" = "found by its USB id"
 "four moves at most" = "four moves at most"
 "gsc" = "gsc"

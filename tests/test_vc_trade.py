@@ -273,7 +273,7 @@ class SimulatedVcJoiner:
 
 @pytest.mark.parametrize("title_key,offer_gen", [("red", 1), ("gold", 2)])
 def test_pokeuds_hosting(air, tmp_path, title_key, offer_gen, monkeypatch):
-    """Host mode (experimental on hardware) against the model as a joining 3DS."""
+    """Host mode against the model as a joining 3DS."""
     key = os.urandom(16)
     title = titles.TITLES[title_key]
     mode = link.GEN1 if offer_gen == 1 else link.GEN2

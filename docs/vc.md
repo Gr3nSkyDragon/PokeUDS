@@ -6,8 +6,9 @@ two VC instances use, and plays the Game Boy game's side of the cable itself. No
 involved.
 
 Status: **alpha**. Every layer is tested against the captured retail frames and against a model of
-a retail 3DS; nothing has run on hardware yet. Joining a retail host is the role every capture
-covers; hosting is experimental (below).
+a retail 3DS, and the English games have traded with a retail 3DS both ways: PokeUDS joining, and PokeUDS hosting
+Gen 1 with Gen 1 and Gen 2 with Gen 2 (below). The Time Capsule with PokeUDS hosting and the other languages are not
+yet confirmed on hardware.
 
 ## Modes
 
@@ -108,7 +109,7 @@ item number), Special Attack and Special Defense from Gen 2 base stats, friendsh
 - **Derived**: every other title's comm id (title id + 0x10, Blue and Silver their pair's; unmeasured): English
   Yellow and Crystal, and every non-English title (Languages, below). Joining matches the comm id against the title table, so a wrong
   guess means that title is not found: `python -m pokeuds scan` shows the comm id a console really sends.
-- **Experimental: hosting.** The host's messages, including the mesh state and system data replayed
+- **Hosting.** The host's messages, including the mesh state and system data replayed
   from the retail host's frames, are what a retail host sends, and PokeUDS-as-host trades with the
   model. Its network now matches a retail host's (id `1`, attributes `0x8000`, the application data's shape);
   with id `0` and attributes `0`, no console joined it. As in a sniff of two retail consoles (2026-10-04), every
@@ -119,7 +120,8 @@ item number), Special Attack and Special Defense from Gen 2 base stats, friendsh
   re-sends its system data every 0.25 s until it is acked, and only then sends its Start: its first game unit,
   `EF`, with role flags `FE 00 00` (every later host unit `00 00 00`; all six captures). Host units carry a
   per-session 32-bit value. A retail joiner acked an `EF` flagged `00 00 00` and stayed in the link menu. Azahar hosting a retail joiner never completed a trade,
-  for a cause not visible on the wire. Not yet traded on hardware: prefer joining.
+  for a cause not visible on the wire. PokeUDS hosting has since traded with a retail 3DS, Gen 1 with Gen 1 and
+  Gen 2 with Gen 2; the Time Capsule as host is not yet confirmed.
 - **Unknown**: whether a VC checks the application data; Gen 2 against a retail console over the air
   (Gen 2 was measured through Azahar's local bridge); Crystal; everything about the non-English titles on
   the air (Languages, below).

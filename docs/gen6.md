@@ -4,11 +4,12 @@ PokeUDS trades from the PSS like a second console: it shows up in the PSS list, 
 trade or answers one, and runs the whole trade (offer, confirm, swap) by itself. Nothing is installed
 on the 3DS.
 
-Status: **ready for a first hardware test, X/Y**. Every layer below was decoded from Gr3nSkyDragon's
+Status: **traded on hardware, X/Y**: a retail 3DS has traded with PokeUDS in both directions (the 3DS asking and
+PokeUDS asking), and a retail X has received a Gen 6 local-wireless Mystery Gift from it. Every layer below was decoded from Gr3nSkyDragon's
 azahar_uds logs of Pokemon X trading with retail consoles (five sessions, both roles), and PokeUDS's
 engine replays all five against the retail side's real messages to the end, in the role the emulated
 game played (two trades as host, two as client, a cancelled trade, two sessions without a trade).
-Untested on hardware. ORAS uses X/Y's network values by assumption (they share the PSS); no ORAS
+ORAS is untested on hardware and uses X/Y's network values by assumption (they share the PSS); no ORAS
 session has been decoded.
 
 ```bash

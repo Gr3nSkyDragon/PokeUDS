@@ -379,8 +379,7 @@ class TradeView(View):
                 ft.Dropdown(label="PokeUDS stands in for", value=self.host_title or entry.host_titles[0], width=260,
                             options=[ft.DropdownOption(key=k, text=catalog.host_title_label(k))
                                      for k in entry.host_titles],
-                            on_select=self._host_title_changed, disabled=busy),
-                t.pill("experimental", t.WARN)], spacing=12))
+                            on_select=self._host_title_changed, disabled=busy)], spacing=12))
         if not entry.complete:
             controls.append(t.notice(f"{entry.name} is session-only for now: PokeUDS joins or hosts and records what the "
                                      "3DS sends, but cannot offer its Pokemon until the trade messages are mapped from "

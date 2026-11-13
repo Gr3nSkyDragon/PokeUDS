@@ -546,7 +546,7 @@ def cmd_vc_trade(args) -> int:
         if args.role == "host":
             title = titles.TITLES[args.as_title]
             partner = {"gen1": 1, "gen2": 2}.get(args.partner, title.generation)
-            print(f"hosting as {title.name} (experimental); choose Join in the 3DS's VC link menu")
+            print(f"hosting as {title.name}; choose Join in the 3DS's VC link menu")
             status.emit("hosting", game=title.key, channel=titles.CHANNEL)
             trade.host(title, partner, args.seconds)
             status.emit("partner-joined")
@@ -1032,7 +1032,7 @@ def main(argv: list[str] | None = None) -> int:
                         "traded in order")
     p.add_argument("--output", default="received", help="folder for the Pokemon received (default: received/)")
     p.add_argument("--role", choices=["join", "host"], default="join",
-                   help="join the 3DS's network (default; the 3DS chooses Host) or host one (experimental)")
+                   help="join the 3DS's network (default; the 3DS chooses Host) or host one")
     p.add_argument("--as", dest="as_title", choices=_vc_host_titles(), metavar="TITLE",
                    help="as host: the title PokeUDS stands in for (its comm id): red, blue, yellow, gold, silver, "
                         "crystal, or one in another language as GAME-LANGUAGE (red-de, gold-fr, crystal-it, green-jp, "

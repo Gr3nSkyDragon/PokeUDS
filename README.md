@@ -7,14 +7,15 @@ PokeUDS trades with retail Pokemon games on a Nintendo 3DS over local wireless (
 adapter stands in for a second console: the 3DS sees another player and trades with it. Nothing is installed on the
 3DS. It can also send Gen 6 and Gen 7 Mystery Gifts over local wireless, the way an event distribution did.
 
-**Status: alpha.** Trades have run against retail 3DS consoles for the Virtual Console games, Pokemon X/Y and Sun/Moon,
-and a Gen 7 local-wireless Mystery Gift has been received by a retail Sun.
+**Status: alpha.** Trades have run against retail 3DS consoles for the Virtual Console games, Pokemon X/Y and Sun/Moon.
+A Gen 6 local-wireless Mystery Gift has been received by a retail X. A Gen 7 local-wireless Mystery Gift has been
+received by a retail Sun.
 
 | Game | Trades start in | Record | PokeUDS joins | PokeUDS hosts | Tested with a 3DS |
 |---|---|---|:---:|:---:|---|
-| Red / Blue / Yellow (VC) | VC link menu, Trade Center | `.pk1` (or `.pk2` through the Time Capsule) | ✓ | ✓ experimental | ✓ Gen 1 trades |
-| Gold / Silver / Crystal (VC) | VC link menu, Trade Center or Time Capsule | `.pk2` with mail (or `.pk1`) | ✓ | ✓ experimental | ✓ Gen 2 trades |
-| X / Y | PSS | `.pk6` | ✓ | ✓ | ✓ the 3DS asking |
+| Red / Blue / Yellow (VC) | VC link menu, Trade Center | `.pk1` (or `.pk2` through the Time Capsule) | ✓ | ✓ | ✓ both directions, Gen 1 with Gen 1 |
+| Gold / Silver / Crystal (VC) | VC link menu, Trade Center or Time Capsule | `.pk2` with mail (or `.pk1`) | ✓ | ✓ | ✓ both directions, Gen 2 with Gen 2 |
+| X / Y | PSS | `.pk6` | ✓ | ✓ | ✓ both directions |
 | Omega Ruby / Alpha Sapphire | PSS | `.pk6` | ✓ | ✓ | uses X/Y's values |
 | Sun / Moon | Festival Plaza | `.pk7` | ✓ | ✓ | ✓ both directions |
 | Ultra Sun / Ultra Moon | Festival Plaza | `.pk7` | ✓ | ✓ | uses Sun/Moon's values |
@@ -22,7 +23,7 @@ and a Gen 7 local-wireless Mystery Gift has been received by a retail Sun.
 The VC rows cover every release: English, German, French, Spanish, Italian, Japanese (Green too) and Korean Gold
 and Silver, each with its own trade blocks, and a Pokemon from one language is offered to a console of another with
 its names carried over ([docs/vc.md](docs/vc.md), Languages). Only the English games have been tried with a 3DS so
-far; the others are built from the cartridges' layouts and wait for a console to confirm them.
+far; the others are built from the cartridges' layouts and await testing confirmation against real hardware.
 
 Local trades never cross a generation (Sun/Moon and USUM trade with each other, as do X/Y and ORAS); Gen 1 and Gen 2
 meet in the Time Capsule. To move a Pokemon forward, the Bank migrates Gen 1/2 and Gen 6 Pokemon to Gen 7 the way
@@ -155,8 +156,9 @@ does the same for the Switch: the app's shape and design, its PKHeX integration 
 under the AGPL-3.0. pokeldn is a fork of
 [MercuryEnigma/frlg-ldn-trade](https://github.com/MercuryEnigma/frlg-ldn-trade), itself a fork of
 [tornadus/frlg-ldn-trade](https://github.com/tornadus/frlg-ldn-trade): Tornadus's proof of concept, a computer
-trading FireRed and LeafGreen with a real Switch over local wireless, is the other heavy influence on PokeUDS and the
-thing that started its research in the first place. PokeUDS asks the same question of the 3DS.
+emulating FireRed and LeafGreen trades with a real Switch over local wireless, is the other heavy influence on PokeUDS
+and the project that kickstarted the initial research which led to this project's creation. PokeUDS asks the same
+question of the 3DS.
 
 The 3DS protocols were read off logs of retail trades; AI tools helped reverse engineer them and write parts of the
 code.

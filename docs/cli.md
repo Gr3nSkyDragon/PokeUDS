@@ -86,7 +86,7 @@ python -m pokeuds vc trade --radio esp32 --offer my.pk1
 python -m pokeuds vc trade --role host --as gold --radio esp32 --offer my.pk2
 ```
 
-Up to six Pokemon queue with `--offer`; a `.pk2` may have a `.mail` beside it. With `--role host` (experimental),
+Up to six Pokemon queue with `--offer`; a `.pk2` may have a `.mail` beside it. With `--role host`,
 `--as` names the title PokeUDS stands in for, `red-de` or `gold-jp` for another language ([vc.md](vc.md)).
 `vc show` reads a `.pk1`/`.pk2`; `vc convert` converts between them as the Time Capsule does.
 

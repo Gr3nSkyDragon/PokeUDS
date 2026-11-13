@@ -842,7 +842,6 @@
 "dotnet build -c Release services/pkhex" = "[!dõtñét büîld -ç Réléàšé šérvîçéš/pkhéx!]"
 "dotnet not found: install the .NET 10 SDK to publish the helper" = "[!dõtñét ñõt fõüñd: îñštàll thé .ÑÉT 10 ŠDK tõ püblîšh thé hélpér!]"
 "esp32-uds-bridge {value0} for the {value1}" = "[!éšp32-üdš-brîdgé {value0} fõr thé {value1}!]"
-"experimental" = "[!éxpérîméñtàl!]"
 "found by its USB id" = "[!fõüñd bý îtš ÜŠB îd!]"
 "four moves at most" = "[!fõür mõvéš àt mõšt!]"
 "gsc" = "[!gšç!]"
