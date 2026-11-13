@@ -98,12 +98,13 @@ class SettingsView(View):
         root = update.install_root()
         updates = t.card(
             ft.Row([ft.Column([t.heading("Updates"),
-                               t.label("At start, PokeUDS asks GitHub whether a newer version is out and offers it "
-                                       "above the pages. Updating replaces only PokeUDS's own program files: your "
-                                       "Bank, GTS listings, settings and received Pokemon stay as they are."
+                               t.label("At start, PokeUDS asks GitHub whether a newer version is out; one adds a "
+                                       "green Update entry to the rail. Updating replaces only PokeUDS's own program "
+                                       "files: your Bank, GTS listings, settings and received Pokemon stay as they are."
                                        if root is not None else
-                                       "At start, PokeUDS asks GitHub whether a newer version is out. Only the "
-                                       "Windows app updates itself; here the banner links to the download.")],
+                                       "At start, PokeUDS asks GitHub whether a newer version is out; one adds a "
+                                       "green Update entry to the rail. Only the Windows app updates itself; here the "
+                                       "entry opens the download page.")],
                               spacing=4, expand=True),
                     ft.Switch(value=s.updates, on_change=self._updates)]),
             ft.Row([t.secondary("Check now", lambda e: self.app.updates.check() if getattr(self.app, "updates", None)

@@ -22,6 +22,10 @@ permissions:
 jobs:
   app:
     runs-on: windows-latest
+    # actions: write lets the job delete the unsigned upload once SignPath has signed it (docs/code_signing.md).
+    permissions:
+      contents: read
+      actions: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -34,7 +38,43 @@ jobs:
       - run: python -m pytest -q
         env:
           PYTHONIOENCODING: utf-8
-      - run: python scripts/build_exe.py
+      - run: python scripts/build_exe.py --no-zip
+      # SignPath Foundation signs PokeUDS.exe and the PKHeX helper (.github/signpath/artifact-configuration.xml,
+      # docs/code_signing.md). Without the SIGNPATH_API_TOKEN secret (a fork, or before SignPath is set up) the app
+      # ships unsigned. The SIGNPATH_ORGANIZATION_ID variable is the SignPath organization; SIGNPATH_POLICY switches
+      # from test-signing to release-signing.
+      - name: Upload for signing
+        id: unsigned
+        if: env.SIGNPATH == 'true'
+        env:
+          SIGNPATH: ${{ secrets.SIGNPATH_API_TOKEN != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: PokeUDS-windows-unsigned
+          path: dist/PokeUDS
+          retention-days: 1
+      - name: Sign
+        if: steps.unsigned.outcome == 'success'
+        uses: signpath/github-action-submit-signing-request@v2
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: pokeuds
+          signing-policy-slug: ${{ vars.SIGNPATH_POLICY || 'test-signing' }}
+          artifact-configuration-slug: pokeuds-windows
+          github-artifact-id: ${{ steps.unsigned.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: signed
+      - name: Replace with the signed files
+        if: steps.unsigned.outcome == 'success'
+        run: |
+          Remove-Item -Recurse -Force dist/PokeUDS
+          Move-Item signed dist/PokeUDS
+          Get-AuthenticodeSignature dist/PokeUDS/PokeUDS.exe | Format-List Status, SignerCertificate
+          gh api -X DELETE "repos/${{ github.repository }}/actions/artifacts/${{ steps.unsigned.outputs.artifact-id }}"
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - run: python scripts/build_exe.py --zip-only
       - uses: actions/upload-artifact@v4
         with:
           name: app-windows

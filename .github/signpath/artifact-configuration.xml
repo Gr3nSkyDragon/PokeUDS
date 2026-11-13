@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SignPath artifact configuration "pokeuds-windows": the dist/PokeUDS folder the release workflow uploads
+     (docs/code_signing.md). Only the binaries that workflow builds from this repository's source are signed:
+     PokeUDS.exe and the PKHeX helper. Third-party files (Python, Flet's window) ship as they came. -->
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <zip-file>
+    <pe-file path="PokeUDS.exe">
+      <authenticode-sign/>
+    </pe-file>
+    <pe-file path="_internal/pokeuds/app/data/pkhex/pokeuds-pkhex.exe">
+      <authenticode-sign/>
+    </pe-file>
+  </zip-file>
+</artifact-configuration>

@@ -164,6 +164,7 @@ class Settings:
     sprites: bool = True                            # download Pokemon sprites from PokeAPI (pokeuds.app.sprites)
     updates: bool = True                            # ask GitHub for a newer release at start (pokeuds.app.update)
     window: dict = field(default_factory=dict)      # the app window's last place and size (gui/window.py)
+    pokeldn_banner: bool = True                     # the "Looking for Switch games?" banner, until closed (gui/promo.py)
 
     def offer_queue(self, game: str) -> list[str]:
         """The game's trade queue: the offer, then what is queued after it."""

@@ -76,7 +76,7 @@ class Updates:
         else:
             webbrowser.open(self.release.page)
 
-    # -- the banner -----------------------------------------------------------------------------
+    # -- the bar above the pages -------------------------------------------------------------------
 
     def _show(self, state: str, detail: str = "") -> None:
         self.state, self.detail = state, detail

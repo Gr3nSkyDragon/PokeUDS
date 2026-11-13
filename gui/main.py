@@ -13,6 +13,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import flet as ft  # noqa: E402
 
+from gui import promo  # noqa: E402
 from gui import theme as t  # noqa: E402
 from gui import window  # noqa: E402
 from gui.translate import translate  # noqa: E402
@@ -91,8 +92,10 @@ class Shell:
         self.content.content = self.views[self.current].control()
         rails = ft.Container(ft.Column([self.rail, self.foot], spacing=0), bgcolor=t.PANEL,
                              padding=ft.Padding(0, 0, 0, 12))
-        # The update banner sits above every page (gui/updates.py); hidden until there is something to say.
-        body = ft.Column([ft.Container(self.updates.banner, padding=ft.Padding(0, t.GAP, t.GAP, 0)), self.content],
+        # The PokeLDN banner (gui/promo.py), until closed, then the update bar (gui/updates.py), hidden until there is
+        # something to say, sit above every page.
+        body = ft.Column([promo.banner(self.app),
+                          ft.Container(self.updates.banner, padding=ft.Padding(0, t.GAP, t.GAP, 0)), self.content],
                          spacing=0, expand=True)
         return ft.Row([rails, body], spacing=t.GAP, expand=True,
                       vertical_alignment=ft.CrossAxisAlignment.STRETCH)

@@ -181,27 +181,86 @@ Settings key extraction from a terminal. Each game's protocol is in
 | `packaging/`, `scripts/build_exe.py` | The Windows exe's entry point, the icon artwork and the build ([docs/release.md](docs/release.md)) |
 | `services/pkhex/` | PKHeX's side (a .NET program the app runs): building and checking Pokemon, Mystery Gift cards, migration |
 | `profiles/` | Each game's network constants, from captures |
-| `docs/` | [The app](docs/gui.md), [architecture](docs/architecture.md), [UDS](docs/uds.md), [Gen 6](docs/gen6.md), [Gen 7](docs/gen7.md), [Virtual Console](docs/vc.md), [hardware](docs/hardware.md), [captures](docs/captures.md), [PKHeX](docs/pkhex.md), [online and the GTS](docs/online.md), [Mystery Gift](docs/mystery_gift.md), [Wonder Cards](docs/wonder_cards.md), [plugins](docs/plugins.md), [releases](docs/release.md) |
+| `docs/` | [The app](docs/gui.md), [architecture](docs/architecture.md), [UDS](docs/uds.md), [Gen 6](docs/gen6.md), [Gen 7](docs/gen7.md), [Virtual Console](docs/vc.md), [hardware](docs/hardware.md), [captures](docs/captures.md), [PKHeX](docs/pkhex.md), [online and the GTS](docs/online.md), [Mystery Gift](docs/mystery_gift.md), [Wonder Cards](docs/wonder_cards.md), [plugins](docs/plugins.md), [releases](docs/release.md), [code signing](docs/code_signing.md) |
 
 ```bash
 python -m pytest -q
 ```
 
-## Credits and licensing
+## Credits
 
-PokeUDS is free software under the **GNU Affero General Public License v3.0** ([LICENSE](LICENSE)): you may use,
-change and share it, and anyone who passes on PokeUDS, changed or not, or runs a changed copy as a service for
-others, must offer its source under the same licence. This lets PokeUDS take code from
-[pokeldn](https://github.com/Decryptu/pokeldn) (AGPL-3.0); code taken from it, or from MIT projects such as
-Lorenzooone's [PokemonGB_Online_Trades](https://github.com/Lorenzooone/PokemonGB_Online_Trades), keeps its original
-notice. PKHeX (GPL-3.0) and the GPLv2-or-later Azahar work below are compatible with it.
+PokeUDS follows [pokeldn](https://github.com/Decryptu/pokeldn) by [Decryptu](https://github.com/Decryptu), which
+does the same for the Switch: the app's shape and design, its PKHeX integration and updater, and code taken from it
+under the AGPL-3.0. The 3DS protocols were read off logs of retail trades; AI tools helped reverse engineer them and
+write parts of the code.
 
-The UDS layer is a Python port of the physical-UDS work in [azahar_uds](https://github.com/Gr3nSkyDragon/azahar_uds)
-(built on Citra/Azahar's NWM emulation, GPLv2 or later). The Gen 6/7 protocols were read off Azahar logs of retail trades. Pokemon records, legality, Mystery Gift
-cards and migration come from [PKHeX](https://github.com/kwsch/PKHeX). The Virtual Console support builds on
-Gr3nSkyDragon's VC link measurements ([mgba_LDN](https://github.com/Gr3nSkyDragon/mgba_LDN)),
-[pret](https://github.com/pret)'s pokered and pokecrystal, and, for the Japanese and Korean games, Lorenzooone's
-[PokemonGB_Online_Trades](https://github.com/Lorenzooone/PokemonGB_Online_Trades) (its text tables and layouts). Sprites: [PokeAPI](https://github.com/PokeAPI/sprites).
-The overall shape follows pokeldn. ESP32 firmware: Gr3nSkyDragon's VC-Adapter. ldnd: unlimitedcoder2.
-The Gen 7 Mystery Gift support was developed with **DeepSeek Harness** (DeepSeek); see
-[CONTRIBUTORS.md](CONTRIBUTORS.md).
+Contributors:
+
+- [Gr3nSkyDragon](https://github.com/Gr3nSkyDragon): PokeUDS, and its testing on retail hardware
+- **DeepSeek Harness** (DeepSeek): the Gen 7 Mystery Gift support: the distributor's beacon and OPSSR signing,
+  the key extraction and the Settings flow ([CONTRIBUTORS.md](CONTRIBUTORS.md))
+
+Local wireless and the radio:
+
+- [azahar_uds](https://github.com/Gr3nSkyDragon/azahar_uds): the physical-UDS work the UDS layer is a Python port
+  of, built on [Azahar](https://github.com/azahar-emu/azahar)'s (and Citra's) NWM emulation (GPLv2 or later)
+- [VC-Adapter](https://github.com/Gr3nSkyDragon/VC-Adapter): the
+  [esp32-uds-bridge](https://github.com/Gr3nSkyDragon/VC-Adapter/tree/main/firmware/esp32-uds-bridge) firmware the
+  Board page installs
+- [unlimitedcoder2](https://github.com/unlimitedcoder2): ldnd, the Windows USB Wi-Fi adapter daemon
+- [martin-ger/esp32_nat_router](https://github.com/martin-ger/esp32_nat_router): the AP+STA+NAPT pattern behind
+  the board's DS Wi-Fi access point, and a stand-in for it
+
+Pokemon and the games:
+
+- [PKHeX](https://github.com/kwsch/PKHeX) by [kwsch](https://github.com/kwsch): Pokemon records, legality,
+  Mystery Gift cards, migration and Showdown sets (GPL-3.0)
+- [pret](https://github.com/pret): the [pokered](https://github.com/pret/pokered) and
+  [pokecrystal](https://github.com/pret/pokecrystal) decompilations behind the Game Boy link and the Time Capsule
+- [mgba_LDN](https://github.com/Gr3nSkyDragon/mgba_LDN): the Virtual Console link measurements
+- [Lorenzooone/PokemonGB_Online_Trades](https://github.com/Lorenzooone/PokemonGB_Online_Trades): the Japanese and
+  Korean Game Boy games' text tables and layouts (MIT)
+- [Project Pokemon](https://github.com/projectpokemon): theSLAYER's map of the local wireless event header
+- [PokeAPI/sprites](https://github.com/PokeAPI/sprites): the sprites the app downloads
+
+DS Wi-Fi Mystery Gifts:
+
+- [barronwaffles/dwc_network_server_emulator](https://github.com/barronwaffles/dwc_network_server_emulator): the
+  Nintendo WFC connection test, NAS login and DLS1 protocols (AGPL-3.0)
+- [KaeruTeam/nds-constraint](https://github.com/KaeruTeam/nds-constraint): the DS's certificate check and the
+  "nds-constrain't" flaw
+- [kuroppoi/entralinked](https://github.com/kuroppoi/entralinked): protocol facts for the Gen 5 games' services
+- [ScarlettHaze/PokeGateway](https://github.com/ScarlettHaze/PokeGateway): protocol facts for the Gen 4/5 games'
+  services (no license; read for facts, no code copied)
+- [InternalLoss/DLS1-Files](https://github.com/InternalLoss/DLS1-Files): the collection of official DLS1 files
+- [Dolphin](https://github.com/dolphin-emu/dolphin): the certificate hash check follows its `IOS/Network/SSL.cpp`
+
+Online:
+
+- [Nostr](https://github.com/nostr-protocol/nips): the protocol the GTS runs on, over public relays
+
+Libraries: [Flet](https://github.com/flet-dev/flet) (the app), [esptool](https://github.com/espressif/esptool)
+(flashing the board), [PyCryptodome](https://github.com/Legrandin/pycryptodome),
+[pySerial](https://github.com/pyserial/pyserial) and [tlslite-ng](https://github.com/tlsfuzzer/tlslite-ng)
+(the DS's SSL 3.0, LGPL-2.1).
+
+## Code signing policy
+
+Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by
+[SignPath Foundation](https://signpath.org). What is signed, the team roles and the privacy policy are on the
+[Code signing policy](docs/code_signing.md) page.
+
+## License
+
+PokeUDS is free software under the **GNU Affero General Public License v3.0** ([LICENSE](LICENSE)). The license
+covers this repository's code and nothing else. Anyone who passes on PokeUDS, changed or not, or runs a changed copy
+as a service for others, must offer its source under the same license. Code taken from pokeldn (AGPL-3.0) or from
+MIT projects keeps its original notice; PKHeX (GPL-3.0) and the GPLv2-or-later Azahar work are compatible with it.
+
+PokeUDS is an unofficial fan project. It is not affiliated with, endorsed by or sponsored by Nintendo, The Pokemon
+Company, Game Freak or Creatures. Pokemon, Nintendo 3DS, Nintendo DS and the related names and characters are
+trademarks of their owners. Under section 7(e) of the AGPL, no right to use those trademarks or any other Pokemon
+intellectual property is granted.
+
+The authors do not endorse using PokeUDS for commercial, promotional or branded events, including Mystery Gift
+distributions. Anyone who does so is responsible for obtaining the rights it requires.

@@ -33,6 +33,10 @@ other chips can join the firmware list later without renaming anything.
 | Board | ESP32 boards (the S3; alpha: classic ESP32, C3, C6): their firmware and line, install the included esp32-uds-bridge 2.0-uds for the board's chip, Use for trades (`board ...` children; docs/hardware.md) |
 | Settings | `aes_keys.txt`, the Gen 7 Mystery Gift Key (extracted from your Gen 7 Local Distributor dump into `rsa_d_key.txt`), the output folder, the trainer name the 3DS sees, the app language (English or an installed language pack), Debug tools |
 
+Above every page, a banner points players looking for the Switch games to
+[pokeldn](https://github.com/Decryptu/pokeldn) ("Looking for Switch games? Check out PokeLDN on GitHub.", the
+button opening it in the browser); its close button hides it for good (`gui/promo.py`, Settings' `pokeldn_banner`).
+
 On the Trade page:
 
 - **The trade queue** is what PokeUDS offers, one Pokemon per trade, in order; it leaves after the last. The **+**
@@ -145,7 +149,7 @@ replaces the app and opens it again.
 | never touched | `Bank` (its `.gts` GTS listings and `.info` too), `Data`, `received`, and anything else in the folder |
 | a failure | the old files go back; the next start says what happened |
 | pre-releases | offered (PokeUDS's releases are `v0.*`); a draft never is |
-| the Mac app, a source run | the banner links to the release page instead |
+| the Mac app, a source run | the Update entry opens the release page instead |
 | an unwritable folder (Program Files) | Download instead of Update now |
 
 The checksum shows the download is whole; it does not prove who made the release. An app before 0.1.4 has no

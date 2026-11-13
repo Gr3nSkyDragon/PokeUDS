@@ -5,6 +5,7 @@ r"""Build the desktop app for this computer (docs/release.md):
 
     pip install -r requirements-gui.txt pyinstaller
     python scripts/build_exe.py [--icon some.ico|some.icns] [--no-zip] [--no-helper]
+    python scripts/build_exe.py --zip-only       # Windows: zip dist/PokeUDS as it is (after signing it)
 
 ``flet pack`` (PyInstaller) builds the app with Python, the game profiles, the strings and Flet's window inside.
 
@@ -151,11 +152,18 @@ def main(argv: list[str] | None = None) -> int:
                                                   f"(default: gui/assets/{DEFAULT_ICON.name}, when it exists)")
     parser.add_argument("--dist", type=Path, default=ROOT / "dist")
     parser.add_argument("--no-zip", action="store_true")
+    parser.add_argument("--zip-only", action="store_true",
+                        help="Windows: zip the app already in dist/PokeUDS, as the release does once it is signed")
     parser.add_argument("--no-helper", action="store_true",
                         help="do not publish and bundle the PKHeX helper (the app will fall back to a download)")
     a = parser.parse_args(argv)
     if sys.platform not in ("win32", "darwin"):
         sys.exit("build_exe.py builds the Windows and macOS apps; on Linux, run PokeUDS from source (README)")
+    if a.zip_only:
+        if MAC or not (a.dist / NAME / f"{NAME}.exe").is_file():
+            sys.exit(f"--zip-only zips a built Windows app: {a.dist / NAME / NAME}.exe is missing")
+        print(f"zipped {zip_folder(a.dist / NAME, a.dist / zip_name())}")
+        return 0
     icon = a.icon or (DEFAULT_ICON if DEFAULT_ICON.is_file() else None)
     if icon and not icon.is_file():
         sys.exit(f"{icon} does not exist")

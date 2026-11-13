@@ -51,6 +51,23 @@ it ad hoc; without an Apple Developer ID it is not notarized, so players allow i
 Security, Open Anyway). The release workflow checks the signature, that its PKHeX answers, and that the
 app's command line starts, but nothing opens its window there: start it on a Mac before publishing.
 
+## Code signing
+
+The Windows app's own binaries, `PokeUDS.exe` and the PKHeX helper, are signed through SignPath Foundation
+([code_signing.md](code_signing.md)). The release workflow builds `dist/PokeUDS` unzipped, uploads it, submits it
+to SignPath (artifact configuration `pokeuds-windows`, `.github/signpath/artifact-configuration.xml`), waits for
+the request to be approved, puts the signed folder in its place and only then zips it
+(`python scripts/build_exe.py --zip-only`), so `SHA256SUMS` and the updater see the signed zip. It needs, in the
+repository's Actions settings:
+
+| | |
+|---|---|
+| secret `SIGNPATH_API_TOKEN` | a SignPath CI user's API token; without it the app ships unsigned, as before |
+| variable `SIGNPATH_ORGANIZATION_ID` | the SignPath organization's id |
+| variable `SIGNPATH_POLICY` | `release-signing` once SignPath Foundation grants it; unset, `test-signing` |
+
+Each release's signing request waits for an approver on SignPath before the workflow goes on.
+
 ## Checklist
 
 1. `python -m pytest -q` passes; the version is the same in `pyproject.toml` and `pokeuds/__init__.py`.
