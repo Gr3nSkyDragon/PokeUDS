@@ -1,0 +1,3 @@
+# The DS Wi-Fi Mystery Gift server (docs/ds_wifi.md) needs SSL 3.0 with RC4, which Python's ssl module (OpenSSL 3)
+# refuses. tlslite-ng still offers both. Nothing else in PokeUDS needs it.
+tlslite-ng>=0.8.2

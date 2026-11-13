@@ -1,6 +1,7 @@
 """Generation 6: PRUDP as Pokemon X signs it, gflnet, PSS beacons, and whole trades over the simulated air."""
 
 import os
+import struct
 import threading
 import time
 
@@ -281,11 +282,158 @@ def test_request_and_answer_change_what_a_console_changes():
     assert changed <= {0, 1, 0x17, *range(0x18, 0x1C), *range(0x84, 0x94), 0x94, 0x96}
     parsed = wire.parse_pss_beacon(asking)
     assert parsed.state == wire.PSS_ASKING and parsed.request == 1 and parsed.wants(console.pss_id)
-    assert asking[0x18:0x1C] == parsed.token and asking[0x96] == 0x02 and asking[0x97:0x99] == b"\x44\x44"
+    assert asking[0x18:0x1C] == parsed.token and asking[0x96] == 0x01 and asking[0x97:0x99] == b"\x44\x44"
     answer = wire.parse_pss_beacon(wire.pss_beacon(console, partner=parsed))
     assert answer.state == wire.PSS_ANSWERING and answer.request == 0 and answer.token == parsed.token
     assert answer.answers(me.pss_id) and not answer.wants(me.pss_id)
     assert wire.parse_pss_beacon(idle).state == wire.PSS_IDLE
+
+
+# Captured on hardware (pokeuds-run.log, 2026-11-05): PokeUDS idle in the PSS, then retail Y ("Refresh") idle, and
+# Refresh asking PokeUDS for a trade.
+POKEUDS_IDLE = bytes.fromhex(
+    "9503000118020241ac8af6f03d99420a9c0401003905c705514acb3050006f006b0065005500440053000000000000000000000000004e0069"
+    "0063006500200074006f0020006d0065006500740020007900610021000000a02d0bbeac8af6f03d99420a0101e000000002310b07180104"
+    "0000004864090101cb080341000000000000006a0000008a0200000000a0000000000000004444445e0000070000c0010000000000000000"
+    "0b0b6c000000000000000000000000")
+REFRESH_IDLE = bytes.fromhex(
+    "4eff0001190202416bef19746f17b7529c0401003905c705cbb37f3252006500660072006500730068000000000000000000000000004e0069"
+    "0063006500200074006f0020006d006500650074002000790061002100000032b4aa6d6bef19746f17b752000041080000003101011901"
+    "04000000c03824020020130341050000000000000f0000008b0201000000f000000000000000444444640600000000000000000000000000"
+    "000b0b6c000000000000000000000000")
+REFRESH_ASKING = bytes.fromhex(
+    "c8780001190202416bef19746f17b7529c0401003905c796d7b37f3252006500660072006500730068000000000000000000000000004e0069"
+    "0063006500200074006f0020006d006500650074002000790061002100000032b4aa6d6bef19746f17b752000041080000003101011901"
+    "04000000c0382402002013034105000000000000d7b37f32a02d0bbeac8af6f03d99420a0100014444640600000000000000000000000000"
+    "000b0b6c000000000000000000000000")
+
+
+def test_our_request_matches_a_retail_request():
+    """PokeUDS asking must write the request bytes a retail console writes: state 0x17, the token, the partner's key
+    and id, the flag at 0x94 and the kind at 0x96 (01 for a trade; PokeUDS sent 02 and "PokeUDS asks" failed)."""
+    refresh = wire.parse_pss_beacon(REFRESH_IDLE)
+    pokeuds = wire.parse_pss_beacon(POKEUDS_IDLE)
+    assert refresh and pokeuds
+    me = wire.Trainer("Refresh", 0, 0, refresh.pss_id, refresh.key, refresh.version)
+    ours = wire.pss_beacon(me, partner=pokeuds, request=True, token=REFRESH_ASKING[0x18:0x1C])
+    assert ours[0x17] == REFRESH_ASKING[0x17]
+    assert ours[0x18:0x1C] == REFRESH_ASKING[0x18:0x1C]
+    assert ours[0x84:0x99].hex() == REFRESH_ASKING[0x84:0x99].hex()
+    asked = wire.parse_pss_beacon(REFRESH_ASKING)
+    assert asked.wants(pokeuds.pss_id) and asked.request_kind[:1] == wire.REQUEST_KIND_TRADE
+
+
+# Pokemon X ("Dummy") asking retail Y (Refresh) in Azahar (azahar_log.txt, 2026-10-17): the application data of the
+# trade network X hosted once Refresh had answered. Refresh joined it 3.7 s later.
+X_TRADE_NETWORK_DATA = bytes.fromhex(
+    "dc32000118020241ec417cc6f91945959c0401003905c798754acb30440075006d006d00790000000000000000000000000000000000"
+    "4e00690063006500200074006f0020006d0065006500740020007900610021000000" "60a0c52eec417cc6f91945950101e000000002"
+    "310b071801040000004864090101cb080341000000000000005f4acb3032b4aa6d6bef19746f17b7520100014444580000070000c001"
+    "00000000000000000d116c000000000000000000000000")
+
+
+def test_the_trade_network_carries_the_request_as_the_games_does():
+    """The asker's trade network names the console it asked: its request beacon in state "trading" (0x98), the
+    token kept and the nonce moved on. PokeUDS hosted it with no data and the console never joined."""
+    x = wire.parse_pss_beacon(X_TRADE_NETWORK_DATA)
+    refresh = wire.parse_pss_beacon(REFRESH_IDLE)
+    assert x and refresh and X_TRADE_NETWORK_DATA[0x17] == wire.PSS_TRADING
+    me = wire.Trainer("Dummy", 0, 0, x.pss_id, x.key, x.version)
+    token = X_TRADE_NETWORK_DATA[0x84:0x88]
+    ours = wire.trade_network_data(me, refresh, token)
+    assert wire.parse_pss_beacon(ours) is not None                       # the CRC holds
+    assert ours[0x17] == wire.PSS_TRADING and ours[0x84:0x99].hex() == X_TRADE_NETWORK_DATA[0x84:0x99].hex()
+    assert ours[0x18] != token[0] and ours[0x19:0x1C] == token[1:]
+
+
+def test_pokeuds_trade_network_carries_its_request(air, tmp_path, monkeypatch):
+    key = os.urandom(16)
+    ours = gen6_trade(air, key, tmp_path / "ours", "02000000A641", make_record(0x51), "POKEUDS", (6,))
+    console = gen6_trade(air, key, tmp_path / "console", "02000000A642", make_record(0x52), "Serena", (6,))
+    hosted = []
+    real_host = ours.station.host
+
+    def host(**kw):
+        hosted.append(kw)
+        return real_host(**kw)
+
+    monkeypatch.setattr(ours.station, "host", host)
+    monkeypatch.setattr(ours, "_session", lambda partner: None)
+    monkeypatch.setattr(console, "_session", lambda partner: None)
+    errors = []
+
+    def run(trade, role):
+        try:
+            trade.run(role, 10.0)
+        except Exception as exc:  # pragma: no cover - reported below
+            errors.append(f"{role}: {exc!r}")
+
+    threads = [threading.Thread(target=run, args=(ours, "host"), daemon=True),
+               threading.Thread(target=run, args=(console, "join"), daemon=True)]
+    try:
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(30)
+        assert not errors, errors
+        trade = [kw for kw in hosted if kw["id_"] == 1]
+        assert trade and trade[0]["channel"] == 6
+        data = wire.parse_pss_beacon(trade[0]["application_data"])
+        assert trade[0]["application_data"][0x17] == wire.PSS_TRADING and data.wants(console.trainer.pss_id)
+    finally:
+        ours.station.close()
+        console.station.close()
+
+
+def test_a_stale_partner_is_not_an_answer():
+    """An idle beacon can still name PokeUDS at 0x84-0x93 (old values stay there); only state "answering" (0x99)
+    with our id is an answer. Reading the partner bytes alone hosted the trade network before the player accepted."""
+    me, console = trainer("POKEUDS"), trainer("Serena", wire.VERSION_CODES["Y"])
+    asking = wire.parse_pss_beacon(wire.pss_beacon(me, partner=wire.parse_pss_beacon(wire.pss_beacon(console)),
+                                                   request=True))
+    stale = bytearray(wire.pss_beacon(console, partner=asking))
+    stale[0x17] = wire.PSS_IDLE
+    struct.pack_into("<H", stale, 0, wire.crc16(bytes(stale[2:])))
+    idle = wire.parse_pss_beacon(bytes(stale))
+    assert idle.partner_id == me.pss_id and not idle.answers(me.pss_id)
+    assert wire.parse_pss_beacon(wire.pss_beacon(console, partner=asking)).answers(me.pss_id)
+
+
+def test_asking_stays_on_the_consoles_channel(air, tmp_path, monkeypatch):
+    """Once PokeUDS has asked, its request stays on the console's channel until the answer (or the wait ends), as
+    the game's does; it used to hop 1/6/11 after 8 s while the player was still reading the request."""
+    from pokeuds.games.gen6 import trade as gen6
+
+    monkeypatch.setattr(gen6, "ANSWER_WAIT", 12.0)        # past the old STAY_FOR (8 s), when hopping began
+    key = os.urandom(16)
+    ours = gen6_trade(air, key, tmp_path / "ours", "02000000A631", make_record(0x41), "POKEUDS", (1, 6, 11))
+    console = gen6_trade(air, key, tmp_path / "console", "02000000A632", make_record(0x42), "Serena", (6,))
+    console.station.on_beacon = console._on_beacon
+    console._advertise()                                  # in the PSS on channel 6, never answering
+    tuned, asked = [], []
+    real_set = ours.station.radio.set_channel
+
+    def set_channel(channel):
+        if asked:
+            tuned.append(channel)
+        real_set(channel)
+
+    real_advertise = ours._advertise
+
+    def advertise(**args):
+        if args.get("request"):
+            asked.append(ours.station.radio.channel)
+        real_advertise(**args)
+
+    monkeypatch.setattr(ours.station.radio, "set_channel", set_channel)
+    monkeypatch.setattr(ours, "_advertise", advertise)
+    try:
+        with pytest.raises(TimeoutError, match="answer from the console"):
+            ours.run("host", 10.0)
+        assert asked and set(asked) == {6} and set(tuned) <= {6}
+    finally:
+        ours.station.close()
+        console.station.close()
 
 
 def test_a_sync_request_the_console_dropped_is_sent_again(air, tmp_path, monkeypatch):

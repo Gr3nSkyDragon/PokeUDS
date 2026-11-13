@@ -91,9 +91,11 @@ whose application data is its PSS beacon: gflnet's BeaconManager header (`CRC-16
 version, `02 02`, `0x41`, the PSS id) and one record, type 4, the player: name, greeting, PSS key and
 id, version, region. A request rides in the record's bytes from beacon offset 0x84: the requester sets
 a token, the target's key and PSS id and 0x94 = 1; the target answers with the token and the
-requester's key and id. The requester then hosts the trade network and the target joins it. Those
-fields are read off the consoles' profiles during captured trades, which copy the record; the bytes of
-an actual request beacon have not been captured yet.
+requester's key and id. The requester then hosts the trade network, whose application data is its request
+beacon again in state 0x98 ("trading"), and the target joins it (a retail Y never joined one without it). The
+request and answer bytes were read off retail Y asking PokeUDS on hardware (request kind 0x96 = 01) and Pokemon X
+asking a retail Y in Azahar, which also shows the trade network's data and that the asker stays on one channel
+while it waits for the player to accept.
 
 ## What a first test can tell
 

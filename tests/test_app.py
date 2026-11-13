@@ -254,3 +254,26 @@ def test_each_run_leaves_its_log(tmp_path, monkeypatch):
         save_log("scan", ["scan"], [str(i)])
         clock.sleep(0.002)
     assert len(list((tmp_path / "logs").glob("*.txt"))) == LOGS_KEPT
+
+
+def test_a_runs_log_is_on_disk_while_it_runs_and_keeps_every_line(tmp_path, monkeypatch):
+    """The log file fills as the run goes (a run that never exits, or an app closed midway, still leaves it), holds
+    more than the 2000 lines the page keeps, and Copy log copies all of it."""
+    pytest.importorskip("flet")
+    from gui.app import App, RunLog
+    from gui.views.common import full_log
+
+    monkeypatch.setenv("POKEUDS_DATA", str(tmp_path))
+    log = RunLog("trade", ["trade", "xy"])
+    log.write("$ pokeuds trade xy")
+    log.write("PSS beacon from Refresh")
+    assert log.path.read_text(encoding="utf-8") == "$ pokeuds trade xy\nPSS beacon from Refresh\n"   # not closed yet
+    for i in range(2500):
+        log.write(f"line {i}")
+    log.close()
+    app = App(None)
+    app.saved_log, app.log = log.path, [f"line {i}" for i in range(500, 2500)]
+    text = full_log(app)
+    assert text.startswith("$ pokeuds trade xy\nPSS beacon from Refresh\n") and text.endswith("line 2499\n")
+    app.saved_log = None
+    assert full_log(app).startswith("line 500\n")

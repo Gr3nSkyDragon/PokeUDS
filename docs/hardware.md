@@ -8,7 +8,7 @@ unchanged, firmware **2.0-uds**, on four chips:
 | chip | connect by | PokeUDS finds it by | state |
 |---|---|---|---|
 | ESP32-S3 | its **native** USB port (often marked USB, not UART) | Espressif USB Serial/JTAG, `303A:1001` | the chip 1.8 traded on; 2.0-uds is not yet tried on a board |
-| ESP32-C3, ESP32-C6 | its native USB port | `303A:1001` (the same id) | **alpha**: builds and installs, not yet traded on a real board |
+| ESP32-C3, ESP32-C6 | its native USB port | `303A:1001` (the same id) | traded on (0.1.5): X/Y with the 3DS asking on both, and with PokeUDS asking (PokeUDS hosting) on the C6; other games not yet |
 | ESP32 (classic) | its board's only USB port, a USB-UART bridge (CP210x `10C4:EA60`, CH340 `1A86:7523`...) | the bridge's id, after any native port | **alpha**, the same |
 
 Or pass `--radio esp32:COM4` / `--radio esp32:/dev/ttyACM0`.
@@ -89,7 +89,7 @@ at 460800 baud. A chip esp32-uds-bridge has no build for (an ESP32-S2 or H2) is 
 erases the keys a board stores; PokeUDS stores none there, Azahar users store theirs again. If the board is not
 detected, hold **BOOT** while plugging it in, then release it.
 
-### Still to check on a board (classic ESP32, C3, C6)
+### Still to check on a board (classic ESP32; C3 and C6 beyond X/Y)
 
 From VC-Adapter's `FIRMWARE.md`: that each chip's Wi-Fi library still lets the bridge's raw frames out, that the
 twin-MAC receive trick works on the C6, the beacon's steadiness on a single core (C3, C6), the classic ESP32's UART

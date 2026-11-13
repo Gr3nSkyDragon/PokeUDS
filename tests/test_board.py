@@ -124,3 +124,136 @@ def test_a_bridge_opens_at_921600_without_resetting_the_board(monkeypatch):
     assert bridge.baudrate == 921600 and bridge.opened_with == ("COM7", False, False)
     native = esp32.open_serial("COM4", esp32.NATIVE_BAUD, False)
     assert native.port == "COM4" and native.opened_with is None             # opened by its constructor, as before
+
+
+# -- a new board, an old port ----------------------------------------------------------------------
+# A C3 plugged in while the settings still named the S3's COM9: the Board page found and checked the C3 on COM3, but
+# the Trade page kept COM9, and its Check sat on that empty port for the whole 1.8 restart allowance.
+
+@pytest.fixture
+def c3_on_com3(monkeypatch):
+    """One native-USB board attached, on COM3; opening any port fails, as an absent COM9 does."""
+    import serial
+    from serial.tools import list_ports
+
+    monkeypatch.setattr(list_ports, "comports", lambda: [FakePort("COM3", 0x303A, 0x1001)])
+    tries = []
+
+    def absent(*a, **k):
+        tries.append(a[0] if a else k.get("port"))
+        raise serial.SerialException("could not open port 'COM9': FileNotFoundError")
+
+    monkeypatch.setattr(serial, "Serial", absent)
+    monkeypatch.setattr(esp32, "UNOPENED_TIMEOUT", 0.3)
+    monkeypatch.setattr(esp32, "REOPEN_DELAY", 0.05)
+    return tries
+
+
+def test_a_port_with_no_board_fails_soon_and_names_the_board_that_is_there(c3_on_com3):
+    import time
+
+    began = time.monotonic()
+    with pytest.raises(RuntimeError) as error:
+        esp32.Esp32Radio("COM9").open()
+    assert time.monotonic() - began < esp32.OPEN_TIMEOUT / 5         # not the 25 s a restarting 1.8 board gets
+    assert "No board on COM9" in str(error.value) and "COM3" in str(error.value)
+    assert c3_on_com3 and set(c3_on_com3) == {"COM9"}                  # never quietly trades on another board
+
+
+def test_an_attached_port_that_will_not_open_is_called_busy(c3_on_com3):
+    with pytest.raises(RuntimeError, match="another program"):
+        esp32.Esp32Radio("COM3").open()
+
+
+def test_probe_answers_with_the_reason_instead_of_a_traceback(c3_on_com3, capsys):
+    from pokeuds import cli
+
+    assert cli.main(["probe", "--radio", "esp32:COM9"]) == 1
+    out = capsys.readouterr().out.strip().splitlines()
+    assert out[-1].startswith("No board on COM9") and "COM3" in out[-1]
+
+
+def test_checking_or_installing_a_board_points_trades_at_it():
+    from pokeuds.app.settings import Settings
+
+    s = Settings(radio="esp32", port="COM9")
+    assert board.stale(s, ["COM3"]) and not board.stale(s, ["COM3", "COM9"])
+    assert board.adopt(s, "COM3") and s.port == "COM3" and not board.stale(s, ["COM3"])
+    assert not board.adopt(s, "COM3")                                   # already: nothing to save
+    found = Settings(radio="esp32", port="")                            # "found by its USB id" names it too
+    assert board.adopt(found, "COM3") and found.port == "COM3" and not board.stale(Settings(radio="esp32"), [])
+    for radio, port in (("ldnd", r"\.\pipe\ldnd"), ("demo", "red")):   # another connection the user chose stays
+        other = Settings(radio=radio, port=port)
+        assert not board.adopt(other, "COM3") and other.port == port and not board.stale(other, [])
+
+
+def test_the_board_page_hands_its_board_to_the_trade_page(tmp_path, monkeypatch):
+    pytest.importorskip("flet")
+    from gui.app import App
+    from gui.views.board import BoardView
+    from gui.views.trade import TradeView
+    from pokeuds.app.settings import Settings
+
+    monkeypatch.setenv("POKEUDS_DATA", str(tmp_path / "data"))
+    monkeypatch.setattr(esp32, "board_ports", lambda: ["COM3"])
+    # A Game Boy game: the Gen 6/7 builder would fill the shared PKHeX lists other tests set themselves.
+    app = App(None, Settings(radio="esp32", port="COM9", last_game="rby"))
+    runs = []
+    monkeypatch.setattr(app, "start", lambda kind, args, **kw: runs.append((args, kw)))
+    view = BoardView(app)
+    view._check("COM3")
+    args, kw = runs[-1]
+    assert args == ["board", "check", "--port", "COM3"]
+    kw["on_event"]({"event": "board", "port": "COM3", "firmware": "2.0", "build": "uds", "mac": "88:56:A6:3A:88:F0",
+                    "update": "", "advice": ""})
+    kw["on_exit"](0)
+    assert app.settings.port == "COM3" and Settings.load().port == "COM3"          # saved, so the next start has it
+    TradeView(app)._probe(None)
+    assert runs[-1][0] == ["probe", "--radio", "esp32:COM3"] and runs[-1][1]["timeout"]
+
+    import gui.views.trade as trade_page
+
+    monkeypatch.setattr(trade_page, "esp32_ports", lambda: ["COM3"])
+    app.settings.port = "COM9"                                           # plugged in, Board page not visited
+    trade = TradeView(app)
+    shown = repr(trade.connection())
+    assert "no board on it now" in shown and "Use COM3" in shown
+    trade._use_port("COM3")
+    assert app.settings.port == "COM3" and "no board on it now" not in repr(trade.connection())
+
+    app.settings.port = "COM9"
+    view._install("COM3")
+    runs[-1][1]["on_exit"](1)                                            # a failed install hands nothing over
+    assert app.settings.port == "COM9"
+    view._install("COM3")
+    runs[-1][1]["on_exit"](0)
+    assert app.settings.port == "COM3"
+
+
+def test_a_check_that_never_answers_is_stopped_with_a_reason(tmp_path, monkeypatch):
+    """Whatever the child does, Check ends: past its time it is stopped, and the reason is the log's last word."""
+    pytest.importorskip("flet")
+    import threading
+
+    import gui.app as gui_app
+
+    monkeypatch.setenv("POKEUDS_DATA", str(tmp_path / "data"))
+    done = threading.Event()
+
+    class Stuck:                                      # a child that never says anything until it is stopped
+        def __init__(self, args, *, on_line, on_event, on_exit):
+            self.on_exit, self.alive = on_exit, True
+
+        def running(self):
+            return self.alive
+
+        def stop(self):
+            self.alive = False
+            self.on_exit(130)
+            done.set()
+
+    monkeypatch.setattr(gui_app, "Run", Stuck)
+    app = gui_app.App(None, gui_app.Settings(radio="esp32", port="COM9"))
+    app.start("probe", ["probe", "--radio", "esp32:COM9"], timeout=0.1, timeout_note="no answer in time")
+    assert done.wait(5) and not app.busy()
+    assert app.log[-2:] == ["no answer in time", "(exited with code 130)"]

@@ -12,6 +12,7 @@
     pkhex    PKHeX in a source tree: status, build
     plugins  installed plugins: list, install, remove, enable, disable; plugin run TOOL -- ARGS
     gift     Gen 6/7 Mystery Gift cards: list PKHeX's, show a .wc6/.wc7, make its Pokemon, build a custom card
+    wfc      Gen 4/5 Wi-Fi Mystery Gifts: check the Wii certificate, serve them to a DS, export the cards
 """
 
 from __future__ import annotations
@@ -106,10 +107,19 @@ def _offer_file(path: str) -> str:
 def cmd_probe(args) -> int:
     from .radio import open_radio
 
-    radio = open_radio(args.radio)
+    # A radio that is not there or does not answer is the answer here, not a crash: its reason is the last line,
+    # which the Trade page's Check shows.
+    try:
+        radio = open_radio(args.radio)
+    except (RuntimeError, OSError) as exc:
+        print(exc)
+        return 1
     try:
         radio.start(args.channel, args.mac or random_mac())
         print(f"OK: {radio.describe()}")
+    except (RuntimeError, OSError) as exc:      # TimeoutError is an OSError: the board stopped answering
+        print(f"{radio.describe()} opened but did not start: {exc}")
+        return 1
     finally:
         radio.close()
     return 0
@@ -818,6 +828,87 @@ def cmd_gift_distribute(args) -> int:
     return 0
 
 
+def cmd_wfc(args) -> int:
+    """Gen 4/5 Wi-Fi Mystery Gifts: check the Wii NWC pair, serve, or export the official cards."""
+    from .app.settings import data_dir
+    from .wfc import certs
+
+    cache = Path(args.cache) if getattr(args, "cache", None) else data_dir() / "wfc"
+    if args.wfc_command == "gifts":
+        from .wfc import export
+
+        games = list(args.game) if isinstance(args.game, list) else [args.game]
+        if "all" in games:
+            games = list(export.GAMES)
+        try:
+            written = export.export(args.dest, games, args.languages, progress=print)
+        except Exception as exc:                    # the helper missing, a card PKHeX cannot make, ...
+            print(f"error: {exc}")
+            return 1
+        total = sum(written.values())
+        print(f"wrote {total} gift file(s) to {args.dest}: " + ", ".join(f"{k} {v}" for k, v in written.items()))
+        print("serve it with: python -m pokeuds wfc serve --gifts " + str(args.dest))
+        return 0
+
+    if bool(getattr(args, "cert", None)) != bool(getattr(args, "key", None)):
+        print("error: give both --cert and --key (Dolphin's clientca.pem and clientcakey.pem)")
+        return 1
+    pair_paths = ((args.cert, args.key) if getattr(args, "cert", None) and getattr(args, "key", None)
+                  else certs.find_pair(args.cert or args.key or cache))
+    if not pair_paths:
+        print(f"error: no Wii certificate pair (clientca.pem and clientcakey.pem) in {cache}. Dolphin extracts them "
+              "with Tools > Perform Online System Update; see docs/ds_wifi.md.")
+        return 1
+    try:
+        pair = certs.load_pair(*pair_paths)
+    except (OSError, ValueError) as exc:
+        print(f"error: {exc}")
+        return 1
+    print(f"Wii certificate: {pair.cert_path}")
+    print(f"  subject: {pair.name}")
+    print(f"  issuer:  {pair.issuer_name}")
+    print(f"  key:     RSA {pair.key.size_in_bits()} bits")
+    print("  Dolphin's pair: " + ("yes (the same SHA-256)" if pair.dolphin else
+                                  "no; PokeUDS will use it, but check it is a Wii NWC client certificate"))
+    try:
+        identity = certs.server_identity(pair, cache, args.cn)
+    except (OSError, ValueError) as exc:
+        print(f"error: cannot make the server certificate: {exc}")
+        return 1
+    server = certs.Certificate.parse(identity.chain[0])
+    print(f"Server certificate ({cache / 'server.pem'}):")
+    print(f"  CN {identity.cn}; chain {identity.cn} -> {pair.name} -> {pair.issuer_name}")
+    print("  signed with the Wii key: " + ("yes" if server.signed_by(pair.cert) else "NO"))
+    if args.wfc_command == "check":
+        return 0
+    if not pair.dolphin:
+        print("warning: this is not the pair Dolphin checks for; only the real Wii NWC certificate is trusted by a DS")
+
+    from .wfc.server import Config, WFCServer, summary
+
+    config = Config(
+        address=args.address, answer_ip=args.ip or "", dns_port=args.dns_port, http_port=args.http_port,
+        https_port=args.https_port, gifts=Path(args.gifts) if args.gifts else data_dir() / "wfc" / "gifts",
+        cache=cache, cert=Path(args.cert) if args.cert else None, key=Path(args.key) if args.key else None,
+        cn=args.cn, gift=args.gift, dns=not args.no_dns, http=not args.no_http, https=not args.no_tls,
+        dns_all=args.dns_all, dns_upstream=args.dns_upstream)
+    server = WFCServer(config)
+    try:
+        config.gifts.mkdir(parents=True, exist_ok=True)
+        bound = server.start()
+    except (OSError, RuntimeError, FileNotFoundError) as exc:
+        print(f"error: {exc}")
+        return 1
+    print(summary(bound, config))
+    try:
+        server.serve_forever(args.seconds)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.close()
+    return 0
+
+
 def cmd_plugins(args) -> int:
     from . import plugins
     from .app import plugin_store as store
@@ -1056,6 +1147,46 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--card-ot", default="", help="the card's own OT (default: the receiver is the OT)")
     _gift_trainer(p)
     p.set_defaults(func=cmd_gift)
+
+    wf = sub.add_parser("wfc", help="Gen 4/5 Wi-Fi Mystery Gifts: a Nintendo WFC stand-in for a DS (docs/ds_wifi.md)")
+    wsub = wf.add_subparsers(dest="wfc_command", required=True)
+
+    def _wfc_pair(p) -> None:
+        p.add_argument("--cert", help="the Wii's clientca.pem (default: <data>/wfc/clientca.pem)")
+        p.add_argument("--key", help="the Wii's clientcakey.pem (default: <data>/wfc/clientcakey.pem)")
+        p.add_argument("--cache", help="where server.pem/server.key are kept (default: <data>/wfc)")
+
+    p = wsub.add_parser("check", help="read the Wii certificate pair, make the server certificate, and say whether "
+                                      "the chain is the one a DS trusts")
+    _wfc_pair(p)
+    p.add_argument("--cn", default="*.*.*", help="the server certificate's name (default *.*.*, every three-part name)")
+    p.set_defaults(func=cmd_wfc)
+
+    p = wsub.add_parser("serve", help="answer a DS's DNS, connection test, NAS login and DLS1 gift download")
+    _wfc_pair(p)
+    p.add_argument("--gifts", help="the gift folders (default: <data>/wfc/gifts; docs/ds_wifi.md)")
+    p.add_argument("--gift", help="always serve this file (a name in the game's folder, or a path), not the date's")
+    p.add_argument("--address", default="0.0.0.0", help="what to bind (default: every interface)")
+    p.add_argument("--ip", help="what DNS answers with (default: this computer's LAN address)")
+    p.add_argument("--dns-port", type=int, default=53)
+    p.add_argument("--http-port", type=int, default=80)
+    p.add_argument("--https-port", type=int, default=443)
+    p.add_argument("--no-dns", action="store_true", help="do not answer DNS (a router or Pi-hole already redirects)")
+    p.add_argument("--no-http", action="store_true", help="do not answer the connection test on port 80")
+    p.add_argument("--no-tls", action="store_true", help="serve NAS/DLS1 without SSL on port 80 too (testing only)")
+    p.add_argument("--dns-all", action="store_true", help="answer every name with this computer, not just Nintendo's")
+    p.add_argument("--dns-upstream", help="forward other names here (8.8.8.8 or 8.8.8.8:53); default: NXDOMAIN")
+    p.add_argument("--cn", default="*.*.*")
+    p.add_argument("--seconds", type=float, default=0.0, help="stop after this long (default: until Ctrl+C)")
+    p.set_defaults(func=cmd_wfc)
+
+    p = wsub.add_parser("gifts", help="write the official Gen 4/5 cards as the Wi-Fi files DLS1 serves")
+    p.add_argument("dest", help="the gift folder to write")
+    p.add_argument("game", nargs="+", choices=["dp", "pt", "hgss", "bw", "b2w2", "all"],
+                   help="the games to export (all: every DS game)")
+    p.add_argument("--languages", default="E,F,I,G,S",
+                   help="DLS1 letters for a Gen 5 card any language may receive (default E,F,I,G,S)")
+    p.set_defaults(func=cmd_wfc)
 
     ph = sub.add_parser("pkhex", help="PKHeX, for a source tree: whether it is here, or build it")
     phsub = ph.add_subparsers(dest="pkhex_command", required=True)

@@ -17,6 +17,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]
+wfc = ["tlslite-ng>=0.8.2"]           # the DS's SSL 3.0/RC4 server (docs/ds_wifi.md)
 
 [project.scripts]
 pokeuds = "pokeuds.cli:main"

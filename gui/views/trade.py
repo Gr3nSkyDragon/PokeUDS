@@ -11,9 +11,10 @@ import time
 
 from pokeuds import plugins
 from pokeuds.games import vc as vc_titles
-from pokeuds.app import catalog, i18n
+from pokeuds.app import board, catalog, i18n
 from pokeuds.app.builder import Trainer
 from pokeuds.app.progress import STEP_LABELS, STEPS
+from pokeuds.radio.esp32 import board_ports as esp32_ports
 
 from .. import theme as t
 from .builder import BuilderPanel
@@ -22,6 +23,8 @@ from .sprite import sprite
 
 CONNECTIONS = (("esp32", "ESP32 board"), ("ldnd", "USB Wi-Fi adapter"))
 LDND_PIPE = r"\\.\pipe\ldnd"
+# Check stops by then: an ESP32 that opens but never answers takes esp32.OPEN_TIMEOUT (25 s), START a few more.
+PROBE_TIMEOUT = 45.0
 
 
 class TradeView(View):
@@ -431,7 +434,14 @@ class TradeView(View):
                                     on_blur=self._pipe, disabled=busy,
                                     tooltip="ldnd.exe 0.0.5 (not ldnrs), Windows only; start it before the trade"))
         else:
-            row.append(t.label(f"port {s.port}" if s.port else "found by its USB id", size=12))
+            attached = [] if busy else esp32_ports()          # not listed on every log line of a running trade
+            if not busy and board.stale(s, attached):
+                row.append(t.label(f"port {s.port}: no board on it now", size=12, color=t.WARN))
+                if attached:
+                    row.append(t.secondary(f"Use {attached[0]}", lambda e, d=attached[0]: self._use_port(d),
+                                           ft.Icons.CHECK_CIRCLE_OUTLINE))
+            else:
+                row.append(t.label(f"port {s.port}" if s.port else "found by its USB id", size=12))
             row.append(ft.TextButton("Board page", on_click=lambda e: self.app.navigate("board")))
         checking = busy and self.app.run_kind == "probe"
         row += [t.secondary("Check", self._probe, ft.Icons.WIFI_TETHERING, disabled=busy),
@@ -473,7 +483,7 @@ class TradeView(View):
             controls += [t.label("· " + n) for n in p.notes[-8:]]
         controls.append(ft.TextButton("Hide the log" if self.show_log else "Show the log", on_click=self._toggle_log))
         if self.show_log:
-            controls.append(log_box(self.app.log))
+            controls.append(log_box(self.app.log, app=self.app))
         return t.card(*controls, spacing=12)
 
     # -- events ---------------------------------------------------------------------------------
@@ -488,8 +498,14 @@ class TradeView(View):
         self.app.settings.port = "" if value in ("", LDND_PIPE) else value
         self.save()
 
+    def _use_port(self, port: str) -> None:
+        self.app.settings.radio, self.app.settings.port = "esp32", port
+        self.save()
+
     def _probe(self, e) -> None:
-        self.app.start("probe", ["probe", "--radio", self.app.settings.radio_spec()])
+        self.app.start("probe", ["probe", "--radio", self.app.settings.radio_spec()], timeout=PROBE_TIMEOUT,
+                       timeout_note=f"The radio gave no answer in {PROBE_TIMEOUT:g} s; Check stopped. Unplug the board, "
+                                    "plug it back in and check it on the Board page.")
 
     def _role_changed(self, e) -> None:
         self.role = next(iter(e.control.selected), "join")

@@ -401,8 +401,8 @@ static partial class Program
     //   .pcd as PKHeX writes it (its PGT's Pokemon encrypted). Nothing else, and no checksum.
     // Gen 5 .bin, 720 bytes:
     //   0x000  the .pgf, its received date (0xAC, four bytes) zero
-    //   0x0CC  the games that may receive it, u32: the card's RestrictVersion << 20 (Black 1, White 2, White 2 4,
-    //          Black 2 8, as PKHeX's bits; 0 is all four, written 0xF)
+    //   0x0CC  the games that may receive it, u32: the card's RestrictVersion << 20 (White 1, Black 2, White 2 4,
+    //          Black 2 8, as PKHeX's bits and the DLS1 list's attr2; 0 is all four, written 0xF)
     //   0x0D0  the distribution text, 0x1FA bytes: UTF-16, 0xFFFE a line break, 0xFFFF its end and the fill after
     //   0x2CA  zero in every file seen (0x2CC and 0x2CD too)
     //   0x2CB  the language it is for: the card's RestrictLanguage (LanguageID)

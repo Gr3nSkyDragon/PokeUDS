@@ -49,7 +49,7 @@ class BoardView(View):
         controls.append(t.card(t.heading("Boards"), *([self._board(p, image) for p in ports] or [self._none()]), spacing=12))
         controls.append(self._firmware(images))
         if self.app.run_kind == "board":
-            controls.append(t.card(t.heading("Activity"), log_box(self.app.log, height=200)))
+            controls.append(t.card(t.heading("Activity"), log_box(self.app.log, height=200, app=self.app)))
         return ft.Column(controls, spacing=t.GAP, scroll=ft.ScrollMode.AUTO)
 
     def _none(self) -> ft.Control:
@@ -138,6 +138,7 @@ class BoardView(View):
             if ev.get("event") == "board":
                 self.found[ev["port"]] = ev
                 self.failed.discard(ev["port"])
+                self._adopt(ev["port"])        # the board that answered is the one trades use
 
         def exited(code: int) -> None:
             if check and code != 0:
@@ -146,6 +147,8 @@ class BoardView(View):
             if install:                       # the board runs something new: check it again
                 self.found.pop(install, None)
                 self.failed.discard(install)
+                if code == 0:
+                    self._adopt(install)
             self.checking = self.installing = ""
 
         self.app.start("board", ["board", *args], on_event=event, on_exit=exited)
@@ -155,6 +158,12 @@ class BoardView(View):
 
     def _install(self, port: str) -> None:
         self._run(["flash", "--port", port], install=port)
+
+    def _adopt(self, port: str) -> None:
+        """A board just checked or installed: the Trade page's ESP32 connection uses its port from now on. Runs on the
+        child's reader thread; the refresh that follows the event or exit shows it."""
+        if board.adopt(self.app.settings, port):
+            self.app.save()
 
     def _use(self, port: str) -> None:
         self.app.settings.radio, self.app.settings.port = "esp32", port

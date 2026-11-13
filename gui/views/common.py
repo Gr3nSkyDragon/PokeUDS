@@ -51,12 +51,53 @@ class View:
         self.refresh()
 
 
-def log_box(lines: list[str], height: int = 220, last: int = 300) -> ft.Container:
+def full_log(app) -> str:
+    """The whole log of the current or last run: its file (every line), else the lines the page keeps."""
+    path = getattr(app, "saved_log", None)
+    if path is not None:
+        try:
+            text = path.read_text(encoding="utf-8")
+            if text.strip():
+                return text
+        except OSError:
+            pass
+    return "\n".join(app.log) + ("\n" if app.log else "")
+
+
+def log_box(lines: list[str], height: int = 220, last: int = 300, app=None) -> ft.Control:
     shown = lines[-last:] or ["(nothing yet)"]
-    return ft.Container(
+    box = ft.Container(
         ft.ListView([ft.Text(line, size=12, font_family="monospace", color=t.MUTED, selectable=True) for line in shown],
                     spacing=1, auto_scroll=True, expand=True),
         height=height, bgcolor=t.BG, border_radius=8, padding=10, border=ft.Border.all(1, t.LINE))
+    if app is None:
+        return box
+    copy = ft.TextButton("Copy log", icon=ft.Icons.CONTENT_COPY, disabled=not app.log)
+
+    async def copy_log(e=None) -> None:
+        if app.clipboard is None:
+            return
+        await app.clipboard.set(full_log(app))
+        copy.content = "Copied"
+        translate(copy)
+        copy.update()
+
+    copy.on_click = copy_log
+
+    def open_logs(e=None) -> None:
+        from ..app import logs_folder
+
+        folder = logs_folder()
+        if folder is not None:
+            open_folder(str(folder))
+
+    saved = getattr(app, "saved_log", None)
+    where = ft.Text(f"Saved as {saved.name}" if saved is not None else "This log could not be saved to a file",
+                    size=11, color=t.MUTED, selectable=True, expand=True) if app.log else ft.Container(expand=True)
+    tools = ft.Row([where, copy, ft.TextButton("Open logs folder", icon=ft.Icons.FOLDER_OPEN_OUTLINED,
+                                               on_click=open_logs)],
+                   spacing=4, vertical_alignment=ft.CrossAxisAlignment.CENTER)
+    return ft.Column([tools, box], spacing=4)
 
 
 def open_folder(path: str) -> None:

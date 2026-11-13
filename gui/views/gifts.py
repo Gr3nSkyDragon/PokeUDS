@@ -300,7 +300,7 @@ class GiftsView(View):
                                 "real distributor does, so the game recovers and accepts it "
                                 "(docs/mystery_gift.md).", size=12))
         if self.app.run_kind == "gift":
-            rows.append(log_box(self.app.log, height=140))
+            rows.append(log_box(self.app.log, height=140, app=self.app))
         return rows
 
     def _distribute(self) -> None:

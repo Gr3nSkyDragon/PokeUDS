@@ -79,10 +79,12 @@ def test_species_field_survives_the_rebuild_its_pick_causes(tmp_path, monkeypatc
 
     app = App(None, Settings(output=str(tmp_path / "received"), last_game="xy"))
     trade = TradeView(app)
-    trade.toggle_builder()
     monkeypatch.setattr(panel, "_helper_ready", lambda: True)
+    # The lists before the builder opens: opened first, it asks the real helper for them, and a warm helper's answer
+    # (721 species) could land over these.
     trade.builder.lists["xy"] = {"species": [[25, "Pikachu"], [658, "Greninja"]], "moves": [[84, "Thunder Shock"]],
                                  "items": [[1, "Master Ball"]], "balls": [[4, "Poke Ball"]], "natures": [[3, "Adamant"]]}
+    trade.toggle_builder()
 
     def box(control, label, seen=None):
         seen = seen if seen is not None else set()

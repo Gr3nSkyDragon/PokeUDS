@@ -34,11 +34,11 @@ hosting. gflnet's BeaconManager frames them as ``[CRC-16][game][record count][ve
 [0x41][PSS id 8]`` followed by records ``[length+4][type][sub][0] data``; the PSS sends one record,
 type 4 sub 1, the player (152 bytes, the same as the profile from 0x1A0). Its bytes at beacon
 offsets 0x84-0x99 carry a trade request: the requester puts a token (its own nonce from 0x18) and
-the target's key and PSS id there with 0x94 = 1 and 0x96 = 02, and its state byte at 0x17 says
+the target's key and PSS id there with 0x94 = 1 and 0x96 = 01, and its state byte at 0x17 says
 "asking"; the target answers with the same token, the requester's key and id, and state "answering".
-The requester then hosts the trade network (``id=1``, four nodes, no application data) for the
-target to join. That is read off the two consoles' profiles during captured trades, which copy these bytes;
-an idle beacon holds other values there, so only a match on our own PSS id counts as a request.
+The requester then hosts the trade network (``id=1``, four nodes) for the target to join; its application data is
+the request beacon again in state "trading" (0x98). Read off Pokemon X asking a retail Y in Azahar and retail Y
+asking PokeUDS on hardware; an idle beacon holds other values there, so only a match on our own PSS id counts as a request.
 """
 
 from __future__ import annotations
@@ -193,8 +193,13 @@ RECORD_SIZE = 152
 # answer left at 0x05 reads as an idle player and the asking console waits on, then says the trainer is unavailable.
 R_STATE, R_NONCE = 0x03, 0x04
 PSS_IDLE, PSS_ASKING, PSS_ANSWERING = 0x05, 0x96, 0x99
-# Beacon 0x96 on a retail request (0x97-0x98 keep their idle 44 44).
-REQUEST_KIND_TRADE = bytes.fromhex("02")
+# The asker's record once the answer is in, as the application data of the trade network it hosts: Pokemon X in
+# Azahar (2026-10-17) put its request beacon there with state 0x98 and a new nonce (byte 0 moved on, the token kept),
+# and the retail console it asked joined that network 3.7 s later. A trade network without it was never joined.
+PSS_TRADING = 0x98
+# Beacon 0x96 on a retail trade request (0x97-0x98 keep their idle 44 44): 01, read off retail Y asking PokeUDS on
+# hardware (pokeuds-run.log, 2026-11-05). PokeUDS used to send 02, which no capture shows.
+REQUEST_KIND_TRADE = bytes.fromhex("01")
 IDLE_KIND = bytes.fromhex("444444")
 
 # The NetworkInfo attributes every console's PSS and trade networks carry (bit 15, the 3DS default for a network a
@@ -278,8 +283,10 @@ class PssPlayer:
         return self.partner_id == pss_id and self.request == 1
 
     def answers(self, pss_id: bytes) -> bool:
-        """This player names ``pss_id`` as its partner (a request or an answer to one)."""
-        return self.partner_id == pss_id
+        """This player accepts a request from ``pss_id``: state "answering" and ``pss_id`` named as its partner. The
+        partner bytes alone are not enough: an idle beacon keeps old values there, and one still naming PokeUDS
+        (from an earlier trade, say) read as an answer before the player had accepted anything."""
+        return self.state == PSS_ANSWERING and self.partner_id == pss_id
 
 
 def pss_beacon(trainer: Trainer, *, partner: PssPlayer | None = None, request: bool = False,
@@ -305,6 +312,17 @@ def pss_beacon(trainer: Trainer, *, partner: PssPlayer | None = None, request: b
             b[base + R_STATE] = PSS_ANSWERING
         b[base + R_PARTNER_KEY:base + R_PARTNER_KEY + 4] = partner.key
         b[base + R_PARTNER_ID:base + R_PARTNER_ID + 8] = partner.pss_id
+    struct.pack_into("<H", b, 0, crc16(bytes(b[2:])))
+    return bytes(b)
+
+
+def trade_network_data(trainer: Trainer, partner: PssPlayer, token: bytes) -> bytes:
+    """The application data of the trade network the asker hosts: its request beacon to ``partner`` with ``token``,
+    in state PSS_TRADING, with a new nonce byte as the game's had."""
+    b = bytearray(pss_beacon(trainer, partner=partner, request=True, token=token))
+    base = 0x14
+    b[base + R_STATE] = PSS_TRADING
+    b[base + R_NONCE] = (token[0] + 1 + os.urandom(1)[0] % 0xFE) & 0xFF      # anything but the token's own byte
     struct.pack_into("<H", b, 0, crc16(bytes(b[2:])))
     return bytes(b)
 

@@ -3,7 +3,8 @@
 Every console in the PSS keeps hosting a small ``id=2`` network whose application data is its PSS
 beacon (``wire.pss_beacon``), and listens for the others'. A trade request travels in those
 beacons: the requester names the target, the target names the requester back, and the requester
-then hosts the trade network (``id=1``, four nodes, no application data) that the target joins.
+then hosts the trade network (``id=1``, four nodes) that the target joins, its application data the requester's
+record in state "trading" (``wire.trade_network_data``).
 
 ``role="join"``: PokeUDS shows up in the console's PSS and waits for the player there to ask it for
 a trade, answers, and joins the console's trade network (PokeUDS is node 2).
@@ -11,8 +12,8 @@ a trade, answers, and joins the console's trade network (PokeUDS is node 2).
 ``role="host"``: PokeUDS asks a console it hears in the PSS (the first, or the one whose trainer is
 ``partner``), waits for the answer, and hosts the trade network (PokeUDS is node 1).
 
-Retail consoles advertise on channel 1, 6 or 11, so PokeUDS hops all three while it waits, its own
-beacon moving with the radio.
+Retail consoles advertise on channel 1, 6 or 11, so PokeUDS hops all three while it looks for one, its
+own beacon moving with the radio. Once it has asked, it stays on the console's channel, as the game does.
 """
 
 from __future__ import annotations
@@ -42,6 +43,7 @@ DWELL = 0.45
 REHOST_EVERY = 2.0
 STAY_FOR = 8.0                     # then hop again: a console that accepted opens its trade network where it likes
 TRADE_CHANNEL = 11              # Where PokeUDS first advertises.
+ANSWER_WAIT = 120.0             # How long PokeUDS's request stays up for the player to accept.
 
 
 @dataclass
@@ -92,8 +94,9 @@ class Gen6Trade:
         with self._lock:
             if beacon.info.id == TRADE_NETWORK:
                 if beacon.host not in self.trade_networks:
-                    log.info("trade network from %s on channel %d (%d/%d nodes)", mac_str(beacon.host), beacon.channel,
-                             beacon.info.total_nodes, beacon.info.max_nodes)
+                    log.info("trade network from %s on channel %d (%d/%d nodes), data: %s", mac_str(beacon.host),
+                             beacon.channel, beacon.info.total_nodes, beacon.info.max_nodes,
+                             beacon.info.application_data.hex() or "none")
                 self.trade_networks[beacon.host] = beacon
             elif beacon.info.id == PSS_NETWORK:
                 data = beacon.info.application_data
@@ -155,6 +158,27 @@ class Gen6Trade:
         log.info("nothing on channel %d for %.0f s; hopping again", channel, STAY_FOR)
         return self._hop(until, max(1.0, deadline - time.monotonic()), what)
 
+    def _hold(self, channel: int, until, seconds: float, what: str):
+        """Stay on ``channel`` for up to ``seconds``, re-hosting our beacon every REHOST_EVERY, and never hop.
+
+        This is how the game asks: Pokemon X in Azahar kept every PSS network it hosted while asking on one channel
+        (the radio parked there), and the retail console it asked, whose own PSS was on another channel, still
+        found it and joined the trade network there. A request that hops 1/6/11 is on the wrong channel two thirds
+        of the time, claiming a different channel each time, while the player reads the request and accepts."""
+        deadline = time.monotonic() + seconds
+        self.station.retune(channel)
+        next_host = time.monotonic() + REHOST_EVERY
+        while time.monotonic() < deadline:
+            with self._lock:
+                found = until()
+            if found:
+                return found
+            if time.monotonic() >= next_host:
+                self._advertise(**self._beacon_args)
+                next_host = time.monotonic() + REHOST_EVERY
+            time.sleep(0.02)
+        raise TimeoutError(f"no {what} within {seconds:.0f} s on channel {channel}")
+
     # -- the two ways in --------------------------------------------------------------------------
 
     def wait_to_be_asked(self, seconds: float) -> None:
@@ -192,17 +216,29 @@ class Gen6Trade:
         token = os.urandom(4)
         self._say(f"asking {seen.player.name} for a trade; accept it on the console")
         self._emit("phase", phase="asking", partner=seen.player.name)
+        channel = seen.channel
+        self.station.retune(channel)
         self._advertise(partner=seen.player, request=True, token=token)
-        self._stay(seen.channel, lambda: self.players[seen.player.pss_id].player.answers(self.trainer.pss_id) or None,
-                   120.0, "answer from the console")
-        # The trade network goes where the console was last heard, the channel it listens on.
-        channel = self.players[seen.player.pss_id].channel
+        log.info("asking %s on channel %d, token %s; staying on this channel until it answers", seen.player.name,
+                 channel, token.hex())
+        def answered():
+            player = self.players[seen.player.pss_id].player
+            return player if player.answers(self.trainer.pss_id) else None
+
+        answer = self._hold(channel, answered, ANSWER_WAIT, "answer from the console")
+        log.info("%s answers (state 0x%02X, token %s)", seen.player.name, answer.state, answer.token.hex())
+        if answer.token != token:
+            log.warning("%s answered with token %s, not ours (%s)", seen.player.name, answer.token.hex(), token.hex())
+        # The trade network goes on the channel the request was on, as the game's did, and carries our request in
+        # state "trading" (wire.trade_network_data): the console joins the network that names it.
+        data = wire.trade_network_data(self.trainer, seen.player, token)
+        log.info("our trade network data: %s", data.hex())
         self.station.stop_hosting()
         self.station.on_beacon = None
         self.station.retune(channel)
         self.station.host(wlan_comm_id=self.profile.wlan_comm_id, passphrase=self.profile.passphrase,
                           channel=channel, max_nodes=TRADE_MAX_NODES, id_=TRADE_NETWORK,
-                          attributes=wire.NETWORK_ATTRIBUTES)
+                          application_data=data, attributes=wire.NETWORK_ATTRIBUTES)
         self._emit("hosting", game=self.game.key, channel=channel)
         deadline = time.monotonic() + 30.0
         while not any(p.connected and not p.spectator for p in self.station.peers.values()):

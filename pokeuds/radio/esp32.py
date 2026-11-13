@@ -33,6 +33,7 @@ PING_INTERVAL = 2.0
 PONG_TIMEOUT = 8.0
 COMMAND_TIMEOUT = 3.0
 OPEN_TIMEOUT = 25.0     # covers firmware 1.8's restart from Switch mode into 3DS mode
+UNOPENED_TIMEOUT = 5.0  # a port that never opens (not plugged in, another board's old port, in use): give up sooner
 HELLO_WINDOW = 4.0      # HELLOs on one connection before it is reopened
 REOPEN_DELAY = 1.0
 MIN_FIRMWARE = (1, 7)   # the first 3DS-only image with the screen; 1.8 adds the Switch side
@@ -51,6 +52,29 @@ def find_port() -> str | None:
         if (port.vid, port.pid) in BRIDGES:
             return port.device
     return None
+
+
+def board_ports() -> list[str]:
+    """Every attached ESP32's serial port, native USB ones first; [] when pyserial cannot list them."""
+    try:
+        from serial.tools import list_ports
+
+        ports = list(list_ports.comports())
+    except (ImportError, OSError):
+        return []
+    native = [p.device for p in ports if (p.vid, p.pid) == (ESPRESSIF_VID, ESPRESSIF_JTAG_PID)]
+    return native + [p.device for p in ports if (p.vid, p.pid) in BRIDGES]
+
+
+def unopened(name: str) -> str:
+    """Why ``name`` could not be opened, naming the boards that are attached when it is not one of them."""
+    attached = board_ports()
+    if name in attached:
+        return f"Could not open {name}. Is another program (Azahar, a serial monitor, esptool) using it?"
+    if attached:
+        return (f"No board on {name}: it is not connected. An ESP32 is on {', '.join(attached)}: choose it on the "
+                f"Board page (Check, or Use for trades), or pass --port {attached[0]}.")
+    return f"No board on {name}: it is not connected. Plug the board in by its USB port, then check it on the Board page."
 
 
 def is_bridge(device: str) -> bool:
@@ -119,7 +143,8 @@ class Esp32Radio(Radio):
             raise RuntimeError(
                 "No ESP32 found. Connect an S3, C3 or C6 board's native USB port (Espressif USB Serial/JTAG, "
                 "303A:1001), or a classic ESP32 board's USB port (its CP210x or CH340), or pass --port.")
-        deadline = time.monotonic() + OPEN_TIMEOUT
+        began = time.monotonic()
+        deadline = began + OPEN_TIMEOUT
         restarted = opened = False
         while True:
             try:
@@ -133,9 +158,11 @@ class Esp32Radio(Radio):
                 log.debug("ESP32 on %s: %s", name, exc)
             lost = self._reader is not None and not self._reader.is_alive()
             self._detach()
+            # The long wait is for a board that answered the port and then restarted (1.8); a port that has never
+            # opened is not coming back by itself, so say why soon rather than retrying it for OPEN_TIMEOUT.
+            if not opened and time.monotonic() - began >= UNOPENED_TIMEOUT:
+                raise RuntimeError(unopened(name))
             if time.monotonic() >= deadline:
-                if not opened:
-                    raise RuntimeError(f"Could not open {name}. Is the board plugged in, and is no other program using it?")
                 raise RuntimeError(
                     f"Something is on {name} but it did not answer. Is the esp32-uds-bridge "
                     "firmware (1.7 or later) flashed? Firmware 1.8 restarts once into its 3DS mode; "

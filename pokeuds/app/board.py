@@ -77,6 +77,21 @@ def ports() -> list[Port]:
     return sorted(found, key=lambda p: (not p.native, p.device))
 
 
+def adopt(settings, port: str) -> bool:
+    """Point trades at the board on ``port``, after the Board page checked or installed it: the ESP32 connection
+    (the Trade page's) then uses that board, not a port saved for another one. A USB Wi-Fi adapter, plugin or demo
+    radio the user chose is left alone. -> whether the settings changed (the caller saves them)."""
+    if settings.radio != "esp32" or not port or settings.port == port:
+        return False
+    settings.port = port
+    return True
+
+
+def stale(settings, attached: list[str]) -> bool:
+    """Whether the ESP32 connection names a port no board is on now (``attached``: the boards' ports)."""
+    return settings.radio == "esp32" and bool(settings.port) and settings.port not in attached
+
+
 @dataclass
 class Identity:
     port: str

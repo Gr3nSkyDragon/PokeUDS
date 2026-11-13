@@ -34,6 +34,9 @@ distributor.json
 friendlist.json
 scripts/replay_gen7_beacon.py
 
+# The gift folders the DS Wi-Fi server serves, made from PKHeX's cards by `pokeuds wfc gifts`.
+dlc/
+
 # The distributor app's private OPSSR exponent; the public key and verifier stay in delivery.py.
 pokeuds/games/gen7/delivery_key.py
 rsa_d_key.txt

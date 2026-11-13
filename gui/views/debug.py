@@ -43,7 +43,7 @@ class DebugView(View):
         if self.app.run_kind in ("scan", "analyze"):
             output = [t.card(ft.Row([t.heading("Output"), ft.Container(expand=True),
                                      *([t.secondary("Stop", lambda e: self.app.stop(), ft.Icons.STOP_ROUNDED)] if busy else [])]),
-                             log_box(self.app.log, height=320))]
+                             log_box(self.app.log, height=320, app=self.app))]
         return ft.Column([t.title("Debug"), demo, scan, analyze, *output], spacing=t.GAP, scroll=ft.ScrollMode.AUTO)
 
     def _demo(self, e) -> None:
