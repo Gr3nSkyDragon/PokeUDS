@@ -11,7 +11,14 @@ Joiner (measured: the retail 2DS and Azahar as joiners; mGBA-LDN trades with ret
 
 Host (**experimental**: built from the retail host's frames in the same capture; Azahar hosting a
 retail joiner never completed a trade, for a cause not visible on the wire): the same messages in
-the other direction, with the mesh state and system data replayed from the retail host's.
+the other direction, with the mesh state and system data replayed from the retail host's. Its setup
+messages (station info, profile, mesh state) go to destination 0, as a retail 3DS XL host's did in a sniff of
+two retail consoles (2026-10-04): the joiner has no station id until the mesh state, and a retail joiner ignored
+station info and a profile addressed to station 2 (it took only PokeUDS's acks, addressed to 0). And the host
+answers each of the joiner's setup messages in turn, as that host did (its packet numbers place the acks the sniff
+missed): the joiner's station info -> ack, our station info; its profile -> ack, our profile; its join request ->
+ack, the mesh state. Sending our station info at the hello reply and our profile at its station info, one step
+early, a retail joiner acked both and never sent its join request.
 
 The session is deterministic: every entry point takes the time in milliseconds, and frames leave
 through ``send(frame, broadcast)``.
@@ -35,6 +42,8 @@ UNIT_RESEND_MS = 500
 PING_MS = 2000
 CLOCK_SYNC_MS = 2000
 SYSTEM_DATA_MS = 10000
+SYSTEM_RESEND_MS = 250              # the host re-sends system data until the joiner acks it (Azahar's hosting VC)
+HOST_START_FLAGS = b"\xfe\x00\x00"  # the role flags of the host's first unit, EF: its Start
 HELLO_MS = 500
 SILENCE_MS = 10000
 SETUP_FALLBACK_MS = 1500
@@ -54,6 +63,22 @@ SYSTEM_DATA = bytes.fromhex(
     "0000000000000000000000020000000000000000000000000000000000000000000000000000000000000000"
     "00000000000000000000000000000100")
 assert len(MESH_STATE) == 128 and len(SYSTEM_DATA) == 148
+
+
+def _describe(m: pia.Message) -> str:
+    """One setup-time message for the log: what it is, its addresses, and its sequence value."""
+    p = m.payload
+    if m.protocol == pia.PROTO_SETUP and len(p) == 8 and p[0] == 0x05:
+        what = f"ack {struct.unpack_from('>I', p, 4)[0]:08X}"
+    elif m.protocol == pia.PROTO_SETUP and len(p) in (62, 80):
+        what = f"{'station info' if len(p) == 62 else 'profile'} {struct.unpack_from('>I', p, len(p) - 4)[0]:08X}"
+    elif m.protocol == pia.PROTO_SYSTEM and len(p) == 16 and p[:2] == bytes([0x01, pia.STATION_UNASSIGNED]):
+        what = f"join request {struct.unpack_from('>I', p, 12)[0]:08X}"
+    elif m.protocol == pia.PROTO_SYSTEM and len(p) == 128:
+        what = f"mesh state {struct.unpack_from('>I', p, 124)[0]:08X}"
+    else:
+        what = f"protocol {m.protocol:02X}/{m.subtype:02X}, {len(p)} bytes"
+    return f"{what} (station {m.sender:02X} -> {m.destination})"
 
 
 class Role(enum.Enum):
@@ -83,6 +108,8 @@ class Config:
     application_data: bytes = bytes(16)   # the host beacon's; a joiner copies bytes 4..7 into its profile
     connection_id: int = 0                 # the station constant id, 2..255; 0 picks one
     tick_base: int = 0                     # 3DS ticks at start; 0 picks one
+    unit_value: int | None = None          # the 32-bit value on every game unit; None: a random one for a host, 0 for a
+                                           # joiner (retail hosts send a per-session value on every unit: D3613024, 30583202)
 
 
 @dataclass
@@ -120,7 +147,18 @@ class Session:
         self.pending: dict[int, int] = {}
         self.received: list[int] = []
         self.ack_owed = False
+        self.unit_value = cfg.unit_value if cfg.unit_value is not None else (
+            int.from_bytes(os.urandom(4), "big") | 1 if self.role is Role.HOST else 0)
+        # Host: the system stream's last sent index and the joiner's ack of it. The VC host re-sends a system data
+        # message until it is acked, and only then sends its first game unit, EF: its Start (Azahar hosting a retail
+        # joiner that went on to the Trade Center: system data at 1.86 s, re-sent at 2.12 and 2.37, acked at 2.44,
+        # EF at 4.86).
+        self.system_sent: int | None = None
+        self.system_acked = pia.FIRST_INDEX
+        self.last_system_send = -10**9
         self.frames_rejected = 0
+        self.hellos_sent = 0
+        self.frames_received: dict[str, int] = {}     # by kind, for the log when a session fails
 
     # -- frames ---------------------------------------------------------------------------------
 
@@ -147,6 +185,8 @@ class Session:
     def _send(self, now: int, messages: list[pia.Message], *, direct: bool = False, broadcast: bool = False) -> None:
         for m in messages:
             m.sender = self.station
+            if self.state is not State.JOINED:
+                log.info("VC setup: sent %s", _describe(m))
         self._emit(now, pia.build(messages, **self._header(now, direct)), broadcast)
 
     def _msg(self, protocol: int, payload: bytes = b"", destination: int | None = None, **kw) -> pia.Message:
@@ -193,7 +233,7 @@ class Session:
                 continue
             if setup.last_sent is None or now - setup.last_sent >= SETUP_RESEND_MS:
                 setup.last_sent = now
-                dest = pia.ID_BROADCAST if self.role is Role.JOINER else self.peer_id
+                dest = pia.ID_BROADCAST     # both roles: the peer has no station id before the mesh state
                 if setup is self.setup.get("mesh"):
                     self.numbered = True              # the host's mesh-state frame is its first numbered one
                 self._send(now, [self._msg(setup.protocol, bytes(setup.payload), dest)])
@@ -220,6 +260,7 @@ class Session:
         if self.role is Role.HOST:
             self.state = State.SETUP
             self._emit(now, pia.hello(int.from_bytes(os.urandom(4), "big")), broadcast=True)
+            self.hellos_sent += 1
             self.last_hello = now
 
     def receive(self, now: int, raw: bytes) -> None:
@@ -229,16 +270,18 @@ class Session:
         if frame is None:
             self.frames_rejected += 1
             return
+        kind = {pia.KIND_HELLO: "hello", pia.KIND_HELLO_REPLY: "hello reply", pia.KIND_BYE: "bye",
+                pia.KIND_PIA: "pia"}.get(frame.kind, f"kind {frame.kind:02X}")
+        if not self.frames_received:
+            log.info("VC session: first frame from the peer: %s, %d bytes", kind, len(raw))
+        self.frames_received[kind] = self.frames_received.get(kind, 0) + 1
         self.last_rx = now
         if frame.kind == pia.KIND_HELLO and self.role is Role.JOINER:
             self._emit(now, pia.hello_reply())
             self._begin_joiner_setup(now)
             return
         if frame.kind == pia.KIND_HELLO_REPLY and self.role is Role.HOST:
-            if not self.hello_answered:
-                self.hello_answered = True
-                self._queue_station_info()
-                self._pump_setup(now)
+            self.hello_answered = True            # the joiner's station info comes next; ours answers it
             return
         if frame.kind == pia.KIND_BYE:
             self.state = State.CLOSED
@@ -247,6 +290,9 @@ class Session:
             self.frames_rejected += 1
             return
         self.peer_clock = (frame.clock, now)
+        if self.state is not State.JOINED:
+            for m in frame.messages:
+                log.info("VC setup: heard %s", _describe(m))
         if self.role is Role.JOINER:
             self._begin_joiner_setup(now)
         pongs = []
@@ -275,7 +321,9 @@ class Session:
             if self.peer_profile and "join" not in self.setup:
                 self._queue_join_request()
         if self.role is Role.HOST and self.state is State.SETUP:
-            if self.peer_station_info and "profile" not in self.setup:
+            if self.peer_station_info and "station" not in self.setup:
+                self._queue_station_info()
+            if self.peer_profile and "profile" not in self.setup:
                 self._queue_profile()
             if self.peer_join_request and "mesh" not in self.setup:
                 self._queue_mesh_state()
@@ -311,8 +359,11 @@ class Session:
                 self._send(now, [self._msg(pia.PROTO_SYSTEM, pia.record_ack(self.system_next), reliable=1)])
                 if len(p) == 36:
                     self.peer_leaving = True        # the short end-of-session record (Gen 2 seen)
-            elif m.reliable and pia.record_ack_index(p) is not None:
-                pass                                # the joiner's system ack
+            elif m.reliable and (ack := pia.record_ack_index(p)) is not None:
+                if self.role is Role.HOST and ack > self.system_acked:  # the joiner's system ack
+                    if self.system_acked == pia.FIRST_INDEX:
+                        log.info("VC session: the console acked our system data (index %d)", ack - 1)
+                    self.system_acked = ack
             elif len(p) == 128 and p[0] == 0x02 and p[1] == 0x02 and self.role is Role.JOINER:
                 seq = struct.unpack_from(">I", p, 124)[0]
                 self.station = pia.STATION_JOINER   # the ack of the mesh state already carries index 01
@@ -333,10 +384,14 @@ class Session:
         return None
 
     def _on_ack(self, ack: int) -> None:
+        if self.send_acked == pia.FIRST_INDEX < ack <= self.send_next:
+            log.info("VC session: the peer acked our first game unit")
         if self.send_acked < ack <= self.send_next:
             self.send_acked = ack
 
     def _on_unit(self, unit: pia.Unit) -> None:
+        if unit.index == pia.FIRST_INDEX and self.recv_next == pia.FIRST_INDEX:
+            log.info("VC session: first game unit from the peer: %02X", unit.byte)
         self._on_ack(unit.ack)
         if unit.index == self.recv_next:
             self.received.append(unit.byte)
@@ -366,11 +421,19 @@ class Session:
             self._send_units(now, self.send_flushed, self.send_next)
             self.send_flushed = self.send_next
 
+    def _flags(self, index: int) -> bytes:
+        """A unit's role flags: 01 01 00 from a joiner; 00 00 00 from a host, except its first unit (EF, its Start),
+        FE 00 00 in all six captures (four retail hosts, two hosting VCs in Azahar). An EF with 00 00 00 was acked by a
+        retail joiner that then stayed in the link menu."""
+        if self.role is Role.JOINER:
+            return b"\x01\x01\x00"
+        return HOST_START_FLAGS if index == pia.FIRST_INDEX else b"\x00\x00\x00"
+
     def _send_units(self, now: int, first: int, end: int) -> None:
-        flags = b"\x00\x00\x00" if self.role is Role.HOST else b"\x01\x01\x00"
         while first < end:
             count = min(end - first, pia.UNIT_WINDOW)
-            messages = [self._msg(pia.PROTO_GAME, pia.Unit(i, self.recv_next, self.send_ring[i], flags).pack())
+            messages = [self._msg(pia.PROTO_GAME, pia.Unit(i, self.recv_next, self.send_ring[i], self._flags(i),
+                                                           value=self.unit_value).pack())
                         for i in range(first, first + count)]
             for i in range(first, first + count):
                 self.sent_at[i] = now
@@ -390,22 +453,32 @@ class Session:
         self._send(now, [self._msg(pia.PROTO_SYSTEM, struct.pack(">Q", self._ticks(now)) + bytes(8),
                                    pia.ID_BROADCAST, subtype=pia.SUBTYPE_CLOCK_SYNC)], direct=True)
 
-    def _send_system_data(self, now: int) -> None:
+    def _send_system_data(self, now: int, index: int | None = None) -> None:
+        """System data at ``index`` (a re-send), or at the next index."""
+        if index is None:
+            index = self.system_next
+            self.system_next += 1
         payload = bytearray(SYSTEM_DATA)
-        struct.pack_into(">ii", payload, 8, self.system_next, pia.FIRST_INDEX)
-        self.system_next += 1
+        struct.pack_into(">ii", payload, 8, index, pia.FIRST_INDEX)
+        self.system_sent, self.last_system_send = index, now
         self._send(now, [self._msg(pia.PROTO_SYSTEM, bytes(payload), reliable=1)])
+
+    @property
+    def ready_to_start(self) -> bool:
+        """Host: joined and the joiner has acked our first system data, so it may get our first game unit."""
+        return self.state is State.JOINED and self.system_acked > pia.FIRST_INDEX
 
     def poll(self, now: int) -> None:
         if self.state in (State.IDLE, State.CLOSED):
             return
         if now - self.last_rx >= SILENCE_MS:
-            log.info("VC session: the peer has been silent for %d s", SILENCE_MS // 1000)
+            log.info("VC session: the peer has been silent for %d s (%s)", SILENCE_MS // 1000, self.counts())
             self.state = State.CLOSED
             return
         if self.role is Role.HOST and not self.hello_answered and now - self.last_hello >= HELLO_MS:
             self.last_hello = now
             self._emit(now, pia.hello(int.from_bytes(os.urandom(4), "big")), broadcast=True)
+            self.hellos_sent += 1
         if self.state is State.SETUP:
             if self.role is Role.JOINER and now - self.setup_start >= SETUP_FALLBACK_MS:
                 if "profile" not in self.setup:
@@ -421,9 +494,13 @@ class Session:
         if self.role is Role.JOINER and now - self.last_clock_sync >= CLOCK_SYNC_MS:
             self.last_clock_sync = now
             self._send_clock_sync(now)
-        if self.role is Role.HOST and now - self.last_system >= SYSTEM_DATA_MS:
-            self.last_system = now
-            self._send_system_data(now)
+        if self.role is Role.HOST:
+            unacked = self.system_sent is not None and self.system_acked <= self.system_sent
+            if unacked and now - self.last_system_send >= SYSTEM_RESEND_MS:
+                self._send_system_data(now, self.system_sent)
+            elif not unacked and now - self.last_system >= SYSTEM_DATA_MS:
+                self.last_system = now
+                self._send_system_data(now)
         if self.send_flushed > self.send_acked and now - self.last_resend >= UNIT_RESEND_MS \
                 and now - self.sent_at.get(self.send_acked, now) >= UNIT_RESEND_MS:
             self.last_resend = now
@@ -431,6 +508,12 @@ class Session:
         keepalive = 4000 if self.role is Role.HOST else 2000
         if now - self.last_tx >= keepalive:
             self._send(now, [self._msg(pia.PROTO_KEEPALIVE, b"", subtype=pia.SUBTYPE_KEEPALIVE)])
+
+    def counts(self) -> str:
+        """What the session heard and sent, for the log."""
+        heard = ", ".join(f"{v} {k}" for k, v in self.frames_received.items()) or "no frames"
+        return (f"state {self.state.value}; heard {heard}, {self.frames_rejected} rejected; "
+                f"sent {self.hellos_sent} hello(s)")
 
     def leave(self, now: int) -> None:
         """Our end-of-session record on the system stream (a Gen 2 host waits for it)."""

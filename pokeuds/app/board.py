@@ -10,7 +10,7 @@ HELLO). One image per chip:
 | chip | image | host link | state |
 |---|---|---|---|
 | ESP32-S3 | ``esp32-uds-bridge-2.0-uds-esp32s3.bin`` | native USB (``303A:1001``) | the chip 1.8 ran on |
-| ESP32-C3, ESP32-C6 | ``...-esp32c3.bin``, ``...-esp32c6.bin`` | native USB (``303A:1001``) | alpha |
+| ESP32-C3, ESP32-C6 | ``...-esp32c3.bin``, ``...-esp32c6.bin`` | native USB (``303A:1001``) | traded on (0.1.5) |
 | ESP32 (classic) | ``...-esp32.bin`` (bootloader at 0x1000 inside it) | its board's USB-UART bridge (CP210x, CH340...), 921600 baud | alpha |
 
 The S3, C3 and C6 share one USB id, so flashing asks the chip (esptool) and writes that chip's image. VC-Adapter's
@@ -35,8 +35,8 @@ FIRMWARE = "2.0-uds"
 # esptool's chip name -> (the image's chip part, its SHA-256, alpha: not yet seen working on that chip).
 IMAGES = {
     "ESP32-S3": ("esp32s3", "ac7af250ad2f531e2b987c6752bbd36ff8137a4842a13b79a1be16adc17392bd", False),
-    "ESP32-C3": ("esp32c3", "a50dfe3cf5e91b676917b1a4c36d0fdd4aa83cbe53117ea41037d032c8b2a9f0", True),
-    "ESP32-C6": ("esp32c6", "f7821911cf529b6e4e57a5b755133a913d1228ded81d6892ea4b6b186992f6b6", True),
+    "ESP32-C3": ("esp32c3", "a50dfe3cf5e91b676917b1a4c36d0fdd4aa83cbe53117ea41037d032c8b2a9f0", False),
+    "ESP32-C6": ("esp32c6", "f7821911cf529b6e4e57a5b755133a913d1228ded81d6892ea4b6b186992f6b6", False),
     "ESP32": ("esp32", "b5ddfca142e559248089aba6ab1a950c9522d27eaf4dee5510985997094acfef", True),
 }
 CHIPS = tuple(IMAGES)

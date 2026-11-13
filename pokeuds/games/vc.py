@@ -1,8 +1,10 @@
 """The 3DS Virtual Console Game Boy Pokemon games: every title, in every language (docs/vc.md).
 
 Each title hosts or joins from its own link menu (the VC's host/join screen), on UDS with the
-passphrase ``TRL_NETWORK`` + NUL and a comm id that is the title id's low 32 bits + 0x10. That rule is
-measured for English Red, Gold and Silver; every other title's comm id follows it and is unmeasured.
+passphrase ``TRL_NETWORK`` + NUL and a comm id that is the title id's low 32 bits + 0x10, except that the two
+versions of a pair share one so they can trade: Blue hosts with Red's, Silver with Gold's (English Blue and Silver
+measured, 2026-11-13; the other languages follow the same rule, unmeasured). Measured for English Red, Blue, Gold
+and Silver; every other title's comm id is derived.
 
 Titles are matched by an explicit table, never by a mask over the comm id: the title ids of one
 generation do not share a prefix (Japanese Gen 1 is ``0017 0Cxx``, Korean Gold ``0017 35xx``), and two
@@ -16,8 +18,8 @@ in the blocks it exchanges:
 | ``kr`` | Korean (Gold and Silver only) | 11 bytes holding 2-byte Hangul; longer mail |
 
 Joining a Japanese game with international blocks corrupts the trade, so PokeUDS speaks each family's own
-blocks (pokeuds.vc.link, Languages) and joins or hosts any title in the table. Only English Red, Gold and Silver
-have been seen on the air; every other title is derived, and the Japanese and Korean blocks come from the
+blocks (pokeuds.vc.link, Languages) and joins or hosts any title in the table. Only English Red, Blue, Gold and
+Silver have been seen on the air; every other title is derived, and the Japanese and Korean blocks come from the
 cartridges (Lorenzooone's PokemonGB_Online_Trades), unmeasured on the Virtual Console.
 """
 
@@ -27,6 +29,13 @@ from dataclasses import dataclass
 
 PASSPHRASE = b"TRL_NETWORK\x00"
 CHANNEL = 6                    # the retail host in every capture
+# The NetworkInfo attributes PokeUDS's VC host network carries: bit 15, libctru's UDSNETATTR_Default and what every
+# retail network PokeUDS has heard carries (Gen 6, Gen 7). PokeUDS hosted with 0 and no console ever joined; in Gen 6
+# a network without it was listed with Trade greyed out. Not yet read off a retail VC host: a join logs its value.
+NETWORK_ATTRIBUTES = 0x8000
+# The NetworkInfo id a VC host network carries: 1 on retail Blue and Silver hosts (pokeuds scan, 2026-11-13).
+# PokeUDS hosted with 0 and no console joined it; the id is also part of the beacon's encryption and the CCMP key.
+NETWORK_ID = 1
 
 LANGUAGES = {"jp": "Japanese", "en": "English", "de": "German", "fr": "French", "es": "Spanish", "it": "Italian",
              "kr": "Korean"}
@@ -49,10 +58,11 @@ class VcTitle:
     title_id: int
     language: str              # a key of LANGUAGES
     measured: bool             # comm id seen on the air, not derived
+    comm_title_id: int = 0     # the title id the comm id comes from: its own, or its pair's (Blue: Red's)
 
     @property
     def comm_id(self) -> int:
-        return (self.title_id & 0xFFFFFFFF) + 0x10
+        return ((self.comm_title_id or self.title_id) & 0xFFFFFFFF) + 0x10
 
     @property
     def family(self) -> str:
@@ -76,7 +86,9 @@ _GAMES = (
                              "kr": 0x1736}),
     ("crystal", "Crystal", 2, {"jp": 0x1725, "en": 0x1728, "de": 0x172B, "fr": 0x172E, "es": 0x1731, "it": 0x1734}),
 )
-_MEASURED = {"red", "gold", "silver"}           # English only
+_MEASURED = {"red", "blue", "gold", "silver"}   # English only
+# A version that hosts with its pair's comm id, so the two can trade (measured for English Blue and Silver).
+_SHARES = {"blue": "red", "silver": "gold"}
 
 
 def title_key(game: str, language: str) -> str:
@@ -84,15 +96,20 @@ def title_key(game: str, language: str) -> str:
 
 
 def _titles():
+    middles = {game: ids for game, _, _, ids in _GAMES}
     for game, label, generation, ids in _GAMES:
         for language, middle in ids.items():
             key = title_key(game, language)
             name = f"Pokemon {label} (VC)" if language == "en" else f"Pokemon {label} (VC, {LANGUAGES[language]})"
-            yield VcTitle(key, name, generation, 0x0004000000000000 | (middle << 8), language, key in _MEASURED)
+            pair = middles.get(_SHARES.get(game, ""), {}).get(language)
+            yield VcTitle(key, name, generation, 0x0004000000000000 | (middle << 8), language, key in _MEASURED,
+                          0x0004000000000000 | (pair << 8) if pair else 0)
 
 
 TITLES = {t.key: t for t in _titles()}
-_BY_COMM_ID = {t.comm_id: t for t in TITLES.values()}
+_BY_COMM_ID: dict[int, VcTitle] = {}
+for _t in TITLES.values():                      # a shared comm id names the pair's first version (Red, Gold)
+    _BY_COMM_ID.setdefault(_t.comm_id, _t)
 HOSTABLE = tuple(k for k, t in TITLES.items() if t.supported)       # what `--as` takes
 
 

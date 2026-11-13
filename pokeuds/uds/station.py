@@ -106,6 +106,9 @@ class Station:
         self._thread: threading.Thread | None = None
         self._last_beacon_heard = 0.0
         self._beacon_times: dict[bytes, float] = {}
+        # What went through the network, for the log when a session fails: SecureData sent and received per UDS
+        # channel (broadcast or unicast on the air), management replies, frames that failed CCMP.
+        self.stats: collections.Counter[str] = collections.Counter()
 
     # -- lifecycle --------------------------------------------------------------------------------
 
@@ -264,6 +267,9 @@ class Station:
             packet = data.SecureData(channel, self._next_secure_seq(), dest_node, self.node_id, payload)
             self._send_securedata(packet, broadcast=broadcast)
 
+    def stats_text(self) -> str:
+        return ", ".join(f"{k} {v}" for k, v in sorted(self.stats.items())) or "nothing"
+
     def recv(self, channel: int, timeout: float | None = None) -> data.SecureData | None:
         try:
             return self._channels[channel].get(timeout=timeout)
@@ -279,6 +285,7 @@ class Station:
         assert self.network is not None
         if broadcast or packet.dest_node == data.BROADCAST_NODE:
             dest = BROADCAST
+            self.stats[f"tx ch{packet.channel} broadcast"] += 1
         elif packet.dest_node == data.HOST_NODE:
             dest = self.network.host_mac
         else:
@@ -286,6 +293,8 @@ class Station:
             if peer is None:
                 raise UdsError(f"no node {packet.dest_node} in the network")
             dest = peer.mac
+        if dest is not BROADCAST:
+            self.stats[f"tx ch{packet.channel} unicast"] += 1
         self._send_data(dest, data.pack_securedata(packet))
 
     def _send_data(self, dest: bytes, plaintext: bytes) -> None:
@@ -501,6 +510,7 @@ class Station:
         plaintext = crypto.open_data_frame(self.key, frame)
         if plaintext is None:
             log.debug("CCMP check failed for a frame from %s", mac_str(frame.transmitter))
+            self.stats["rx CCMP failed"] += 1
             return
         peer.recent_pns.append(pn)
         kind = data.ethertype(plaintext)
@@ -524,6 +534,7 @@ class Station:
             if self.role is Role.HOST:
                 self._send_securedata(packet, broadcast=True)  # Relay for the intended client.
             return
+        self.stats[f"rx ch{packet.channel}{' management' if packet.management else ''}"] += 1
         if packet.management:
             if self.role is Role.HOST and packet.channel == data.MANAGEMENT_CHANNEL and packet.payload == b"\x00":
                 reply = data.SecureData(packet.channel, self._next_secure_seq(), packet.src_node, self.node_id,

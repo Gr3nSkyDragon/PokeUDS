@@ -147,3 +147,109 @@ def test_analyze_reads_vc_streams_from_a_transcript():
     assert streams["tx"] == [0x60]                                     # the joiner's unit -2000
     host = streams["rx"]
     assert host[0] == 0x00 and len(host) == 26                         # the host unit, then a 25-unit window
+
+
+def test_the_host_answers_each_setup_message_in_turn():
+    """A retail VC host (sniff of two retail consoles) waits for each of the joiner's setup messages and answers it:
+    station info -> ack + its station info, profile -> ack + its profile, join request -> ack + mesh state. PokeUDS
+    sent its station info at the hello reply and its profile at the joiner's station info, and a retail joiner never
+    sent its join request."""
+    from pokeuds.vc import pia
+    from pokeuds.vc.session import Config, Role, Session
+
+    to_joiner, to_host = [], []
+    host = Session(Role.HOST, lambda raw, bc: to_joiner.append(raw), Config(application_data=bytes(16)))
+    joiner = Session(Role.JOINER, lambda raw, bc: to_host.append(raw), Config(application_data=bytes(16)))
+
+    def kinds(frames):
+        out = []
+        for raw in frames:
+            f = pia.parse(raw)
+            if f.kind != pia.KIND_PIA:
+                out.append({pia.KIND_HELLO: "hello", pia.KIND_HELLO_REPLY: "reply"}[f.kind])
+                continue
+            for m in f.messages:
+                p = m.payload
+                out.append({(1, 8): "ack", (1, 62): "station", (1, 80): "profile", (2, 16): "join",
+                            (2, 128): "mesh"}.get((m.protocol, len(p)), "other"))
+        return out
+
+    def deliver(frames, to, now):
+        for raw in frames:
+            to.receive(now, raw)
+
+    host.start(0)
+    assert kinds(to_joiner) == ["hello"]
+    hello = list(to_joiner); to_joiner.clear()
+    deliver(hello, joiner, 10)                                   # the joiner answers and sends its station info
+    assert kinds(to_host) == ["reply", "station"]
+    reply = [to_host.pop(0)]
+    deliver(reply, host, 20)
+    assert kinds(to_joiner) == []                                # nothing until the joiner's station info
+    station = list(to_host); to_host.clear()
+    deliver(station, host, 30)
+    assert kinds(to_joiner) == ["ack", "station"]                # not the profile yet
+    answer = list(to_joiner); to_joiner.clear()
+    deliver(answer, joiner, 40)
+    assert "profile" in kinds(to_host)
+    from_joiner = list(to_host); to_host.clear()
+    deliver(from_joiner, host, 50)
+    assert kinds(to_joiner)[-2:] == ["ack", "profile"]
+    answer = list(to_joiner); to_joiner.clear()
+    deliver(answer, joiner, 60)
+    assert "join" in kinds(to_host)
+    from_joiner = list(to_host); to_host.clear()
+    deliver(from_joiner, host, 70)
+    assert kinds(to_joiner)[-2:] == ["ack", "mesh"]
+
+
+def test_the_host_starts_after_its_system_data_is_acked():
+    """As Azahar's hosting VC did with a retail joiner that went on to the Trade Center: system data re-sent every
+    SYSTEM_RESEND_MS until the joiner acks it, and only then the host's first game unit (EF, its Start); every host
+    unit carries a per-session value (retail hosts: D3613024, 30583202). PokeUDS sent EF at the join and system data
+    once, and a retail joiner sat in the link menu."""
+    from pokeuds.vc import pia
+    from pokeuds.vc import session as vcs
+    from pokeuds.vc.session import Config, Role, Session, State
+
+    sent = []
+    host = Session(Role.HOST, lambda raw, bc: sent.append(raw), Config(application_data=bytes(16)))
+    host.start(0)
+    host.state = State.SETUP
+    host._joined(0)                                      # as when the joiner acks the mesh state
+    assert host.state is State.JOINED and not host.ready_to_start and host.unit_value != 0
+
+    def system_indexes():
+        out = []
+        for raw in sent:
+            f = pia.parse(raw)
+            for m in (f.messages if f and f.kind == pia.KIND_PIA else []):
+                if m.protocol == pia.PROTO_SYSTEM and m.reliable and len(m.payload) == 148:
+                    out.append(struct.unpack_from(">i", m.payload, 8)[0])
+        return out
+
+    for now in range(100, 1000, 100):
+        host.receive(now, pia.build([pia.Message(pia.PROTO_KEEPALIVE, b"", pia.ID_HOST, 1, 0xC0)],
+                                    connection_id=5, packet_id=now, clock=now, peer_clock=0))
+        host.poll(now)
+    assert system_indexes()[0] == pia.FIRST_INDEX and len(system_indexes()) >= 3
+    assert set(system_indexes()) == {pia.FIRST_INDEX}    # the same message again, not the next index
+    ack = pia.build([pia.Message(pia.PROTO_SYSTEM, pia.record_ack(pia.FIRST_INDEX + 1), pia.ID_HOST, 1, reliable=1)],
+                    connection_id=5, packet_id=999, clock=1000, peer_clock=0)
+    host.receive(1000, ack)
+    assert host.ready_to_start
+    sent.clear()
+    host.poll(1000 + vcs.SYSTEM_RESEND_MS)
+    assert system_indexes() == []                        # acked: no more re-sends until the next 10 s message
+    assert host.queue_unit(0xEF)
+    host.flush(1300)
+    units = [pia.Unit.unpack(m.payload) for raw in sent if (f := pia.parse(raw)) and f.kind == pia.KIND_PIA
+             for m in f.messages if m.protocol == pia.PROTO_GAME]
+    assert units and units[0].byte == 0xEF and units[0].value == host.unit_value != 0
+    # FE 00 00 on the host's first unit in all six captures; with 00 00 00 a retail joiner acked it and stayed put
+    assert units[0].role_flags == b"\xfe\x00\x00"
+    host.queue_unit(0x00)
+    host.flush(1400)
+    later = [pia.Unit.unpack(m.payload) for raw in sent if (f := pia.parse(raw)) and f.kind == pia.KIND_PIA
+             for m in f.messages if m.protocol == pia.PROTO_GAME]
+    assert later[-1].index == pia.FIRST_INDEX + 1 and later[-1].role_flags == bytes(3)

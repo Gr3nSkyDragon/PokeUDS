@@ -53,9 +53,17 @@ def wire_offer(offer: gbpk.Record, mode: link.LinkMode) -> gbpk.Record:
 
 
 def host_application_data() -> bytes:
-    # 16 bytes shaped like the retail host's (08, seven per-session bytes, 01, zeros). Their meaning,
-    # and whether a joining VC checks them, is not known yet.
-    return b"\x08" + os.urandom(7) + b"\x01" + bytes(7)
+    # 16 bytes shaped like a retail host's: eight per-session bytes, 01, seven zeros (retail Blue and Silver hosts,
+    # pokeuds scan, 2026-11-13). What the eight bytes mean, and whether a joining VC checks them, is not known.
+    return os.urandom(8) + b"\x01" + bytes(7)
+
+
+def describe_network(info) -> str:
+    """A host network's NetworkInfo for the log: what a joining VC may check, side by side for a retail host (a
+    join) and PokeUDS's own (a host)."""
+    return (f"comm id {info.wlan_comm_id:08X}, id {info.id}, attributes 0x{info.attributes:04X}, update counter "
+            f"{info.update_counter}, nodes {info.total_nodes}/{info.max_nodes}, channel {info.channel}, "
+            f"application data {info.application_data.hex() or 'none'}")
 
 
 class UnsupportedTitle(TimeoutError):
@@ -132,6 +140,7 @@ class VcTrade:
         self.partner_generation = title.generation
         log.info("joining %s (%s) on channel %d%s", title.name, mac_str(target.host), target.channel,
                  "" if title.measured else "; its comm id is derived, not measured")
+        log.info("its network: %s", describe_network(target.info))
         self.station.connect(target, titles.PASSPHRASE)
         self._open(Role.JOINER, target.info.application_data)
 
@@ -141,8 +150,10 @@ class VcTrade:
             raise ValueError(why)
         appdata = host_application_data()
         self.host_title = title
-        self.station.host(wlan_comm_id=title.comm_id, passphrase=titles.PASSPHRASE, channel=titles.CHANNEL,
-                          max_nodes=2, application_data=appdata)
+        network = self.station.host(wlan_comm_id=title.comm_id, passphrase=titles.PASSPHRASE, channel=titles.CHANNEL,
+                                    max_nodes=2, application_data=appdata, id_=titles.NETWORK_ID,
+                                    attributes=titles.NETWORK_ATTRIBUTES)
+        log.info("our network: %s", describe_network(network))
         self.partner_generation = partner_generation
         deadline = time.monotonic() + seconds
         while not any(p.connected for p in self.station.peers.values()):
@@ -201,10 +212,14 @@ class VcTrade:
                            mails if self.mode is link.GEN2 else [])
         self.engine = link.TradeEngine(self.mode, party, trades=self.trades, on_trade=self._on_trade, family=family)
         peer_node = 1 if role is Role.JOINER else 2
+        # As host, every frame goes on the air as a broadcast, the ones for node 2 too, as a retail VC host's do (a
+        # sniff of two retail consoles, 2026-10-04); as joiner, unicast to the host, which retail hosts take.
+        on_air_broadcast = role is Role.HOST
 
         def send(frame: bytes, broadcast: bool) -> None:
             try:
-                self.station.send(BROADCAST_NODE if broadcast else peer_node, pia.UDS_CHANNEL, frame)
+                self.station.send(BROADCAST_NODE if broadcast else peer_node, pia.UDS_CHANNEL, frame,
+                                  broadcast=broadcast or on_air_broadcast)
             except Exception as exc:
                 log.debug("UDS send failed: %s", exc)
 
@@ -251,13 +266,18 @@ class VcTrade:
             self.step(now())
         if self.session.state is State.CLOSED:
             log.info("the VC session closed")
+        log.info("VC session: %s; UDS: %s", self.session.counts(), self.station.stats_text())
 
     def step(self, now: int) -> None:
         session, engine = self.session, self.engine
         session.poll(now)
         self._report(session, engine)
-        if session.state is State.JOINED and self._role is Role.HOST and not self._first_sent:
-            self._first_sent = session.queue_unit(0xEF)        # the host's first unit, before the joiner's
+        if self._role is Role.HOST and not self._first_sent and session.ready_to_start:
+            # The host's first unit, EF, before the joiner's: its Start, which takes the joiner from the link menu
+            # to the room. Only once the joiner has acked our system data, as the VC host does.
+            self._first_sent = session.queue_unit(0xEF)
+            if self._first_sent:
+                log.info("VC session: sent the host's first game unit (EF): the console should leave the link menu")
         for byte in session.pop_units():
             session.queue_unit(engine.respond(byte))           # joiner: unit k; host: unit k+1
         session.flush(now)

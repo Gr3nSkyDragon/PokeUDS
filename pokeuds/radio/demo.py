@@ -74,9 +74,10 @@ class SimulatedVcHost:
 
         self.station = Station(SimRadio(air), bytes.fromhex("02000000AA01"), key, name="DEMO")
         self.station.start(titles.CHANNEL)
-        self.appdata = b"\x08" + os.urandom(7) + b"\x01" + bytes(7)
+        self.appdata = os.urandom(8) + b"\x01" + bytes(7)          # as a retail host's
         self.station.host(wlan_comm_id=title.comm_id, passphrase=titles.PASSPHRASE, channel=titles.CHANNEL,
-                          max_nodes=2, application_data=self.appdata)
+                          max_nodes=2, application_data=self.appdata, id_=titles.NETWORK_ID,
+                          attributes=titles.NETWORK_ATTRIBUTES)
         self.model = model
         self.stop = threading.Event()
         self.thread = threading.Thread(target=self._run, daemon=True, name="demo-console")
@@ -102,7 +103,7 @@ class SimulatedVcHost:
                     session.receive(now(), packet.payload)
                     packet = self.station.recv(pia.UDS_CHANNEL, timeout=0)
                 session.poll(now())
-                if session.state is State.JOINED and not first:
+                if session.ready_to_start and not first:          # EF once the joiner has our system data
                     first = session.queue_unit(next(game))
                 for byte in session.pop_units():
                     if not self.model.done:

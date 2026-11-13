@@ -129,7 +129,7 @@ def _print_beacon(b) -> None:
     info = b.info
     names = ", ".join(f"{n.network_node_id}:{n.name or '?'}" for n in (b.nodes or []) if not n.empty())
     print(f"{mac_str(b.host)} ch {b.channel:>2} rssi {b.rssi if b.rssi is not None else '?':>4}  "
-          f"comm {info.wlan_comm_id:08X} id {info.id} net {info.network_id:08X}  "
+          f"comm {info.wlan_comm_id:08X} id {info.id} attr 0x{info.attributes:04X} net {info.network_id:08X}  "
           f"nodes {info.total_nodes}/{info.max_nodes} [{names or ('undecryptable' if b.nodes is None else '-')}]  "
           f"appdata {len(info.application_data)} B{'' if b.sha1_valid else ' (bad SHA-1)'}")
     if info.application_data:

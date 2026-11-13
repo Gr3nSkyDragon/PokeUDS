@@ -85,25 +85,29 @@ def test_mode_choice():
     assert choose_mode(gen1_mon(), 1) is link.GEN1
     assert choose_mode(gen2_mon(), 2) is link.GEN2
     assert choose_mode(gen1_mon(), 2) is choose_mode(gen2_mon(), 1) is link.TIME_CAPSULE
-    assert titles.generation_of(0x00171010) == 1 and titles.generation_of(0x00172710) == 2
+    assert titles.generation_of(0x00171010) == 1 and titles.generation_of(0x00172610) == 2
     assert titles.TITLES["gold"].comm_id == 0x00172610 and titles.title_of(0x00171010).key == "red"
 
 
 def test_every_vc_title_is_in_the_table():
-    """The 39 titles, each with its own comm id; a title is matched by the table, never by a mask."""
-    assert len(titles.TITLES) == 39 and len({t.comm_id for t in titles.TITLES.values()}) == 39
+    """The 39 titles; a title is matched by the table, never by a mask. Blue shares Red's comm id and Silver
+    Gold's (retail English Blue and Silver hosts, 2026-11-13); every other title has its own."""
+    assert len(titles.TITLES) == 39 and len({t.comm_id for t in titles.TITLES.values()}) == 39 - 6 - 7
     by_language = {}
     for t in titles.TITLES.values():
         by_language.setdefault(t.language, []).append(t.key)
-        assert titles.title_of(t.comm_id) is t and titles.generation_of(t.comm_id) == t.generation
-        assert t.comm_id == (t.title_id & 0xFFFFFFFF) + 0x10 and t.title_id >> 32 == 0x00040000
+        pair = {"blue": "red", "silver": "gold"}.get(t.key.split("-")[0])
+        first = titles.TITLES[titles.title_key(pair, t.language)] if pair else t
+        assert titles.title_of(t.comm_id) is first and titles.generation_of(t.comm_id) == t.generation
+        assert t.comm_id == (first.title_id & 0xFFFFFFFF) + 0x10 and t.title_id >> 32 == 0x00040000
     assert {k: len(v) for k, v in by_language.items()} == {"jp": 7, "en": 6, "de": 6, "fr": 6, "es": 6, "it": 6, "kr": 2}
     assert sorted(by_language["kr"]) == ["gold-kr", "silver-kr"] and "green-jp" in by_language["jp"]
-    assert [t.key for t in titles.TITLES.values() if t.measured] == ["red", "gold", "silver"]
+    assert [t.key for t in titles.TITLES.values() if t.measured] == ["red", "blue", "gold", "silver"]
+    assert titles.TITLES["blue"].comm_id == 0x00171010 and titles.TITLES["silver"].comm_id == 0x00172610
     # What the family mask got wrong (comm ids from the title list):
-    gold_jp, silver_es, gold_kr, red_jp = (titles.title_of(i) for i in (0x00172310, 0x00173010, 0x00173510, 0x00170C10))
+    gold_jp, crystal_es, gold_kr, red_jp = (titles.title_of(i) for i in (0x00172310, 0x00173110, 0x00173510, 0x00170C10))
     assert gold_jp.key == "gold-jp" and gold_jp.family == "jp"            # was joined as international
-    assert silver_es.key == "silver-es" and silver_es.generation == 2      # 00173xxx: was missed
+    assert crystal_es.key == "crystal-es" and crystal_es.generation == 2  # 00173xxx: was missed
     assert gold_kr.family == "kr"                                          # was missed
     assert red_jp.generation == 1 and red_jp.family == "jp"                # 00170xxx: was ignored
     assert titles.title_of(0x00172010) is None and titles.generation_of(0x00171F10) is None    # in a family, not a title
@@ -232,12 +236,14 @@ class SimulatedVcJoiner:
         self.station = Station(SimRadio(air), bytes.fromhex("02000000CC03"), key, name="RETAIL")
         self.station.start(1)
         self.model = model
+        self.heard = None                                # the host network it joined
         self.stop = threading.Event()
         self.thread = threading.Thread(target=self._run, daemon=True)
         self.thread.start()
 
     def _run(self):
         target = self.station.scan(5.0, until=lambda b: titles.generation_of(b.info.wlan_comm_id) is not None)
+        self.heard = target[0]
         self.station.connect(target[0], titles.PASSPHRASE)
         send = lambda raw, bc: self.station.send(BROADCAST_NODE if bc else 1, pia.UDS_CHANNEL, raw)
         s = Session(Role.JOINER, send, Config(name="RETAIL", application_data=target[0].info.application_data))
@@ -266,7 +272,7 @@ class SimulatedVcJoiner:
 
 
 @pytest.mark.parametrize("title_key,offer_gen", [("red", 1), ("gold", 2)])
-def test_pokeuds_hosting(air, tmp_path, title_key, offer_gen):
+def test_pokeuds_hosting(air, tmp_path, title_key, offer_gen, monkeypatch):
     """Host mode (experimental on hardware) against the model as a joining 3DS."""
     key = os.urandom(16)
     title = titles.TITLES[title_key]
@@ -275,6 +281,14 @@ def test_pokeuds_hosting(air, tmp_path, title_key, offer_gen):
     theirs = gen1_mon(dex=1, nick="BULBA") if offer_gen == 1 else gen2_mon(dex=152, nick="CHIKO")
     station = Station(SimRadio(air), bytes.fromhex("02000000DD04"), key, name="POKEUDS")
     station.start(titles.CHANNEL)
+    sent = []
+    real_send = station.send
+
+    def send(dest_node, channel, payload, *, broadcast=False):
+        sent.append((dest_node, broadcast, payload))
+        real_send(dest_node, channel, payload, broadcast=broadcast)
+
+    monkeypatch.setattr(station, "send", send)
     trade = VcTrade(station, mine, tmp_path)
     console = SimulatedVcJoiner(air, key, Model3DS(mode, party(theirs), role="joiner"))
     try:
@@ -288,6 +302,21 @@ def test_pokeuds_hosting(air, tmp_path, title_key, offer_gen):
         time.sleep(0.2)
         assert console.model.received == [mine]
         assert gbpk.Record.from_file(trade.saved[0].read_bytes()) == theirs
+        # libctru's default attributes, as every retail network carries: with 0 no console joined PokeUDS's host
+        assert console.heard.info.attributes == titles.NETWORK_ATTRIBUTES == 0x8000
+        # id 1 and 8 bytes, 01, zeros, as retail Blue and Silver hosts: with id 0 no console joined
+        assert console.heard.info.id == titles.NETWORK_ID == 1
+        data = console.heard.info.application_data
+        assert len(data) == 16 and data[8:] == b"\x01" + bytes(7)
+        # As a retail VC host (sniff of two retail consoles): every frame a broadcast on the air, and the setup
+        # messages (station info, profile, mesh state) for destination 0; a retail joiner ignored them sent to 2.
+        assert sent and all(broadcast for _, broadcast, _ in sent)
+        kinds = ((pia.PROTO_SETUP, 62), (pia.PROTO_SETUP, 80), (pia.PROTO_SYSTEM, 128))
+        setup = [m for _, _, raw in sent if (f := pia.parse(raw)) and f.kind == pia.KIND_PIA for m in f.messages
+                 if (m.protocol, len(m.payload)) in kinds]
+        assert {(m.protocol, len(m.payload)) for m in setup} == set(kinds)
+        assert all(m.destination == pia.ID_BROADCAST for m in setup)
     finally:
         console.close()
         station.close()
+

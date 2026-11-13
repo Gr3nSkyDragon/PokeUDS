@@ -100,17 +100,26 @@ item number), Special Attack and Special Defense from Gen 2 base stats, friendsh
 
 ## Measured, derived, unknown
 
-- **Measured** (retail captures, Gr3nSkyDragon): the comm ids of Red `0x00171010`, Gold `0x00172610` and
-  Silver `0x00172710`; every frame and message format; the joiner's handshake; the unit layout; the
-  block window.
-- **Derived**: every other title's comm id (title id + 0x10, unmeasured): English Blue, Yellow and Crystal, and
-  every non-English title (Languages, below). Joining matches the comm id against the title table, so a wrong
+- **Measured** (retail captures, Gr3nSkyDragon): the comm ids of Red `0x00171010` and Gold `0x00172610`, which
+  Blue and Silver share (a pair hosts on one comm id so its two versions can trade: `pokeuds scan` of retail
+  English Blue and Silver hosts, 2026-11-13); every frame and message format; the joiner's handshake; the unit
+  layout; the block window. A retail host's network: id `1`, two nodes, channel 6, and 16 bytes of application
+  data, eight per-session bytes, `01`, seven zeros.
+- **Derived**: every other title's comm id (title id + 0x10, Blue and Silver their pair's; unmeasured): English
+  Yellow and Crystal, and every non-English title (Languages, below). Joining matches the comm id against the title table, so a wrong
   guess means that title is not found: `python -m pokeuds scan` shows the comm id a console really sends.
 - **Experimental: hosting.** The host's messages, including the mesh state and system data replayed
   from the retail host's frames, are what a retail host sends, and PokeUDS-as-host trades with the
-  model. But Azahar hosting a retail joiner never completed a trade, for a cause not visible on the wire,
-  and the host's 16 bytes of beacon application data are copied in shape only (`08`, seven random
-  bytes, `01`, zeros). Prefer joining.
+  model. Its network now matches a retail host's (id `1`, attributes `0x8000`, the application data's shape);
+  with id `0` and attributes `0`, no console joined it. As in a sniff of two retail consoles (2026-10-04), every
+  frame goes on the air as a broadcast and the setup messages (station info, profile, mesh state) are for
+  destination `0`: a retail joiner answered PokeUDS's hello, took its acks (destination `0`) and ignored its
+  station info and profile sent to `2`, then gave up. The host answers each joiner setup message in turn (its
+  station info after the joiner's, its profile after the joiner's, the mesh state after the join request),
+  re-sends its system data every 0.25 s until it is acked, and only then sends its Start: its first game unit,
+  `EF`, with role flags `FE 00 00` (every later host unit `00 00 00`; all six captures). Host units carry a
+  per-session 32-bit value. A retail joiner acked an `EF` flagged `00 00 00` and stayed in the link menu. Azahar hosting a retail joiner never completed a trade,
+  for a cause not visible on the wire. Not yet traded on hardware: prefer joining.
 - **Unknown**: whether a VC checks the application data; Gen 2 against a retail console over the air
   (Gen 2 was measured through Azahar's local bridge); Crystal; everything about the non-English titles on
   the air (Languages, below).
