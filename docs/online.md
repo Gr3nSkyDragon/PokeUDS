@@ -4,7 +4,7 @@ PokeUDS trades over the internet in two ways:
 
 | | what it is | state |
 |---|---|---|
-| **The GTS** | list a banked Pokemon against what you want; anyone can offer on it, at any time. Bank to bank, no console needed at either end. | written and tested against a fake relay; **never run against the public relays yet** |
+| **The GTS** | list a banked Pokemon against what you want; anyone can offer on it, at any time. Bank to bank, no console needed at either end. | working: a GTS trade run against the public relays (2026-11-14) |
 | **Online trades** | two players trade live, each with their own 3DS beside their own PokeUDS. Each board hosts a local trade; the two apps carry the offers between them. | not set up yet; designed (below) after pokeldn; needs the offer-source refactor, then hardware |
 
 Both ride on [Nostr](https://github.com/nostr-protocol/nips) relays: public servers that keep and pass on signed
@@ -111,9 +111,9 @@ withdrawal, expiry and clean-up, a lister that sends the wrong Pokemon, relays t
 and crashes mid-trade; and the page headless. `tests/test_online.py` covers the signatures and the relay client
 against loopback WebSocket relays.
 
-**Not yet done:** a run against the public relays. Publishing there is outward-facing (the events are public and
-may be kept), so it waits for a deliberate first listing. Unmeasured until then: relay limits on event size (a
-listing is about 1 KB, an offer about 0.5 KB), how long the relays keep kind 1059 events, and how they treat NIP-40.
+A GTS trade has since run against the public relays and worked (2026-11-14). Still unmeasured: relay limits on
+event size (a listing is about 1 KB, an offer about 0.5 KB), how long the relays keep kind 1059 events, and how
+they treat NIP-40.
 
 ## Online trades (planned)
 
