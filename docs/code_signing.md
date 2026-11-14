@@ -1,17 +1,18 @@
-# Code signing policy
+# Code signing policy (planned)
 
-Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by
-[SignPath Foundation](https://signpath.org)
+**PokeUDS is not code-signed yet.** It is working towards free code signing for open-source projects from
+[SignPath Foundation](https://signpath.org); its first application was not accepted. Until signing is in place,
+`PokeUDS-windows.zip` on the [Releases](https://github.com/Gr3nSkyDragon/PokeUDS/releases) page is unsigned, and
+Windows may warn about an unknown publisher when the app first starts.
 
-The Windows release of the app, `PokeUDS-windows.zip` on the
-[Releases](https://github.com/Gr3nSkyDragon/PokeUDS/releases) page, carries an Authenticode signature on the
-binaries built from this repository's source: `PokeUDS.exe` and the PKHeX helper `pokeuds-pkhex.exe`. GitHub
-Actions builds them from a `v*` tag of this repository
-([release.yml](https://github.com/Gr3nSkyDragon/PokeUDS/blob/main/.github/workflows/release.yml)); SignPath signs
-the files that build produced and nothing built elsewhere. The artifact configuration is
-[.github/signpath/artifact-configuration.xml](https://github.com/Gr3nSkyDragon/PokeUDS/blob/main/.github/signpath/artifact-configuration.xml).
-Third-party files bundled unchanged (Python, Flet's window) keep their own publisher's signature or none. The Mac
-app is not signed by SignPath.
+What signing would cover, once granted: an Authenticode signature on the binaries built from this repository's
+source, `PokeUDS.exe` and the PKHeX helper `pokeuds-pkhex.exe`. GitHub Actions builds them from a `v*` tag of this
+repository ([release.yml](https://github.com/Gr3nSkyDragon/PokeUDS/blob/main/.github/workflows/release.yml)), and
+only the files that build produced would be signed, nothing built elsewhere. The workflow and the artifact
+configuration
+([.github/signpath/artifact-configuration.xml](https://github.com/Gr3nSkyDragon/PokeUDS/blob/main/.github/signpath/artifact-configuration.xml))
+are ready; they sign nothing while the SignPath secret is not set. Third-party files bundled unchanged (Python,
+Flet's window) keep their own publisher's signature or none. The Mac app would not be signed by SignPath.
 
 ## Team roles
 
@@ -20,8 +21,8 @@ app is not signed by SignPath.
 | Committers and reviewers | [Gr3nSkyDragon](https://github.com/Gr3nSkyDragon) |
 | Approvers | [Gr3nSkyDragon](https://github.com/Gr3nSkyDragon) |
 
-Every signing request for a release is approved by hand. Contributions from other people reach the repository only
-as pull requests a committer reviews.
+Once signing is in place, every signing request for a release is approved by hand. Contributions from other people
+reach the repository only as pull requests a committer reviews.
 
 ## Privacy policy
 
