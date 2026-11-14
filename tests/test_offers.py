@@ -228,3 +228,68 @@ def test_gen7_offers_after_the_console_and_says_yes_after_the_partner(pokeuds_ho
         host_st.close()
         join_st.close()
         air.close()
+
+
+# -- Touch Trade: the console's own offer, offered back ---------------------------------------------
+
+def test_touch_trade_gives_a_gen6_console_its_own_pokemon_back(tmp_path):
+    air = Air()
+    kadabra = make_record(0x64646464, species=64, nickname="Kadabra")
+    source = offers.Mirror()
+    ours, console = gen6_pair(air, tmp_path, source, [kadabra], 1)
+    try:
+        run_both(lambda: ours.run("join", 20.0), lambda: console.run("host", 20.0))
+        assert [p.read_bytes() for p in console.saved] == [kadabra[:pkx.STORED_SIZE]]   # its own Kadabra came back
+        assert ours.saved == [] and source.last[1] == gen6_session.party_record(kadabra)
+    finally:
+        ours.station.close()
+        console.station.close()
+        air.close()
+
+
+def test_touch_trade_gives_a_gen7_console_its_own_pokemon_back(monkeypatch):
+    monkeypatch.setattr(gen7_session, "SCREEN_WAIT", 0.5)
+    air, key = Air(), os.urandom(16)
+    host_st = Station(SimRadio(air), bytes.fromhex("02000000B741"), key, name="HOST")
+    join_st = Station(SimRadio(air), bytes.fromhex("02000000B742"), key, name="JOIN")
+    host_st.start(1)
+    join_st.start(1)
+    graveler = pk7(0x4B4B, 75, "Graveler")
+    results = {}
+
+    def host():
+        host_st.host(wlan_comm_id=COMM7, passphrase=PASS7, channel=1, max_nodes=4, id_=1)
+        deadline = time.monotonic() + 10
+        while not any(p.connected for p in host_st.peers.values()):
+            assert time.monotonic() < deadline, "nobody joined"
+            time.sleep(0.02)
+        mirror = offers.Mirror(1)
+        results["pokeuds"] = gen7_session.Gen7Session(host_st, gen7_wire.Trainer("Hosty"), offers=mirror).run()
+
+    def join():
+        found = join_st.scan(10, until=lambda b: b.info.wlan_comm_id == COMM7)
+        join_st.connect(next(b for b in found if b.info.wlan_comm_id == COMM7), PASS7)
+        results["console"] = gen7_session.Gen7Session(join_st, gen7_wire.Trainer("Joiny"), graveler, trades=1,
+                                                      answer_first=True).run()
+
+    try:
+        run_both(host, join, timeout=90)
+        assert results["console"] == [graveler] and results["pokeuds"] == [graveler]
+    finally:
+        host_st.close()
+        join_st.close()
+        air.close()
+
+
+def test_the_mirror_offers_only_what_the_console_offers():
+    m = offers.Mirror(trades=2)
+    assert not m.offers_first and m.offer() is None and m.partner_accepts() is None and not m.ended()
+    m.console_offers(b"kadabra")
+    assert m.offer() == b"kadabra" and m.partner_accepts() is True
+    m.console_withdrew()
+    assert m.offer() is None
+    m.console_offers(b"machoke")
+    m.traded(b"machoke")
+    m.console_offers(b"haunter")
+    m.traded(b"haunter")
+    assert m.last == (b"haunter", b"haunter") and m.ended()

@@ -98,6 +98,22 @@ PokeUDS plays the partner's console to yours: the room your 3DS chooses (the Tra
 Capsule) decides where it meets the partner, Red/Blue/Yellow and the Time Capsule together, Gold/Silver/Crystal's
 Trade Center apart. Each 3DS sees the other's real party, pick and answer. PKHeX is not needed.
 
+**Touch Trade**, for trade evolutions (Kadabra, Machoke, Graveler, Haunter, and the held-item ones):
+
+```bash
+python -m pokeuds trade xy --radio esp32 --touch-trade
+```
+
+```bash
+python -m pokeuds vc trade --radio esp32 --touch-trade
+```
+
+PokeUDS offers back whatever the 3DS offers, in the same trade: the 3DS receives its own Pokemon, as from a trade,
+and evolves it. On the Virtual Console the 3DS is shown its own party and PokeUDS picks the slot it picks. There is
+no `--offer`, PokeUDS keeps nothing, and the trade is one swap, so the Pokemon is never away from the 3DS. Karrablast
+and Shelmet evolve only when traded for each other, so not this way. It goes on until the 3DS leaves the trade
+screen, or `--trades` trades.
+
 The Virtual Console games (Red, Blue, Yellow, Gold, Silver, Crystal):
 
 ```bash

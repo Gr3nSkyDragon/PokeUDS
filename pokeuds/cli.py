@@ -327,7 +327,7 @@ def cmd_trade(args) -> int:
             raise SystemExit(f"{path}: {exc}; {game.name} cannot receive it")
         offers.append(offer)
     offer = offers[0] if offers else b""
-    if args.trades is None and not online:
+    if args.trades is None and not online and not args.touch_trade:
         args.trades = len(offers)
     prof = profile.load(game.key, args.profile)
     if missing := prof.missing():
@@ -442,7 +442,7 @@ def _trade_gen7(args, station, game, prof, offer: bytes, queue: list[bytes], onl
 
     trainer = _gen7_trainer(game, offer, args)
     queue = [pkx.decrypt(q) if not pkx.checksum_valid(q) else q for q in queue]
-    source = _online_offers(args, game, trainer.name) if online else None
+    source = _online_offers(args, game, trainer.name) if online else _touch_offers(args) if args.touch_trade else None
     trades = args.trades if args.trades is not None else 1
     trade = Gen7Trade(station, game, prof, offer, Path(args.output), trainer, trades=trades, partner=args.partner,
                       queue=queue, offers=source)
@@ -469,7 +469,7 @@ def _trade_gen6(args, station, game, prof, offer: bytes, queue: list[bytes], onl
 
     trainer = _gen6_trainer(game, offer, args)
     queue = [pkx.decrypt(q) if not pkx.checksum_valid(q) else q for q in queue]
-    source = _online_offers(args, game, trainer.name) if online else None
+    source = _online_offers(args, game, trainer.name) if online else _touch_offers(args) if args.touch_trade else None
     trades = args.trades if args.trades is not None else 1
     trade = Gen6Trade(station, game, prof, offer, Path(args.output), trainer, trades=trades, partner=args.partner,
                       queue=queue, offers=source)
@@ -497,9 +497,15 @@ def _online_setup(args, game) -> bool:
 
     if args.online_code is not None:
         args.online = True
+    if args.touch_trade:
+        if args.online:
+            raise SystemExit("--touch-trade and --online do not go together: a Touch Trade is with the 3DS alone")
+        if args.offer:
+            raise SystemExit("--touch-trade offers back what the 3DS offers: leave out --offer")
+        return False
     if not args.online:
         if not args.offer:
-            raise SystemExit("--offer is needed (or --online, to offer a far-away player's Pokemon)")
+            raise SystemExit("--offer is needed (or --online, to offer a far-away player's Pokemon, or --touch-trade)")
         return False
     if game.key not in online.ROOMS:
         raise SystemExit(f"{game.name} has no online trades yet: X/Y, ORAS, Sun/Moon and USUM do (docs/online.md)")
@@ -511,6 +517,14 @@ def _online_setup(args, game) -> bool:
         raise SystemExit("an online trade checks the partner's Pokemon with PKHeX, which is not set up: "
                          + pkhex.status())
     return True
+
+
+def _touch_offers(args):
+    """A Touch Trade's offer source: the 3DS's own offer, offered back."""
+    from .games.offers import Mirror
+
+    print("touch trade: PokeUDS offers back whatever the 3DS offers; nothing is kept", flush=True)
+    return Mirror(args.trades)
 
 
 def _online_offers(args, game, name: str):
@@ -558,10 +572,13 @@ def cmd_vc_trade(args) -> int:
 
     if args.online_code is not None:
         args.online = True
-    if args.online and args.offer:
-        raise SystemExit("--online plays the partner's Pokemon to the console: leave out --offer")
-    if not args.online and not args.offer:
-        raise SystemExit("--offer is needed (or --online, to trade with a player far away)")
+    if args.touch_trade and args.online:
+        raise SystemExit("--touch-trade and --online do not go together: a Touch Trade is with the 3DS alone")
+    if (args.online or args.touch_trade) and args.offer:
+        what = "--online plays the partner's Pokemon" if args.online else "--touch-trade plays the 3DS's own party back"
+        raise SystemExit(f"{what} to the console: leave out --offer")
+    if not args.online and not args.touch_trade and not args.offer:
+        raise SystemExit("--offer is needed (or --online, to trade with a player far away, or --touch-trade)")
     args.offer = args.offer or []
     if len(args.offer) > MAX_QUEUE:
         raise SystemExit(f"a Game Boy party holds {MAX_QUEUE} Pokemon: queue at most {MAX_QUEUE} per session")
@@ -604,6 +621,12 @@ def cmd_vc_trade(args) -> int:
               + "; the room is set when the 3DS chooses one", flush=True)
         # The language family is the console's, known once it is joined or hosted for: set in VcTrade._open.
         remote = PartnerRemote(code=code, name=args.name, say=lambda text: print(text, flush=True))
+    elif args.touch_trade:
+        from .vc.online import MirrorRemote
+
+        print("touch trade: the 3DS is shown its own party and PokeUDS picks what it picks; nothing is kept",
+              flush=True)
+        remote = MirrorRemote()
     trade = VcTrade(station, offer, Path(args.output), trades=args.trades, trainer_name=args.name, offer_mail=mail,
                     queue=offers[1:], queue_mail=mails[1:], languages=languages, online=remote)
     try:
@@ -620,7 +643,9 @@ def cmd_vc_trade(args) -> int:
             status.emit("searching", game="vc")
             trade.join(args.seconds, partner)
             status.emit("joined", channel=station.radio.channel)
-        if remote is not None:
+        if args.touch_trade:
+            print("connected: walk to the Trade Center (or the Time Capsule) table and trade the Pokemon to evolve")
+        elif remote is not None:
             print("connected: walk to the Trade Center (or the Time Capsule) table; your partner does the same")
         else:
             print(f"connected: {trade.mode.key} trade, offering {offer.describe()}; walk to the Trade Center table")
@@ -644,6 +669,10 @@ def cmd_vc_trade(args) -> int:
             remote.close()
     print(f"{len(trade.saved)} file(s) written to {args.output}")
     return 130 if stopped else 0
+
+
+TOUCH_HELP = ("trade evolutions: PokeUDS offers back whatever the 3DS offers, in the same trade, so the 3DS receives "
+              "its own Pokemon and evolves it if a trade evolves it; nothing is kept (no --offer)")
 
 
 def _vc_host_titles() -> list[str]:
@@ -1119,6 +1148,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--online-code", metavar="CODE",
                    help="with --online (and implies it): the room both players type; without one, PokeUDS meets "
                         "anyone else trading the same games online without a code")
+    p.add_argument("--touch-trade", action="store_true", help=TOUCH_HELP)
     p.set_defaults(func=cmd_vc_trade)
     p = vsub.add_parser("show", help="show a .pk1/.pk2 file")
     p.add_argument("file")
@@ -1319,6 +1349,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--online-code", metavar="CODE",
                    help="with --online (and implies it): the room both players type; without one, PokeUDS meets "
                         "anyone else trading the same games online without a code")
+    p.add_argument("--touch-trade", action="store_true", help="Gen 6/7: " + TOUCH_HELP)
     p.set_defaults(func=cmd_trade)
 
     args = parser.parse_args(argv)

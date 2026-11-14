@@ -273,8 +273,9 @@ class Gen6Trade:
         self.saved.append(path)
 
     def _traded_online(self, record: bytes) -> None:
-        """Online, ``record`` went from the console to the partner's: nothing is written, or the bank would keep a
-        copy of a Pokemon the player no longer has."""
+        """Online, ``record`` went from the console to the partner's; in a Touch Trade (``offers.Mirror``) it came
+        straight back. Either way nothing is written: the bank would keep a copy of a Pokemon the player no longer has,
+        or still has."""
         self._online_trades = getattr(self, "_online_trades", 0) + 1
         sent = pkx.summary(record)
         last = getattr(self.offers, "last", None)

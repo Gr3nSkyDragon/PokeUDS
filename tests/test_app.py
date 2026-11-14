@@ -334,6 +334,12 @@ def test_the_trade_page_trades_online(data, monkeypatch):
     trade.pick_game("rby")                       # the VC trades online too
     assert trade.online and trade.command()[:3] == ["-v", "vc", "trade"] and "--online" in trade.command()
     trade.control()
+    trade._touch_changed(type("E", (), {"control": type("C", (), {"value": True})()})())
+    assert settings.touch_trade and not settings.online and trade.touch          # Touch Trade turns Online off
+    assert "--touch-trade" in trade.command() and "--offer" not in trade.command() and trade.problems() == []
+    trade.control()
+    trade._online_changed(type("E", (), {"control": type("C", (), {"value": True})()})())
+    assert settings.online and not settings.touch_trade and not trade.touch      # and Online turns it off
     settings.online = False                      # Online off: the queue is back
     assert not trade.online and trade.problems() == ["Choose a Pokemon to offer: from the bank, Build one, or a file"]
     trade.control()

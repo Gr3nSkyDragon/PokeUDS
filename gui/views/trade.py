@@ -233,16 +233,37 @@ class TradeView(View):
         """This trade is with a player far away: the Online switch is on and the game trades online."""
         return self.app.settings.online and catalog.online_ready(self.entry)
 
+    @property
+    def touch(self) -> bool:
+        """A Touch Trade: the 3DS's own offer is offered back (the same games trade this way as online)."""
+        return self.app.settings.touch_trade and not self.online and catalog.online_ready(self.entry)
+
     def problems(self) -> list[str]:
-        return catalog.missing_for_start(self.entry, self.app.settings, self.queue, online=self.online)
+        return catalog.missing_for_start(self.entry, self.app.settings, self.queue, online=self.online,
+                                         touch=self.touch)
 
     def command(self) -> list[str]:
         return catalog.command(self.entry, self.app.settings, offer=[o.path for o in self.queue] or [""],
-                               role=self.role, host_title=self.host_title, verbose=True, online=self.online)
+                               role=self.role, host_title=self.host_title, verbose=True, online=self.online,
+                               touch=self.touch)
 
     def _online_changed(self, e) -> None:
         self.app.settings.online = bool(e.control.value)
+        if self.app.settings.online:
+            self.app.settings.touch_trade = False       # one or the other: a Touch Trade is with the 3DS alone
         self.save()
+
+    def _touch_changed(self, e) -> None:
+        self.app.settings.touch_trade = bool(e.control.value)
+        if self.app.settings.touch_trade:
+            self.app.settings.online = False
+        self.save()
+
+    def touch_switch(self) -> ft.Control:
+        """The Touch Trade switch, beside Online: offer back what the 3DS offers, for trade evolutions."""
+        return ft.Switch(label="Touch Trade", value=self.touch, on_change=self._touch_changed,
+                         disabled=self.app.busy(),
+                         tooltip="PokeUDS offers back whatever the 3DS offers, so a trade evolution happens on the 3DS")
 
     def _code_changed(self, e) -> None:
         code = (e.control.value or "").strip()
@@ -405,7 +426,8 @@ class TradeView(View):
         controls: list[ft.Control] = [
             ft.Row([t.title(entry.name), t.label(f"with {entry.console}")], spacing=12,
                    vertical_alignment=ft.CrossAxisAlignment.END),
-            ft.Row([role, *([self.online_switch()] if catalog.online_ready(entry) else [])], spacing=16, wrap=True,
+            ft.Row([role, *([self.online_switch(), self.touch_switch()] if catalog.online_ready(entry) else [])],
+                   spacing=16, wrap=True,
                    vertical_alignment=ft.CrossAxisAlignment.CENTER),
             t.label(how),
         ]
@@ -421,7 +443,12 @@ class TradeView(View):
                                      "captures.", t.INFO))
         if self.online:
             controls.append(self.online_control())
-        if not self.online:          # online, the partner's Pokemon is offered: no queue of our own
+        elif self.touch:
+            controls.append(t.label(
+                "Touch Trade: offer the Pokemon to evolve on your 3DS, and PokeUDS offers the same Pokemon back in "
+                "the same trade, so your 3DS receives its own Pokemon and a trade evolution happens there. PokeUDS "
+                "keeps nothing. Karrablast and Shelmet evolve only when traded for each other, so not this way."))
+        if not self.online and not self.touch:      # otherwise the partner's or the 3DS's own Pokemon is offered
             controls += self.offer_controls()
         for problem in self.problems():
             controls.append(t.notice(problem, t.WARN, ft.Icons.WARNING_AMBER_ROUNDED))

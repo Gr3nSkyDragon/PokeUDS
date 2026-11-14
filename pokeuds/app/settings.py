@@ -167,6 +167,7 @@ class Settings:
     pokeldn_banner: bool = True                     # the "Looking for Switch games?" banner, until closed (gui/promo.py)
     online: bool = False                            # Gen 6/7 trades with a player far away (docs/online.md)
     online_code: str = ""                           # the room code both players type; "" meets anyone without one
+    touch_trade: bool = False                       # offer back what the 3DS offers: trade evolutions (offers.Mirror)
 
     def offer_queue(self, game: str) -> list[str]:
         """The game's trade queue: the offer, then what is queued after it."""

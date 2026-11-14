@@ -197,7 +197,9 @@ class OnlineEngine:
 
     def _set_mode(self, mode: LinkMode) -> None:
         self.mode = mode
-        self._note(f"room: {mode.key}; meeting the partner in {room_name(mode, self.family)}")
+        mirror = isinstance(self.remote, MirrorRemote)
+        where = "" if mirror else f"; meeting the partner in {room_name(mode, self.family)}"
+        self._note(f"room: {mode.key}{where}")
         self.remote.begin(mode)
 
     # Blocks ---------------------------------------------------------------------------------
@@ -465,3 +467,39 @@ class PartnerRemote:
     def close(self, reason: str = "the trade ended") -> None:
         if self.partner is not None:
             self.partner.close(reason)
+
+
+class MirrorRemote:
+    """``Remote`` for a Touch Trade: the partner is the console itself. Its party comes back as the partner's, its pick
+    as the partner's pick and its answer as the partner's answer, so it trades each Pokemon for itself and a trade
+    evolution (Kadabra, Machoke, Graveler, Haunter; Gen 2's held-item evolutions) happens on the console. Nothing is
+    kept, and no relay is used."""
+
+    family = "intl"
+
+    def __init__(self) -> None:
+        self.box: dict[tuple[int, str], bytes] = {}
+        self.round = 0
+        self.mode: LinkMode | None = None
+
+    def begin(self, mode: LinkMode) -> None:
+        self.mode = mode
+
+    def send(self, key: str, data: bytes) -> None:
+        self.box[(self.round, key)] = bytes(data)
+
+    def get(self, key: str) -> bytes | None:
+        return self.box.get((self.round, key))
+
+    def next_round(self) -> None:
+        self.round += 1
+        self.box = {k: v for k, v in self.box.items() if k[0] >= self.round}
+
+    def refuse(self, reason: str) -> None:
+        log.warning("touch trade: the console's own block fails the checks: %s", reason)
+
+    def gone(self) -> str:
+        return ""
+
+    def close(self, reason: str = "") -> None:
+        pass

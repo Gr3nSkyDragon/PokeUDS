@@ -33,6 +33,8 @@ Poke Transporter and Pokemon Bank do.
 
 - **Trade** with the 3DS asking PokeUDS or PokeUDS asking the 3DS, one Pokemon or a queue of them in one session
   (up to six for the Game Boy games, a box's worth and more for the 3DS games).
+- **Touch Trade** for trade evolutions: PokeUDS offers back whatever the 3DS offers, so the 3DS receives its own
+  Pokemon and evolves it, in every game ([docs/cli.md](docs/cli.md#trading)).
 - **Bank** every Pokemon received, imported or built: legality checks with PKHeX (one or the whole bank), Time
   Capsule copies, migration to Gen 7, duplicates caught, sprites.
 - **Build** a legal Pokemon to offer when you have no file (PKHeX.Core, built into the app), with the IVs and EVs

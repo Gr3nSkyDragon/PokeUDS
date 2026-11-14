@@ -12,6 +12,8 @@ Two sources:
   and its yes needs nobody else's.
 - an online partner (``pokeuds.online.trade``): the record offered to the console is the one the partner's console
   offered, so PokeUDS offers only after its own console has, and says yes only once both consoles have.
+- ``Mirror`` (Touch Trade): the record offered to the console is the console's own offer, so it trades a Pokemon for
+  itself and a trade evolution happens on the console.
 """
 
 from __future__ import annotations
@@ -79,3 +81,44 @@ class Queue:
 
     def traded(self, record: bytes) -> None:
         self.done += 1
+
+
+class Mirror:
+    """Touch Trade: PokeUDS offers back whatever the console offers, in the same trade, so the console receives its own
+    Pokemon and a trade evolution happens on it (Kadabra, Machoke, an Onix holding a Metal Coat...). PokeUDS keeps
+    nothing: the console trades its Pokemon for itself. Karrablast and Shelmet evolve only when traded for each other,
+    so not this way. ``trades``: how many before PokeUDS leaves the trade screen (None: until the console leaves)."""
+
+    offers_first = False
+
+    def __init__(self, trades: int | None = None) -> None:
+        self.trades = trades
+        self.done = 0
+        self._offer: bytes | None = None
+        self.last: tuple[bytes, bytes | None] | None = None      # the last trade: (sent, received)
+
+    def offer(self) -> bytes | None:
+        return self._offer
+
+    def ended(self) -> str:
+        return "every trade is done" if self.trades is not None and self.done >= self.trades else ""
+
+    def console_offers(self, record: bytes) -> None:
+        self._offer = bytes(record)
+
+    def console_withdrew(self) -> None:
+        self._offer = None
+
+    def console_accepts(self) -> None:
+        pass
+
+    def partner_accepts(self) -> bool | None:
+        return True if self._offer is not None else None
+
+    def traded(self, record: bytes) -> None:
+        self.last = (bytes(record), self._offer)
+        self.done += 1
+        self._offer = None
+
+    def close(self, reason: str = "") -> None:
+        pass

@@ -282,3 +282,29 @@ def test_the_vc_command_line_says_what_an_online_trade_needs(argv, why, tmp_path
     with pytest.raises(SystemExit) as stop:
         cli.main(argv)
     assert why in str(stop.value)
+
+
+@pytest.mark.parametrize("mode,generation", [(link.GEN1, 1), (link.GEN2, 2)])
+def test_touch_trade_shows_the_console_its_own_party_and_picks_what_it_picks(mode, generation):
+    kadabra = sample_mon(generation, 64, 30, "KADABRA")
+    model = Model3DS(mode, party(generation, sample_mon(generation, 16, 5, "PIDGE"), kadabra), pick=1, burst=True)
+    desk = Desk(model, generation, online.MirrorRemote())
+    run_desks(desk)
+    assert model.received == [kadabra]                        # its own Kadabra came back: a trade, so it evolves
+    assert [m.dex for m in model.partner_parties[0].mons] == [16, 64]
+    assert desk.engine.trades[0].sent == desk.engine.trades[0].received == kadabra
+
+
+@pytest.mark.parametrize("argv,why", [
+    (["vc", "trade", "--radio", "demo:red", "--touch-trade", "--online"], "do not go together"),
+    (["vc", "trade", "--radio", "demo:red", "--touch-trade", "--offer", "a.pk1"], "leave out --offer"),
+    (["trade", "xy", "--radio", "demo:x", "--touch-trade", "--online-code", "1"], "do not go together"),
+    (["trade", "xy", "--radio", "demo:x", "--touch-trade", "--offer", "a.pk6"], "leave out --offer"),
+])
+def test_the_command_line_says_what_a_touch_trade_takes(argv, why, tmp_path, monkeypatch):
+    from pokeuds import cli
+
+    monkeypatch.setenv("POKEUDS_DATA", str(tmp_path))
+    with pytest.raises(SystemExit) as stop:
+        cli.main(argv)
+    assert why in str(stop.value)

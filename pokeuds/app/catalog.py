@@ -151,15 +151,18 @@ def online_ready(entry: Entry) -> bool:
 
 
 def command(entry: Entry, settings: Settings, *, offer: str | list[str], role: str, host_title: str = "",
-            trades: int | None = None, verbose: bool = False, online: bool = False) -> list[str]:
+            trades: int | None = None, verbose: bool = False, online: bool = False, touch: bool = False) -> list[str]:
     """The run for a trade; ``offer`` is one file or the trade queue in order (one trade each, unless ``trades``).
-    ``online``: the partner's Pokemon is offered instead (no ``--offer``), in the settings' room code."""
+    ``online``: the partner's Pokemon is offered instead (no ``--offer``), in the settings' room code. ``touch``: a
+    Touch Trade, the 3DS's own offer offered back (no ``--offer``)."""
     radio = settings.radio_spec()
-    queue = [] if online else [offer] if isinstance(offer, str) else list(offer)
+    queue = [] if online or touch else [offer] if isinstance(offer, str) else list(offer)
     common = ["--radio", radio, *[x for path in queue for x in ("--offer", path)], "--output", settings.output,
               "--role", role, "--name", settings.trainer_name]
     if online:
         common += ["--online", *(["--online-code", settings.online_code.strip()] if settings.online_code.strip() else [])]
+    elif touch:
+        common += ["--touch-trade"]
     if settings.keys and not radio.startswith("demo"):
         common += ["--keys", settings.keys]
     args = (["-v"] if verbose else [])
@@ -188,16 +191,16 @@ def queue_problems(entry: Entry, queue: list[Offer]) -> list[str]:
 
 
 def missing_for_start(entry: Entry, settings: Settings, offer: Offer | list[Offer] | None,
-                      online: bool = False) -> list[str]:
+                      online: bool = False, touch: bool = False) -> list[str]:
     """Everything that stops a run from starting, in the words the app shows. ``offer``: one, or the queue; none is
-    needed ``online``, where the partner's Pokemon is offered and PKHeX checks it."""
+    needed ``online``, where the partner's Pokemon is offered and PKHeX checks it, or in a Touch Trade (``touch``)."""
     problems = []
     if not settings.radio_spec().startswith("demo") and (keys := settings.keys_problem()):
         problems.append(f"Console keys: {keys} (Settings)")
-    if online:
+    if online or touch:
         from .. import pkhex
 
-        if entry.key not in ("rby", "gsc") and pkhex.helper_path() is None:
+        if online and entry.key not in ("rby", "gsc") and pkhex.helper_path() is None:
             problems.append("An online trade checks the partner's Pokemon with PKHeX, which is not set up (Settings)")
         for gap in profile_gaps(entry):
             problems.append(f"profiles/{entry.key}.toml has no {gap.split('.')[-1]} yet (needs captures)")

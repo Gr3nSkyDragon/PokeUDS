@@ -171,12 +171,15 @@ A Gen 6/7 session takes its offers from an **offer source** (`pokeuds/games/offe
 once; while it waits on one, the session keeps its 3DS's connection alive (heartbeats, syncs), so the 3DS never
 times out on PokeUDS.
 
-| | the local queue (`offers.Queue`) | an online partner (`online.trade.Offers`) |
-|---|---|---|
-| PokeUDS's offer | the next queued record, offered first | the partner's 3DS's record, offered once this 3DS has offered (its offer goes to the partner) and the partner's has come |
-| PokeUDS's yes | at once | once this 3DS said yes and the partner's 3DS said yes to this 3DS's offer |
-| a decline (either side) | offer again | both sides offer afresh: the partner's standing offer is not shown again |
-| PokeUDS leaves the trade screen | after `trades` trades | when the partner has left or been lost |
+| | the local queue (`offers.Queue`) | an online partner (`online.trade.Offers`) | Touch Trade (`offers.Mirror`) |
+|---|---|---|---|
+| PokeUDS's offer | the next queued record, offered first | the partner's 3DS's record, offered once this 3DS has offered (its offer goes to the partner) and the partner's has come | this 3DS's own record, offered back once it has offered |
+| PokeUDS's yes | at once | once this 3DS said yes and the partner's 3DS said yes to this 3DS's offer | once this 3DS said yes |
+| a decline (either side) | offer again | both sides offer afresh: the partner's standing offer is not shown again | offer again what the 3DS offers next |
+| PokeUDS leaves the trade screen | after `trades` trades | when the partner has left or been lost | after `--trades` trades, else when the 3DS's player leaves |
+
+The Virtual Console's Touch Trade is `vc.online.MirrorRemote`: the online engine with the 3DS as its own partner, so
+the 3DS is shown its own party, PokeUDS picks the slot it picks and answers what it answers.
 
 | | the partner's offer goes to the 3DS as | the 3DS's offer goes out from | the partner taking its offer back becomes |
 |---|---|---|---|
