@@ -146,7 +146,7 @@ What the 3DS sends lands in the bank. [docs/gui.md](docs/gui.md) describes every
 | Using PokeUDS from a terminal | [Command-line instructions](docs/cli.md) |
 | Code layout and tests | [Architecture](docs/architecture.md) |
 | Local wireless protocols and captures | [UDS](docs/uds.md), [Gen 6](docs/gen6.md), [Gen 7](docs/gen7.md), [Virtual Console](docs/vc.md), [captures](docs/captures.md) |
-| Building and signing a release | [Releases](docs/release.md), [code signing](docs/code_signing.md) |
+| Building a release, and the planned code signing | [Releases](docs/release.md), [code signing](docs/code_signing.md) |
 
 ## Credits
 
@@ -225,10 +225,11 @@ Libraries: [Flet](https://github.com/flet-dev/flet) (the app), [esptool](https:/
 [pySerial](https://github.com/pyserial/pyserial) and [tlslite-ng](https://github.com/tlsfuzzer/tlslite-ng)
 (the DS's SSL 3.0, LGPL-2.1).
 
-## Code signing policy
+## Code signing
 
-Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by
-[SignPath Foundation](https://signpath.org). What is signed, the team roles and the privacy policy are on the
+Working towards free code signing for the Windows app through [SignPath Foundation](https://signpath.org). The
+release workflow is ready for it, but the app is not signed yet: until it is, Windows may warn on first start. The
+planned policy (what would be signed, the team roles and the privacy policy) is on the
 [Code signing policy](docs/code_signing.md) page.
 
 ## License
