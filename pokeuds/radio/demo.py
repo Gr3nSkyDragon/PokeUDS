@@ -95,7 +95,9 @@ class SimulatedVcHost:
         t0 = time.monotonic()
         now = lambda: int((time.monotonic() - t0) * 1000)
         session.start(now())
-        game, first = self.model.run(), False
+        from ..vc.model import Driver
+
+        driver, first, outbox = Driver(self.model), False, []
         while not self.stop.is_set():
             try:
                 packet = self.station.recv(pia.UDS_CHANNEL, timeout=0.005)
@@ -104,10 +106,11 @@ class SimulatedVcHost:
                     packet = self.station.recv(pia.UDS_CHANNEL, timeout=0)
                 session.poll(now())
                 if session.ready_to_start and not first:          # EF once the joiner has our system data
-                    first = session.queue_unit(next(game))
+                    outbox, first = driver.start(), True
                 for byte in session.pop_units():
-                    if not self.model.done:
-                        session.queue_unit(game.send(byte))
+                    outbox += driver.reply(byte)
+                while outbox and session.queue_unit(outbox[0]):    # a burst may outrun the send ring
+                    outbox.pop(0)
                 session.flush(now())
             except Exception:
                 log.exception("demo console")
@@ -213,7 +216,8 @@ class DemoRadio(SimRadio):
         party = link.Party(gbtext.trainer_name("DEMO", language), 4242, mons)
         self.air = Air()
         super().__init__(self.air)
-        self.model = Model3DS(mode, party, console_generation=gen, family=self.title.family)
+        # It bursts its blocks, as a 3DS does (an online trade relies on it: pokeuds.vc.online).
+        self.model = Model3DS(mode, party, console_generation=gen, family=self.title.family, burst=True)
         self.console = SimulatedVcHost(self.air, DEMO_KEY, self.title, self.model)
 
     def describe(self) -> str:

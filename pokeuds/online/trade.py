@@ -69,6 +69,7 @@ class Offers:
         self.trades = trades
         self.done = 0
         self._shown: bytes | None = None     # the partner's record offered to the console
+        self.last: tuple[bytes, bytes | None] | None = None   # the last trade: (sent, received)
         self._stale: bytes | None = None     # the partner's record from before a decline
 
     def offer(self) -> bytes | None:
@@ -106,6 +107,7 @@ class Offers:
     def traded(self, record: bytes) -> None:
         self.partner.done()
         self.done += 1
+        self.last = (bytes(record), self._shown)   # what the console sent, and the partner's record it received
         self._shown = self._stale = None
 
     def close(self, reason: str = "the trade ended") -> None:

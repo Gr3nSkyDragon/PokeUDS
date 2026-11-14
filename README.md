@@ -52,10 +52,10 @@ Poke Transporter and Pokemon Bank do.
   now run from the [command line](docs/cli.md#mystery-gift) only ([docs/ds_wifi.md](docs/ds_wifi.md)).
 - **GTS**: list a banked Pokemon against what you want, or offer on someone else's listing, bank to bank over
   public Nostr relays; a trade settles when the lister's app next opens ([docs/online.md](docs/online.md)).
-- **Online trades, pre-alpha**: X/Y, ORAS, Sun/Moon and USUM trade live with a player far away, each 3DS beside its
-  own PokeUDS and board, through the same relays: each 3DS is offered the other's Pokemon, and each side says yes
-  only once both 3DSs have ([docs/online.md](docs/online.md)). Tested in simulation; **not yet tried with two real
-  3DSs**.
+- **Online trades, pre-alpha**: X/Y, ORAS, Sun/Moon, USUM and the Virtual Console games trade live with a player
+  far away, each 3DS beside its own PokeUDS and board, through the same relays: each 3DS is offered the other's
+  Pokemon, and each trades only once both have said yes ([docs/online.md](docs/online.md)). Tested in simulation;
+  **not yet tried with two real 3DSs**.
 - **Board**: install the ESP32 firmware (included, nothing to download) from the app.
 - **Plugins and language packs**, with an install screen that shows what a plugin's code does.
 

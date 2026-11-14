@@ -556,6 +556,13 @@ def cmd_vc_trade(args) -> int:
     from . import plugins
     from .vc.trade import MAX_QUEUE
 
+    if args.online_code is not None:
+        args.online = True
+    if args.online and args.offer:
+        raise SystemExit("--online plays the partner's Pokemon to the console: leave out --offer")
+    if not args.online and not args.offer:
+        raise SystemExit("--offer is needed (or --online, to trade with a player far away)")
+    args.offer = args.offer or []
     if len(args.offer) > MAX_QUEUE:
         raise SystemExit(f"a Game Boy party holds {MAX_QUEUE} Pokemon: queue at most {MAX_QUEUE} per session")
     from .app.bank import language_of
@@ -580,7 +587,7 @@ def cmd_vc_trade(args) -> int:
         mails.append(mail_file.read_bytes()[:size] if offer.generation == 2 and mail_file.exists() else b"")
     if any(o.generation != offers[0].generation for o in offers):
         raise SystemExit("a Virtual Console queue is all .pk1 or all .pk2 (they trade in different rooms)")
-    offer, mail = offers[0], mails[0]
+    offer, mail = (offers[0], mails[0]) if offers else (None, b"")
     if args.role == "host" and not args.as_title:
         raise SystemExit("hosting needs --as TITLE (the VC title PokeUDS stands in for)")
     if not args.keys and not args.radio.startswith("demo"):
@@ -588,8 +595,17 @@ def cmd_vc_trade(args) -> int:
     station = Station(open_radio(args.radio), args.mac or random_mac(), _uds_key(args.keys, args.radio), name=args.name)
     station.start(titles.CHANNEL if args.role == "host" else args.channel)
     status.emit("radio", description=station.radio.describe())
+    remote = None
+    if args.online:
+        from .vc.online import PartnerRemote
+
+        code = (args.online_code or "").strip()
+        print("online: " + (f"code {code}" if code else "no code (anyone without one)")
+              + "; the room is set when the 3DS chooses one", flush=True)
+        # The language family is the console's, known once it is joined or hosted for: set in VcTrade._open.
+        remote = PartnerRemote(code=code, name=args.name, say=lambda text: print(text, flush=True))
     trade = VcTrade(station, offer, Path(args.output), trades=args.trades, trainer_name=args.name, offer_mail=mail,
-                    queue=offers[1:], queue_mail=mails[1:], languages=languages)
+                    queue=offers[1:], queue_mail=mails[1:], languages=languages, online=remote)
     try:
         if args.role == "host":
             title = titles.TITLES[args.as_title]
@@ -604,8 +620,11 @@ def cmd_vc_trade(args) -> int:
             status.emit("searching", game="vc")
             trade.join(args.seconds, partner)
             status.emit("joined", channel=station.radio.channel)
-        print(f"connected: {trade.mode.key} trade, offering {offer.describe()}; walk to the Trade Center table")
-        status.emit("mode", mode=trade.mode.key)
+        if remote is not None:
+            print("connected: walk to the Trade Center (or the Time Capsule) table; your partner does the same")
+        else:
+            print(f"connected: {trade.mode.key} trade, offering {offer.describe()}; walk to the Trade Center table")
+            status.emit("mode", mode=trade.mode.key)
         trade.run(args.run_seconds)
         status.emit("stopped", reason="session-ended")
     except (TimeoutError, ValueError) as exc:     # no host heard, or one this queue cannot trade with
@@ -621,6 +640,8 @@ def cmd_vc_trade(args) -> int:
         if trade.session:
             trade.session.leave(0)
         station.close()
+        if remote is not None:
+            remote.close()
     print(f"{len(trade.saved)} file(s) written to {args.output}")
     return 130 if stopped else 0
 
@@ -1075,9 +1096,9 @@ def main(argv: list[str] | None = None) -> int:
     p = vsub.add_parser("trade", help="trade through the VC link menu (Gen 1, Gen 2, or the Time Capsule)")
     _add_radio(p)
     _add_keys(p, required=False)
-    p.add_argument("--offer", required=True, action="append",
+    p.add_argument("--offer", action="append",
                    help=".pk1 or .pk2 to send (a .pk2 may have a .mail beside it); repeat it to queue up to six, "
-                        "traded in order")
+                        "traded in order (needed unless --online)")
     p.add_argument("--output", default="received", help="folder for the Pokemon received (default: received/)")
     p.add_argument("--role", choices=["join", "host"], default="join",
                    help="join the 3DS's network (default; the 3DS chooses Host) or host one")
@@ -1092,6 +1113,12 @@ def main(argv: list[str] | None = None) -> int:
                                                      "game, which has no Latin letters, sees its own default name)")
     p.add_argument("--seconds", type=float, default=120.0, help="how long to wait for the 3DS")
     p.add_argument("--run-seconds", type=float, help="stop after this long (default: when the session ends)")
+    p.add_argument("--online", action="store_true",
+                   help="trade with a player far away through public relays: PokeUDS plays their console to this one "
+                        "(the room the 3DS chooses decides Gen 1, Gen 2 or the Time Capsule; docs/online.md)")
+    p.add_argument("--online-code", metavar="CODE",
+                   help="with --online (and implies it): the room both players type; without one, PokeUDS meets "
+                        "anyone else trading the same games online without a code")
     p.set_defaults(func=cmd_vc_trade)
     p = vsub.add_parser("show", help="show a .pk1/.pk2 file")
     p.add_argument("file")

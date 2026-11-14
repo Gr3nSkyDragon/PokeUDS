@@ -137,7 +137,7 @@ def test_gen6_offers_after_the_console_and_confirms_after_the_partner(tmp_path, 
                  lambda: console.run("host" if pokeuds_role == "join" else "join", 20.0))
         assert source.log == [("offer", 653), ("accepts",), ("traded", 653)]
         assert [p.read_bytes() for p in console.saved] == [partners[:pkx.STORED_SIZE]]
-        assert [p.read_bytes() for p in ours.saved] == [console_offer[:pkx.STORED_SIZE]]
+        assert ours.saved == [] and not (tmp_path / "ours").exists()   # online, nothing is written
     finally:
         ours.station.close()
         console.station.close()
@@ -154,7 +154,7 @@ def test_gen6_partner_taking_its_offer_back_is_a_decline(tmp_path):
         run_both(lambda: ours.run("join", 20.0), lambda: console.run("host", 20.0))
         assert source.log == [("offer", 653), ("accepts",), ("partner took it back",), ("withdrew",),
                               ("offer", 653), ("accepts",), ("traded", 653)]
-        assert len(console.saved) == len(ours.saved) == 1
+        assert len(console.saved) == 1 and ours.saved == []
     finally:
         ours.station.close()
         console.station.close()
@@ -171,7 +171,7 @@ def test_gen6_a_partner_gone_ends_the_session(tmp_path):
     ours, console = gen6_pair(air, tmp_path, source, [console_offer, console_offer], 2)
     try:
         run_both(lambda: ours.run("join", 20.0), lambda: console.run("host", 20.0))
-        assert len(console.saved) == len(ours.saved) == 1
+        assert len(console.saved) == 1 and ours.saved == []
         assert source.log[-1] == ("offer", 653)       # the console offered again; nobody was there to take it
     finally:
         ours.station.close()

@@ -5,7 +5,7 @@ PokeUDS trades over the internet in two ways:
 | | what it is | state |
 |---|---|---|
 | **The GTS** | list a banked Pokemon against what you want; anyone can offer on it, at any time. Bank to bank, no console needed at either end. | working: a GTS trade run against the public relays (2026-11-14) |
-| **Online trades** | two players trade live, each with their own 3DS beside their own PokeUDS. Each board hosts a local trade; the two apps carry the offers between them. | Gen 6 and Gen 7: in the command line (`--online`, `--online-code`) and on the Trade page (Trade online); tested in simulation (two consoles, two PokeUDS, one relay); **never run on hardware** |
+| **Online trades** | two players trade live, each with their own 3DS beside their own PokeUDS. Each board hosts a local trade; the two apps carry the offers between them. | X/Y, ORAS, Sun/Moon, USUM and the Virtual Console games: in the command line (`--online`, `--online-code`) and on the Trade page (the Online switch); tested in simulation (two consoles, two PokeUDS, one relay); **never run on hardware** |
 
 Both ride on [Nostr](https://github.com/nostr-protocol/nips) relays: public servers that keep and pass on signed
 JSON events. Nobody runs a PokeUDS server, there is no account, and no relay has to be trusted with anything but
@@ -13,8 +13,8 @@ passing events along. This is pokeldn's design; PokeUDS uses its own tags and ke
 see each other's listings or rooms.
 
 Game Boy Pokemon of every language go on the GTS, with their language. Live online trades for the Virtual
-Console start with the international games; the Japanese and Korean releases trade locally now ([vc.md](vc.md),
-Languages), and live online they would also need the cross-language conversion the local trades already do.
+Console meet within a language family (international, Japanese, Korean); across families they would also need the
+cross-language conversion the local trades already do ([vc.md](vc.md), Languages).
 
 ## The pieces
 
@@ -130,7 +130,7 @@ below are PokeUDS's own.
 ### Meeting (as pokeldn)
 
 * A **room** is `sha256("pokeuds online 1|<room>|<code or 'open'>")`: `<room>` is `gen7` (Sun/Moon with
-  USUM), `gen6` (X/Y with ORAS), later `gb1` and `gb2`. The 3DS games have no link code, so a code typed in the
+  USUM), `gen6` (X/Y with ORAS), `gb1` and `gb2` (the Virtual Console, below). No game has a link code, so a code typed in the
   app makes a private room, and none meets anyone else waiting without one.
 * Every event is ephemeral kind 21059 (relays pass it on and keep nothing), tagged with the room, sealed under
   `sha256("pokeuds room key|" + room)`, signed by a key made for the session.
@@ -182,10 +182,56 @@ times out on PokeUDS.
 |---|---|---|---|
 | Sun / Moon, USUM | module 1 cmd 00 (shown, then chosen) with module 2 cmd 01, then module 3 cmd 00 (the offer), once the console's own offer has come | the console's module 3 cmd 00 | PokeUDS's "no" at "Trade?": module 1 cmd 00, not chosen (what a console sends for no) |
 | X / Y, ORAS | module 1 cmd 01 (the 260-byte record) and cmd 06, after the console's cmd 01 | the console's cmd 01 | cmd 07 `00e2` (a value other than 01) |
-| Virtual Console | the partner's party block, patch lists and Gen 2 mail, relayed whole before anyone picks (as pokeldn's FireRed does); PokeUDS holds its own block at the block window until the partner's arrives | the console's blocks and its pick (`$6x`/`$7x` + slot) | `$6F` cancel |
 
 After a Sun/Moon trade PokeUDS shows the Pokemon it received as its screen comes back, as a console does, before the
-next offer is known.
+next offer is known. Online, PokeUDS writes nothing to the received folder: the Pokemon the 3DS sent is the
+partner's now, and a copy in the bank would be a clone.
+
+### The Virtual Console
+
+A Gen 1 or Gen 2 link is not a trade of single records: both games exchange whole parties every round, then each
+picks, then both accept. So for the VC PokeUDS does not take an offer at all: it **plays the partner's console to its
+own** (`pokeuds/vc/online.py`, `OnlineEngine`), and the link data each 3DS sends crosses to the other.
+
+| step | what the 3DS sends | what PokeUDS answers |
+|---|---|---|
+| "Please wait", the room, the round opening | syncs, `$Dx` | as a local trade does (`link.TradeEngine`). The room the 3DS chooses sets the mode and the relay room: `gb1` for the Gen 1 cable (Red, Blue, Yellow, and Gold, Silver, Crystal's Time Capsule: a Gen 2 game sends `$D0` or `$D4` there), `gb2` for the Gen 2 Trade Center (`$D1`) |
+| random numbers | its 17 bytes | made here |
+| party, patch lists, Gen 2 mail | each block in one burst, then it waits for the partner's | its block, read from the burst and sent to the partner (`share`: `party`, `patch`, `mail`); the partner's console's block once it has come and passed the checks. Until then the reply is held |
+| pick, accept | `$60`/`$70` + slot (`$F` cancel), `$x2` accept / `$x1` decline | `$FE`, no choice yet, until the partner's console's choice has come (`share`: `pick`, `confirm`, with a step count), then that choice |
+| after a trade | one sync (Gen 2: 1 if a Mew, 2 if a Celebi was traded) | worked out here, as both games do |
+
+Each 3DS therefore sees the other's real party, pick and answer, and both trade, or neither, as over a cable. The
+next round's blocks come fresh from the partner's console, so a trade evolution, a nickname or a new move learned
+there are what the other 3DS sees. A partner gone answers Cancel at the pick and No at the accept. Nothing is
+written: what the 3DS receives is the partner's own Pokemon, and what it sends is theirs now.
+
+Before a partner's block reaches the 3DS it is checked (`sane_party`, after Lorenzooone's sanity checks): one to six
+Pokemon, every species and move in the game's tables, levels 1 to 100, every name ended. A block that fails is
+refused (the partner is told why) and never answered: the 3DS waits at the table until its player leaves. PKHeX is
+not needed. The Japanese and Korean games meet in rooms of their own (`gb1-jp`, `gb2-jp`, `gb2-kr`): their blocks are
+laid out differently, and the cross-language conversion of the local trades is not applied online yet.
+
+Where this comes from:
+
+- [pokeldn](https://github.com/Decryptu/pokeldn)'s FireRed/LeafGreen online trade: the party blocks relayed whole,
+  each side holding its own until the partner's console has sent the same, and the pick crossing before the record.
+  FireRed is a GBA link with a different shape; the Game Boy rounds are PokeUDS's own.
+- [Lorenzooone's PokemonGB_Online_Trades](https://github.com/Lorenzooone/PokemonGB_Online_Trades) (MIT), which trades
+  real Game Boys online: `$FE` as "no input yet" while a game waits on the partner's choice, the sanity checks, and
+  its two modes. Its *synchronous* mode passes every byte (too slow over relays); its *buffered* mode exchanges
+  whole parties beforehand, with a stand-in party for the first round. A 3DS bursts its blocks and then waits, which
+  a cartridge cannot be made to do, so PokeUDS needs no stand-in round: it reads the burst, passes it on and answers
+  late. No code is copied.
+- [GB-Link's gb-pokemon-web](https://github.com/GB-Link/gb-pokemon-web) (GPL-3.0), the web port of Lorenzooone's
+  client for the GB-Link adapter, read for the same design. [Celio-Link](https://github.com/Celio-Link) trades
+  Generation 3 only for now, so nothing of it applies yet.
+
+Measured on hardware: nothing. The engine relies on the 3DS sending each block in one burst (measured for local
+trades, mgba_LDN `wiki/vc_link.md`) and on its waiting, with no timer, for the partner's block and choice: how long it
+waits decides how far apart in time the two players may sit down at the table. If it gives up, the fallback is a
+gate before the round opening, or Lorenzooone's stand-in round.
+
 
 ### Tested, and not
 
@@ -201,23 +247,30 @@ other's Pokemon.
 `test_two_command_line_runs_trade_online_through_a_relay` runs two `pokeuds trade xy --online-code desk` processes,
 each beside the demo radio's X, through a loopback relay, with PKHeX checking each Pokemon.
 
+`tests/test_vc_online.py` plays two modelled 3DSs (`vc/model.py`, bursting their blocks as a 3DS does) through two
+`OnlineEngine`s: Gen 1, Gen 2 with mail, the Time Capsule meeting Red, a decline, a block held until the partner's
+comes and a bad one refused, a partner gone in the trade menu; then Red and Blue over the simulated air and the relays,
+and two `pokeuds vc trade --online-code desk` processes beside the demo radio's Red and Blue.
+
 ### Using it
 
-Command line: `pokeuds trade <xy|oras|sm|usum> --online-code CODE` (no `--offer`; [cli.md](cli.md), Trading).
-App: on the Trade page, for X/Y, ORAS, Sun/Moon or USUM, turn on **Online** (beside who asks) and type
+Command line: `pokeuds trade <xy|oras|sm|usum> --online-code CODE`, `pokeuds vc trade --online-code CODE` (no
+`--offer`; [cli.md](cli.md), Trading). App: on the Trade page, turn on **Online** (beside who asks or hosts) and type
 the room code your partner types (Settings' `online`, `online_code`). The queue gives way to the partner's
 Pokemon; the session panel shows the partner (waiting, paired, gone) and what their 3DS offers, from the `online`
 status events. PokeUDS stays on the trade screen until the partner leaves or the 3DS's player does.
 
 **Not yet done:**
 
-* The VC (rooms `gb1`, `gb2`): it needs the party blocks relayed before anyone picks; `Partner.share` carries them.
+* VC trades across language families, and battles.
 * Anything on hardware. Unmeasured until then:
   * how long each game waits at the offer and at "Trade?" while the partner decides;
   * whether a Sun/Moon offers before PokeUDS's screen shows a Pokemon (online, PokeUDS has none to show until the
     partner's has come; the engine standing in for a console waits up to `SCREEN_WAIT`, 20 s, then offers);
   * whether an X/Y takes PokeUDS offering second and confirming after it, and what it does with a cmd 07 `00e2`;
   * whether a Sun/Moon takes PokeUDS's "no" at "Trade?" as a console's;
+  * how long a VC game waits at the block window and in the trade menu, and whether a Gen 2 Time Capsule sends
+    `$D0` or `$D4`;
   * the whole path with two consoles, two boards and two app instances on one desk, with a code.
 
 ## Licence
@@ -225,4 +278,5 @@ status events. PokeUDS stays on the trade screen until the partner leaves or the
 PokeUDS is AGPL-3.0 ([LICENSE](../LICENSE)), as pokeldn is, so pokeldn's code may be used here with its notice kept.
 `pokeuds/online/link.py` is ported from pokeldn's `pokeldn/online/link.py` (Decryptu/pokeldn, AGPL-3.0), and
 `tests/test_online_trade.py` from its tests of it, each saying so. The rest of the online and GTS code was written
-from the public specifications (NIP-01, -09, -40, -99, BIP-340, RFC 6455) and pokeldn's documented design.
+from the public specifications (NIP-01, -09, -40, -99, BIP-340, RFC 6455) and pokeldn's documented design, and the
+VC's from the projects The Virtual Console names, none of whose code is copied.

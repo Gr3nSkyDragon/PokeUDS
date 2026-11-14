@@ -15,7 +15,7 @@ from pokeuds.vc.session import Config, Role, Session, State
 from pokeuds.vc.trade import VcTrade, choose_mode
 from tests.test_vc_link import gen1_mon, gen2_mon, party
 from pokeuds.radio.demo import SimulatedVcHost
-from pokeuds.vc.model import Model3DS
+from pokeuds.vc.model import Driver, Model3DS
 
 
 @pytest.fixture
@@ -250,7 +250,7 @@ class SimulatedVcJoiner:
         t0 = time.monotonic()
         now = lambda: int((time.monotonic() - t0) * 1000)
         s.start(now())
-        gen, started = self.model.run(), False
+        driver, started, outbox = Driver(self.model), False, []
         while not self.stop.is_set():
             packet = self.station.recv(pia.UDS_CHANNEL, timeout=0.005)
             while packet is not None:
@@ -259,10 +259,11 @@ class SimulatedVcJoiner:
             s.poll(now())
             for byte in s.pop_units():                   # the host's unit k is the pair of our unit k
                 if not started:
-                    s.queue_unit(next(gen))
+                    outbox += driver.start()
                     started = True
-                if not self.model.done:
-                    s.queue_unit(gen.send(byte))
+                outbox += driver.reply(byte)
+            while outbox and s.queue_unit(outbox[0]):
+                outbox.pop(0)
             s.flush(now())
 
     def close(self):

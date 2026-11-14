@@ -144,10 +144,10 @@ def profile_gaps(entry: Entry) -> list[str]:
 
 
 def online_ready(entry: Entry) -> bool:
-    """Whether the game trades online (docs/online.md): X/Y, ORAS, Sun/Moon and USUM."""
+    """Whether the game trades online (docs/online.md): the Virtual Console games, X/Y, ORAS, Sun/Moon and USUM."""
     from ..online.trade import ROOMS
 
-    return entry.key in ROOMS and (entry.group == "Generation 6" or entry.complete)
+    return entry.key in ("rby", "gsc") or (entry.key in ROOMS and (entry.group == "Generation 6" or entry.complete))
 
 
 def command(entry: Entry, settings: Settings, *, offer: str | list[str], role: str, host_title: str = "",
@@ -197,7 +197,7 @@ def missing_for_start(entry: Entry, settings: Settings, offer: Offer | list[Offe
     if online:
         from .. import pkhex
 
-        if pkhex.helper_path() is None:
+        if entry.key not in ("rby", "gsc") and pkhex.helper_path() is None:
             problems.append("An online trade checks the partner's Pokemon with PKHeX, which is not set up (Settings)")
         for gap in profile_gaps(entry):
             problems.append(f"profiles/{entry.key}.toml has no {gap.split('.')[-1]} yet (needs captures)")

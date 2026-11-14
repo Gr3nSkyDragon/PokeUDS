@@ -261,6 +261,9 @@ class Gen6Trade:
         trade.run()
 
     def _received(self, record: bytes) -> None:
+        if self.offers is not None:
+            self._traded_online(record)
+            return
         n = len(self.saved) + 1
         path = received.save(record, self.output, game=self.game.key, trade=n, fmt=self.game.record)
         s = pkx.summary(record)
@@ -268,6 +271,18 @@ class Gen6Trade:
         self._emit("received", trade=n, path=str(path), summary=f"species {s.species} '{s.nickname}' PID {s.pid:08X}",
                     files=[str(path)])
         self.saved.append(path)
+
+    def _traded_online(self, record: bytes) -> None:
+        """Online, ``record`` went from the console to the partner's: nothing is written, or the bank would keep a
+        copy of a Pokemon the player no longer has."""
+        self._online_trades = getattr(self, "_online_trades", 0) + 1
+        sent = pkx.summary(record)
+        last = getattr(self.offers, "last", None)
+        got = pkx.summary(last[1]) if last and last[1] else None
+        summary = ((f"species {got.species} '{got.nickname}' for " if got else "")
+                   + f"species {sent.species} '{sent.nickname}'")
+        self._say(f"[done] trade {self._online_trades} complete: {summary}")
+        self._emit("received", trade=self._online_trades, path="", summary=summary, files=[])
 
     def run(self, role: str, seconds: float) -> list[Path]:
         if self.station.role is Role.CLIENT:

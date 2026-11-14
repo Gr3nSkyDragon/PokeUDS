@@ -72,6 +72,9 @@ What it takes from the measurements is the session format and the block window: 
 first `$FD` the 3DS sends at index T, the 3DS stores PokeUDS's units from T-1, so PokeUDS sends a
 padding `$FD` at T-1 and the rest of its block from T.
 
+Online, with a player far away, PokeUDS plays the partner's console to the 3DS instead of a party of its own
+([online.md](online.md), The Virtual Console).
+
 ## The rounds
 
 | step | Gen 1 and the Time Capsule | Gen 2 Trade Center |

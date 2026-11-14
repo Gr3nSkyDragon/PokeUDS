@@ -88,6 +88,16 @@ PokeUDS meets anyone else trading the same games online without one. X/Y meets O
 checks what arrives first, so it must be set up. PokeUDS stays on the trade screen until the partner leaves (or
 `--trades` trades). `POKEUDS_RELAYS=wss://a,wss://b` replaces the relays. Not yet tried with two real 3DSs.
 
+The Virtual Console games trade online the same way:
+
+```bash
+python -m pokeuds vc trade --radio esp32 --online-code 1234
+```
+
+PokeUDS plays the partner's console to yours: the room your 3DS chooses (the Trade Center, or a Gen 2 game's Time
+Capsule) decides where it meets the partner, Red/Blue/Yellow and the Time Capsule together, Gold/Silver/Crystal's
+Trade Center apart. Each 3DS sees the other's real party, pick and answer. PKHeX is not needed.
+
 The Virtual Console games (Red, Blue, Yellow, Gold, Silver, Crystal):
 
 ```bash

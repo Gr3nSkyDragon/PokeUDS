@@ -9,6 +9,9 @@ Modes, by what each side runs:
 | .pk1 | Gold/Silver/Crystal in the Time Capsule | ``timecapsule`` (we are Gen 1) | Gen 1 | .pk1 |
 | .pk2 | Red/Blue/Yellow | ``timecapsule`` (we are Gen 2) | Gen 1 | .pk2 as a Gen 2 game converts it, and the .pk1 |
 
+Online (``online``, ``pokeuds.vc.online``): no offer of PokeUDS's own; it plays the partner far away's console to this
+one, and nothing is written, since what the 3DS receives is the partner's own Pokemon.
+
 Languages: PokeUDS speaks the blocks of the console's language family (international, Japanese, Korean;
 pokeuds.vc.link, Languages). A queued Pokemon from a game of another language is carried over as Lorenzooone's
 PokemonGB_Online_Trades does it (``gbpk.Record.in_language``): its structs as they are, its names in the console's
@@ -87,7 +90,7 @@ def save(record: gbpk.Record, folder: Path, *, game: str, trade: int, stamp: str
 @dataclass
 class VcTrade:
     station: Station
-    offer: gbpk.Record                  # as the user gave it (.pk1 or .pk2): the first in the queue
+    offer: gbpk.Record | None           # as the user gave it (.pk1 or .pk2): the first in the queue; None online
     output: Path
     trades: int | None = None           # default: one per queued Pokemon
     trainer_name: str = "POKEUDS"
@@ -102,6 +105,7 @@ class VcTrade:
     partner_generation: int | None = None
     partner_title: titles.VcTitle | None = None     # the title joined; unknown when PokeUDS hosts
     host_title: titles.VcTitle | None = None        # the title PokeUDS stands in for when it hosts
+    online: object | None = None        # a partner far away (``online.PartnerRemote``) instead of an offer
     _stamp: str = field(default_factory=lambda: time.strftime("%Y%m%d-%H%M%S"))
 
     # -- the UDS part ---------------------------------------------------------------------------
@@ -194,12 +198,25 @@ class VcTrade:
         """Why this queue cannot trade with ``title``; "" when it can."""
         if not title.supported:
             return titles.why_not(title)
-        if title.family == "kr" and self.offer.generation == 1:
+        if title.family == "kr" and self.offer is not None and self.offer.generation == 1:
             return (f"{title.name} is heard, but Korean Gold and Silver have no Generation 1 game to meet in the Time "
                     "Capsule: offer a .pk2 to trade in their Trade Center.")
         return ""
 
     def _open(self, role: Role, application_data: bytes) -> None:
+        self._held: list[int] = []           # the console's units not answered yet (an online block waits)
+        self._unsent: list[int] = []         # answers the session could not take yet
+        if self.online is not None:
+            from .online import OnlineEngine
+
+            family = gbtext.family_of(self.language)
+            if hasattr(self.online, "family"):
+                self.online.family = family          # its relay room is the console's language family's
+            self.engine = OnlineEngine(self.partner_generation, self.online, family=family,
+                                       on_trade=self._on_online_trade)
+            self._open_session(role, application_data)
+            log.info("VC online trade, %s: PokeUDS plays the partner's console", role.value)
+            return
         self.mode = choose_mode(self.offer, self.partner_generation)
         if len([self.offer, *self.queue]) > MAX_QUEUE:
             raise ValueError(f"a Game Boy party holds {MAX_QUEUE} Pokemon: queue at most {MAX_QUEUE} for one session")
@@ -211,6 +228,11 @@ class VcTrade:
                            [wire_offer(m, self.mode) for m in offers],
                            mails if self.mode is link.GEN2 else [])
         self.engine = link.TradeEngine(self.mode, party, trades=self.trades, on_trade=self._on_trade, family=family)
+        self._open_session(role, application_data)
+        log.info("VC %s trade, %s, offering %s", self.mode.key, role.value,
+                 ", then ".join(m.describe() for m in party.mons))
+
+    def _open_session(self, role: Role, application_data: bytes) -> None:
         peer_node = 1 if role is Role.JOINER else 2
         # As host, every frame goes on the air as a broadcast, the ones for node 2 too, as a retail VC host's do (a
         # sniff of two retail consoles, 2026-10-04); as joiner, unicast to the host, which retail hosts take.
@@ -226,8 +248,6 @@ class VcTrade:
         self.session = Session(role, send, Config(name=self.trainer_name, application_data=application_data))
         self._role = role
         self._first_sent = False
-        log.info("VC %s trade, %s, offering %s", self.mode.key, role.value,
-                 ", then ".join(m.describe() for m in party.mons))
 
     # -- the game part --------------------------------------------------------------------------
 
@@ -249,6 +269,13 @@ class VcTrade:
         print(f"[done] trade {n} complete: {received.describe()} -> {path}")
         status.emit("received", trade=n, path=str(path), summary=received.describe(), sent=trade.sent.describe(),
                     files=[str(f) for f in self.saved])
+
+    def _on_online_trade(self, trade: link.Trade) -> None:
+        """Online, the 3DS traded with the partner's console: nothing to keep, the partner's Pokemon is theirs."""
+        n = len(self.engine.trades)
+        summary = f"{trade.received.describe()} from {trade.partner_name}, for {trade.sent.describe()}"
+        print(f"[done] trade {n} complete: {summary}")
+        status.emit("received", trade=n, path="", summary=summary, sent=trade.sent.describe(), files=[])
 
     def run(self, seconds: float | None = None) -> None:
         """Drive the session until it closes, the trades are done and the partner leaves, or ``seconds`` pass."""
@@ -278,8 +305,17 @@ class VcTrade:
             self._first_sent = session.queue_unit(0xEF)
             if self._first_sent:
                 log.info("VC session: sent the host's first game unit (EF): the console should leave the link menu")
-        for byte in session.pop_units():
-            session.queue_unit(engine.respond(byte))           # joiner: unit k; host: unit k+1
+        self._held += session.pop_units()
+        while self._unsent and session.queue_unit(self._unsent[0]):
+            self._unsent.pop(0)
+        while self._held and not self._unsent:                 # joiner: unit k; host: unit k+1
+            unit = self._held[0]
+            reply = engine.respond(unit, self._held[1:]) if self.online is not None else engine.respond(unit)
+            if reply is None:
+                break                                          # held: the partner's block is not here yet
+            self._held.pop(0)
+            if not session.queue_unit(reply):
+                self._unsent.append(reply)
         session.flush(now)
 
     def _report(self, session: Session, engine: link.TradeEngine) -> None:
@@ -290,6 +326,9 @@ class VcTrade:
         if phase != getattr(self, "_last_phase", None):
             self._last_phase = phase
             status.emit("phase", phase=phase)
+        if self.online is not None and engine.mode is not None and engine.mode is not self.mode:
+            self.mode = engine.mode
+            status.emit("mode", mode=self.mode.key)
         notes = getattr(self, "_notes", 0)
         for text in engine.log[notes:]:
             status.emit("note", text=text)

@@ -827,7 +827,7 @@
 "XDG_DATA_HOME" = "XDG_DATA_HOME"
 "Yellow" = "Yellow"
 "Yellow (Gen 1)" = "Yellow (Gen 1)"
-"Your 3DS is offered your partner's Pokemon, and theirs yours. PokeUDS says yes on each side only once both 3DSs have, and checks what arrives with PKHeX first. Not yet tried with two real 3DSs." = "Your 3DS is offered your partner's Pokemon, and theirs yours. PokeUDS says yes on each side only once both 3DSs have, and checks what arrives with PKHeX first. Not yet tried with two real 3DSs."
+"Your 3DS is offered your partner's Pokemon, and theirs yours: each 3DS trades only once both have said yes, and what arrives is checked before your 3DS sees it. Not yet tried with two real 3DSs." = "Your 3DS is offered your partner's Pokemon, and theirs yours: each 3DS trades only once both have said yes, and what arrives is checked before your 3DS sees it. Not yet tried with two real 3DSs."
 "Your partner types the same code. Leave it empty to meet anyone trading online without one." = "Your partner types the same code. Leave it empty to meet anyone trading online without one."
 "Yours" = "Yours"
 "a .{value0} does not migrate anywhere" = "a .{value0} does not migrate anywhere"

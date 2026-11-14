@@ -434,7 +434,7 @@ def test_two_gen6_consoles_trade_through_the_relays(tmp_path, quick):
         stored = lambda mons: [m[:pkx.STORED_SIZE] for m in mons]
         assert [p.read_bytes() for p in desks["a"][1].saved] == stored(b_mons)
         assert [p.read_bytes() for p in desks["b"][1].saved] == stored(a_mons)
-        assert [p.read_bytes() for p in desks["a"][0].saved] == stored(a_mons)
+        assert desks["a"][0].saved == desks["b"][0].saved == []      # online, PokeUDS keeps nothing
         assert pa.round == pb.round == 3
     finally:
         hub.stopped.set()
@@ -534,7 +534,8 @@ def test_two_command_line_runs_trade_online_through_a_relay(tmp_path):
         assert [run.returncode for run in runs] == [0, 0], outputs
         for side, text in zip("ab", outputs):
             assert "[online] paired with" in text and "[done] trade 1 complete" in text
-            assert len(list((tmp_path / side).glob("*_xy_trade1_025_Pikachu_*.pk6"))) == 1
+            assert "[done] trade 1 complete: species 25 'Pikachu' for species 25 'Pikachu'" in text
+            assert not (tmp_path / side).exists() or not list((tmp_path / side).iterdir())
     finally:
         for run in runs:
             if run.poll() is None:

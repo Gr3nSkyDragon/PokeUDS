@@ -283,7 +283,8 @@ def test_an_online_trade_offers_no_queue_and_needs_pkhex(data, monkeypatch):
     from pokeuds import pkhex
 
     xy, rby = catalog.BY_KEY["xy"], catalog.BY_KEY["rby"]
-    assert [k for k, e in catalog.BY_KEY.items() if catalog.online_ready(e)] == ["xy", "oras", "sm", "usum"]
+    online = [k for k, e in catalog.BY_KEY.items() if catalog.online_ready(e)]
+    assert sorted(online) == ["gsc", "oras", "rby", "sm", "usum", "xy"]
     s = Settings(radio="demo", port="x", output="/out", trainer_name="ASH", online_code=" desk ")
     run = catalog.command(xy, s, offer=["a.pk6"], role="join", online=True)
     assert "--offer" not in run and run[-3:] == ["--online", "--online-code", "desk"]
@@ -294,6 +295,9 @@ def test_an_online_trade_offers_no_queue_and_needs_pkhex(data, monkeypatch):
     assert catalog.missing_for_start(xy, s, None, online=True) == []
     monkeypatch.setattr(pkhex, "helper_path", lambda: None)
     assert ["PKHeX" in p for p in catalog.missing_for_start(xy, s, None, online=True)] == [True]
+    assert catalog.missing_for_start(rby, s, None, online=True) == []        # the VC checks without PKHeX
+    vc = catalog.command(rby, s, offer=[""], role="join", online=True)
+    assert vc[:2] == ["vc", "trade"] and "--offer" not in vc and "--online" in vc
     assert catalog.missing_for_start(rby, s, None) == ["Choose a Pokemon to offer: from the bank, Build one, or a file"]
 
 
@@ -327,6 +331,9 @@ def test_the_trade_page_trades_online(data, monkeypatch):
     assert trade.command()[-3:] == ["--online", "--online-code", "desk"] and "--offer" not in trade.command()
     app.progress.take({"event": "online", "state": "paired", "text": "paired", "partner": "Misty", "offer": "Staryu"})
     trade.control()
-    trade.pick_game("rby")                       # a game with no online trades: the queue is back
+    trade.pick_game("rby")                       # the VC trades online too
+    assert trade.online and trade.command()[:3] == ["-v", "vc", "trade"] and "--online" in trade.command()
+    trade.control()
+    settings.online = False                      # Online off: the queue is back
     assert not trade.online and trade.problems() == ["Choose a Pokemon to offer: from the bank, Build one, or a file"]
     trade.control()

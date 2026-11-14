@@ -5,6 +5,11 @@ exchange with the partner's reply to the same index; random numbers paced, party
 and mail sent in bursts; for a block whose first $FD it sends at index T it stores the partner's
 units from T-1. It decodes what it stores with the same rules as the ROM (pokeuds.vc.link.parse_*). ``family``
 plays a Japanese or Korean game's blocks (pokeuds.vc.link, Languages).
+
+``burst=True`` sends each block as the 3DS does, every unit of it before any of the partner's replies to it (a
+``Burst``); ``Driver`` turns the game into the units to send. Without it the model waits for each reply, which a
+partner answering at once (``TradeEngine``) cannot tell apart; an online trade, which holds its block until the
+partner far away has sent theirs (pokeuds.vc.online), needs the burst.
 """
 
 from __future__ import annotations
@@ -13,10 +18,14 @@ from pokeuds import gbpk
 from pokeuds.vc import link
 
 
+class Burst(list):
+    """A block's units, sent together; the game takes back the list of the partner's replies to them."""
+
+
 class Model3DS:
     def __init__(self, mode: link.LinkMode, party: link.Party, *, pick: int = 0, accept: bool = True,
                  trades: int = 1, console_generation: int | None = None, role: str = "host",
-                 family: str = "intl") -> None:
+                 family: str = "intl", burst: bool = False, room_byte: int | None = None) -> None:
         self.mode = mode
         self.family = family
         self.layout = link.LAYOUTS[family]
@@ -24,6 +33,8 @@ class Model3DS:
         self.pick, self.accept, self.trades = pick, accept, trades
         self.console_generation = console_generation or mode.generation
         self.role = role
+        self.burst = burst
+        self.room_byte = mode.room_byte if room_byte is None else room_byte   # what Link_EnsureSync sends
         self.sent: list[int] = []
         self.ours: list[int] = []
         self.received: list[gbpk.Record] = []      # what the partner traded us
@@ -54,6 +65,11 @@ class Model3DS:
 
     def _block(self, data: bytes):
         start = len(self.sent)
+        if self.burst:
+            replies = yield Burst(data)
+            self.sent += list(data)
+            self.ours += list(replies)
+            return start
         for b in data:
             yield from self._x(b)
         return start
@@ -77,7 +93,7 @@ class Model3DS:
             got = False
             while not got:
                 for _ in range(2):
-                    r = yield from self._x(self.mode.room_byte)
+                    r = yield from self._x(self.room_byte)
                     got |= (r & 0xF0) == 0xD0
         for _ in range(20):
             yield from self._x(link.NO_DATA)                          # walking to the table
@@ -129,6 +145,37 @@ class Model3DS:
             party = link.Party(party.trainer_name, party.trainer_id, [theirs.mons[their_pick]] + party.mons[1:])
             self.trades -= 1
             yield from self._sync(rng | (0 if g2 else link.ACCEPT), before=5)
+
+
+class Driver:
+    """The units a model sends, as replies come in: one per reply, or a whole ``Burst`` that waits for as many."""
+
+    def __init__(self, model: Model3DS) -> None:
+        self.model = model
+        self.game = model.run()
+        self.burst = 0                     # replies still owed to the burst on the wire
+        self.replies: list[int] = []
+
+    def start(self) -> list[int]:
+        return self._out(next(self.game))
+
+    def reply(self, byte: int) -> list[int]:
+        """The partner's next unit -> the units the game sends next (none while a burst waits for its replies)."""
+        if self.model.done:
+            return []
+        if self.burst:
+            self.replies.append(byte)
+            if len(self.replies) < self.burst:
+                return []
+            replies, self.replies, self.burst = self.replies, [], 0
+            return self._out(self.game.send(replies))
+        return self._out(self.game.send(byte))
+
+    def _out(self, item) -> list[int]:
+        if isinstance(item, Burst):
+            self.burst = len(item)
+            return list(item)
+        return [item]
 
 
 def play(engine: link.TradeEngine, model: Model3DS, max_units: int = 20000) -> int:

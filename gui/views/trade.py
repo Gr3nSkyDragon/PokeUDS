@@ -264,8 +264,8 @@ class TradeView(View):
                     t.label("Your partner types the same code. Leave it empty to meet anyone trading online "
                             "without one.", size=12, expand=True)],
                    spacing=12, vertical_alignment=ft.CrossAxisAlignment.CENTER),
-            t.label("Your 3DS is offered your partner's Pokemon, and theirs yours. PokeUDS says yes on each side "
-                    "only once both 3DSs have, and checks what arrives with PKHeX first. Not yet tried with two "
+            t.label("Your 3DS is offered your partner's Pokemon, and theirs yours: each 3DS trades only once both "
+                    "have said yes, and what arrives is checked before your 3DS sees it. Not yet tried with two "
                     "real 3DSs."),
         ], spacing=6, tight=True)
 
