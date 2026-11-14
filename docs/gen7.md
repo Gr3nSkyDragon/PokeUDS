@@ -21,6 +21,10 @@ python -m pokeuds trade sm --role host --radio esp32 --keys aes_keys.txt --offer
 - The trainer is `--trainer/--tid/--sid`, else the app's trainer, else the offer's original trainer. The plaza knows
   a player by a principal id and an 8-byte id, which PokeUDS makes once and keeps in the settings (`plaza`), so a
   console sees the same guest every time.
+- `--radio demo:sun` (moon, us, um) trades with a simulated console in the Festival Plaza, PokeUDS's own engine
+  playing the other side: it waits 4 s to be invited, then invites PokeUDS, offers a Rowlet, says yes as a player
+  would, trades once and leaves. What it receives is kept in a `pokeuds-demo-*` folder in the temp folder. It
+  proves nothing about a real console.
 
 ## The network
 

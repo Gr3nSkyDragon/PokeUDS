@@ -8,6 +8,12 @@ same UDS, Pia and Game Boy code a real trade does, against ``pokeuds.vc.model``.
 Gen 6 engine playing the console's part. It waits a few seconds to be asked for a trade, then asks
 PokeUDS itself, and offers a Pikachu.
 
+``--radio demo:sun`` (or moon, us, um) puts a Generation 7 console in the Festival Plaza next to PokeUDS, played by
+PokeUDS's own Gen 7 engine in the same way: it waits a few seconds to be invited to a Link Trade, then invites
+PokeUDS itself, offers a Rowlet and says yes as a player would.
+
+Each trades once and then leaves; what it receives is kept in a ``pokeuds-demo-*`` folder in the temp folder.
+
 Both are development and demonstration aids: they prove nothing about a real 3DS.
 """
 
@@ -164,6 +170,69 @@ class SimulatedGen6Console:
         self.thread.join(timeout=2)
 
 
+class SimulatedGen7Console:
+    """A Generation 7 console in the Festival Plaza on channel 6, played by PokeUDS's own engine."""
+
+    VERSIONS = {"sun": "Sun", "moon": "Moon", "us": "Ultra Sun", "um": "Ultra Moon"}
+    SCREEN_WAIT = 3.0        # a player offers soon after the screen opens; an online PokeUDS shows nothing before
+
+    def __init__(self, air: Air, key: bytes, version: str) -> None:
+        import tempfile
+        from pathlib import Path
+
+        from ..games import get, profile
+        from ..games.gen7 import trade, wire
+        from ..uds import Station
+
+        self.name = self.VERSIONS[version]
+        game = get("sm" if version in ("sun", "moon") else "usum")
+        self.station = Station(SimRadio(air), bytes.fromhex("02000000AA07"), key, name="DEMO")
+        self.station.start(6)
+        self.folder = Path(tempfile.mkdtemp(prefix="pokeuds-demo-"))
+        me = wire.Trainer("DEMO", 4242, 2424, version=wire.VERSION_CODES[self.name])
+        self.trade = trade.Gen7Trade(self.station, game, profile.load(game.key), demo_pk7(self.name), self.folder,
+                                     me, channels=(6,), announce=False, answer_first=True,
+                                     screen_wait=self.SCREEN_WAIT)
+        self.thread = threading.Thread(target=self._run, daemon=True, name="demo-gen7-console")
+        self.thread.start()
+
+    def _run(self) -> None:
+        try:
+            try:
+                self.trade.wait_to_be_asked(4.0)
+            except TimeoutError:
+                self.trade.ask(120.0)
+        except Exception as exc:
+            log.info("demo console stopped: %s", exc)
+
+    def close(self) -> None:
+        self.station.close()
+        self.thread.join(timeout=2)
+
+
+def demo_pk7(version: str = "Moon") -> bytes:
+    """The Rowlet the demo Gen 7 console offers, in party form with stats filled in by hand (no PKHeX needed)."""
+    from .. import pkx
+    from ..games.gen7 import wire
+
+    d = bytearray(pkx.PARTY_SIZE)
+    struct.pack_into("<I", d, 0x00, 0x0701E7D5)           # encryption constant
+    struct.pack_into("<HH", d, 0x08, 722, 0)              # species Rowlet, no held item
+    struct.pack_into("<HH", d, 0x0C, 4242, 2424)          # TID, SID
+    struct.pack_into("<I", d, 0x10, 560)                  # experience: level 10 (medium slow)
+    d[0x14] = 65                                          # ability: Overgrow
+    struct.pack_into("<I", d, 0x18, 0x7A1E7D5A)           # PID
+    d[0x40:0x5A] = "Rowlet".encode("utf-16-le").ljust(26, b"\0")
+    struct.pack_into("<4H", d, 0x5A, 33, 45, 670, 0)      # moves: Tackle, Growl, Leafage
+    d[0xB0:0xCA] = "DEMO".encode("utf-16-le").ljust(26, b"\0")
+    d[0xDE] = 5                                           # met level
+    d[0xDF] = wire.VERSION_CODES[version]                 # origin game
+    d[0xE3] = 2                                           # language: English
+    d[0xEC] = 10                                          # level
+    struct.pack_into("<7H", d, 0xF0, 31, 31, 16, 16, 13, 18, 18)   # current HP, then HP, Atk, Def, Spe, SpA, SpD
+    return pkx.fix_checksum(bytes(d))
+
+
 def demo_pk6() -> bytes:
     """The Pikachu the demo Gen 6 console offers, party stats filled in by hand (no PKHeX needed)."""
     from .. import pkx
@@ -199,10 +268,17 @@ class DemoRadio(SimRadio):
             self.console = SimulatedGen6Console(self.air, DEMO_KEY, key)
             self.title = self.console
             return
+        if key in SimulatedGen7Console.VERSIONS:
+            self.air = Air()
+            super().__init__(self.air)
+            self.console = SimulatedGen7Console(self.air, DEMO_KEY, key)
+            self.title = self.console
+            return
         time_capsule = key.endswith("-tc")
         key = key.removesuffix("-tc")
         if key not in titles.TITLES:
-            raise ValueError(f"demo radio: unknown title {key!r}; use red, blue, yellow, gold, silver, crystal, x, y, or, as")
+            raise ValueError(f"demo radio: unknown title {key!r}; use red, blue, yellow, gold, silver, crystal, "
+                             "x, y, or, as, sun, moon, us, um")
         self.title = titles.TITLES[key]
         gen = self.title.generation
         if time_capsule and self.title.family == "kr":

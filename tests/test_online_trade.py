@@ -17,6 +17,7 @@ from pokeuds.games import get, profile
 from pokeuds.games.gen6 import session as gen6_session
 from pokeuds.games.gen6 import wire as gen6_wire
 from pokeuds.games.gen6.trade import Gen6Trade
+from pokeuds.games.gen7.trade import Gen7Trade
 from pokeuds.games.gen7 import session as gen7_session
 from pokeuds.games.gen7 import wire as gen7_wire
 from pokeuds.online import link, relays
@@ -541,3 +542,34 @@ def test_two_command_line_runs_trade_online_through_a_relay(tmp_path):
             if run.poll() is None:
                 run.kill()
         stop()
+
+
+def test_two_demo_sun_moon_consoles_trade_through_the_relays(tmp_path, quick):
+    """The one-console test's other half, twice: a PokeUDS beside the demo radio's Sun and one beside its Moon, each
+    online, meet through the relays; each demo console ends with the other's Rowlet, and neither PokeUDS writes."""
+    from pokeuds.radio.demo import DEMO_KEY, DemoRadio
+
+    hub = Hub(live=True)
+    pa, pb = live_partners(hub, "gen7")
+    radios, stations, trades = [], [], []
+    for title, partner, mac in (("sun", pa, "02000000B731"), ("moon", pb, "02000000B732")):
+        radio = DemoRadio(title)
+        station = Station(radio, bytes.fromhex(mac), DEMO_KEY, name="POKEUDS")
+        station.start(6)
+        radios.append(radio)
+        stations.append(station)
+        trades.append(Gen7Trade(station, get("sm"), profile.load("sm"), b"", tmp_path / title, gen7_wire.Trainer("Ash"),
+                                offers=online.Offers(partner)))
+    try:
+        run_all({"sun": lambda: trades[0].run("join", 30.0), "moon": lambda: trades[1].run("join", 30.0)})
+        got = [r.console.trade.saved for r in radios]
+        assert [len(g) for g in got] == [1, 1] and all("_722_Rowlet_" in g[0].name for g in got)
+        assert [t.saved for t in trades] == [[], []]
+    finally:
+        hub.stopped.set()
+        for p in (pa, pb):
+            p.close()
+        for s in stations:
+            s.close()
+        for r in radios:
+            r.close()

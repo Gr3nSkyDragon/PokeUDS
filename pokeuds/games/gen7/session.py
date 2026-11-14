@@ -32,8 +32,9 @@ class Gen7Session(gen6.Gen6Session):
     ACK_INDEX_AHEAD = 1       # an acknowledgment carries our next message's index (Gen 6: the last one's)
     person_clock: int | None = None      # the invite's token when PokeUDS invited (``wire.person``)
     # Say yes before the other side does, as a console's player may: only for a PokeUDS standing in for a console
-    # (tests). Against a console PokeUDS always answers its player's yes.
+    # (tests, the demo radio). Against a console PokeUDS always answers its player's yes.
     answer_first: bool = False
+    screen_wait: float = SCREEN_WAIT     # how long to wait for the other side's trade screen before offering anyway
 
     def netz_host_messages(self, call_id: int, nonce: bytes) -> list[bytes]:
         return wire.netz_host(call_id, nonce)
@@ -190,9 +191,9 @@ class Gen7Session(gen6.Gen6Session):
         # Offer once the console's trade screen is up (it announces it with the Pokemon it shows first), as both
         # consoles of the captures did: an offer sent before the console is there can be dropped, and the console
         # then shows our Pokemon but waits for an offer it never got.
-        self.wait_or(self._console_screen_up, SCREEN_WAIT)
+        self.wait_or(self._console_screen_up, self.screen_wait)
         if not self._console_screen_up():
-            log.info("the console has not shown its trade screen after %.0f s; offering anyway", SCREEN_WAIT)
+            log.info("the console has not shown its trade screen after %.0f s; offering anyway", self.screen_wait)
 
     def _offer(self, sealed: bytes, species: int) -> None:
         self._command(wire.SCREEN, wire.CMD_SHOW, wire.show(sealed, species, chosen=True))

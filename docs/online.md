@@ -260,6 +260,32 @@ the room code your partner types (Settings' `online`, `online_code`). The queue 
 Pokemon; the session panel shows the partner (waiting, paired, gone) and what their 3DS offers, from the `online`
 status events. PokeUDS stays on the trade screen until the partner leaves or the 3DS's player does.
 
+### Testing with one console
+
+The partner can be a second PokeUDS beside the demo radio's console, on the same computer, with the same code: run
+the first command with your 3DS and board, the second in another terminal (it needs no board). These are whole
+trades: your 3DS sends a real Pokemon and receives the demo console's, so offer one you can spare. The demo consoles
+trade once and leave; on X/Y and Sun/Moon what they receive is kept in a `pokeuds-demo-*` folder in the temp folder,
+on the Virtual Console it is not kept at all.
+
+| your 3DS | yours | the partner | your 3DS receives |
+|---|---|---|---|
+| Red / Blue / Yellow | `pokeuds vc trade --radio esp32 --online-code T` | `pokeuds vc trade --radio demo:blue --online-code T` | Eevee Lv 25 |
+| Gold / Silver / Crystal, Trade Center | `pokeuds vc trade --radio esp32 --online-code T` | `pokeuds vc trade --radio demo:gold --online-code T` | Togepi Lv 5 |
+| Gold / Silver / Crystal, Time Capsule | `pokeuds vc trade --radio esp32 --online-code T` | `pokeuds vc trade --radio demo:red --online-code T` | Eevee Lv 25 |
+| Red / Blue / Yellow, with a Time Capsule partner | `pokeuds vc trade --radio esp32 --online-code T` | `pokeuds vc trade --radio demo:gold-tc --online-code T` | Eevee Lv 25 |
+| X / Y / ORAS | `pokeuds trade xy --radio esp32 --online-code T` | `pokeuds trade xy --radio demo:x --online-code T` | Pikachu Lv 10 |
+| Sun / Moon / USUM | `pokeuds trade sm --radio esp32 --online-code T` | `pokeuds trade sm --radio demo:moon --online-code T` | Rowlet Lv 10 |
+
+(`python -m pokeuds` from source; the game key on your side is your own game's: `oras`, `usum`.) With your 3DS
+hosting (the default, `--role join` on your side) choose Host in the VC link menu, ask PokeUDS in the PSS, or invite
+it in the Festival Plaza; `--role host` has PokeUDS host or ask instead. Leave the partner on its default role: the
+demo console waits a few seconds to be asked, then asks itself. `tests/test_online_trade.py` and
+`tests/test_vc_online.py` run the partner's half twice over, a demo console on each side.
+
+To see how long a 3DS waits for a partner who is late, start the partner's command only once your 3DS is at the
+table or on the trade screen.
+
 **Not yet done:**
 
 * VC trades across language families, and battles.

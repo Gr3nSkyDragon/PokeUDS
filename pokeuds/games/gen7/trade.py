@@ -50,6 +50,7 @@ class Gen7Trade(gen6_trade.Gen6Trade):
     trainer: wire.Trainer = field(default_factory=wire.Trainer)
     channels: tuple[int, ...] = PLAZA_CHANNELS
     answer_first: bool = False          # a PokeUDS standing in for a console's player (tests): ``Gen7Session``
+    screen_wait: float = session.SCREEN_WAIT
 
     def __post_init__(self) -> None:
         self._lock = threading.Lock()
@@ -211,5 +212,5 @@ class Gen7Trade(gen6_trade.Gen6Trade):
         trade = session.Gen7Session(self.station, self.trainer, self.party, trades=self.trades, queue=self.queue_party,
                                     offers=self.offers, on_received=self._received, announce=self.announce,
                                     person_clock=clock,
-                                    answer_first=self.answer_first)
+                                    answer_first=self.answer_first, screen_wait=self.screen_wait)
         trade.run()

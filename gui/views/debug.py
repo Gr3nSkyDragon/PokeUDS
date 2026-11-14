@@ -7,8 +7,10 @@ import flet as ft
 from .. import theme as t
 from .common import View, log_box
 
-DEMOS = [("", "Off"), ("red", "Red (Gen 1)"), ("yellow", "Yellow (Gen 1)"), ("gold", "Gold (Gen 2 Trade Center)"),
-         ("gold-tc", "Gold in the Time Capsule"), ("crystal", "Crystal (Gen 2 Trade Center)")]
+DEMOS = [("", "Off"), ("red", "Red (Gen 1)"), ("blue", "Blue (Gen 1)"), ("yellow", "Yellow (Gen 1)"),
+         ("gold", "Gold (Gen 2 Trade Center)"), ("gold-tc", "Gold in the Time Capsule"),
+         ("crystal", "Crystal (Gen 2 Trade Center)"), ("x", "X (Gen 6, in the PSS)"),
+         ("sun", "Sun (Gen 7, in the Festival Plaza)"), ("um", "Ultra Moon (Gen 7, in the Festival Plaza)")]
 
 
 class DebugView(View):

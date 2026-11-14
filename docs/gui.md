@@ -173,10 +173,11 @@ Code: `pokeuds/app/sprites.py` (the cache), `gui/views/sprite.py` (the preview).
 
 ## The demo radio
 
-Debug, Demo radio, picks a simulated 3DS (Red, Yellow, Gold, Gold in the Time Capsule, Crystal). Runs then
-go to `--radio demo:<title>`: a modelled console hosting from the VC link menu, on a simulated air, through
-the real UDS, Pia and Game Boy code. It is for trying the app and for development, and proves nothing
-about a real console. It needs no console keys.
+Debug, Demo radio, picks a simulated 3DS (Red, Blue, Yellow, Gold, Gold in the Time Capsule, Crystal, X, Sun,
+Ultra Moon). Runs then go to `--radio demo:<title>`. A Game Boy title is a modelled console hosting from the VC link
+menu, on a simulated air, through the real UDS, Pia and Game Boy code; X and Sun are PokeUDS's own Gen 6 and Gen 7
+engines playing a console in the PSS and the Festival Plaza. Each trades once and leaves. It is for trying the app
+and for development, and proves nothing about a real console. It needs no console keys.
 
 ## Screenshots
 

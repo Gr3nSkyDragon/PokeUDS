@@ -2,7 +2,8 @@
 
 - ``esp32`` or ``esp32:COM4``: an ESP32-S3 running esp32-uds-bridge (found by USB ID if no port).
 - ``ldnd`` or ``ldnd:\\\\.\\pipe\\name``: a USB Wi-Fi adapter through legacy ldnd.exe 0.0.5 (Windows).
-- ``demo:red`` (any VC title; ``gold-tc`` for the Time Capsule): a simulated 3DS, no hardware.
+- ``demo:red`` (any VC title; ``gold-tc`` for the Time Capsule; ``x``, ``y``, ``or``, ``as``; ``sun``, ``moon``, ``us``,
+  ``um``): a simulated 3DS, no hardware.
 """
 
 from __future__ import annotations

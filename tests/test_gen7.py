@@ -167,3 +167,26 @@ def test_one_message_may_hold_several_commands():
     assert [(b.module, b.ident) for b in parts] == [(2, 1), (3, 5)] and parts[0].data == record
     sync = gen6.sync(gen6.SYNC_REQUEST, 0, 0x88)
     assert [(b.kind, b.ident) for b in gen6.parse_bodies(sync + body)] == [("sync", 0x88), ("command", 1), ("command", 5)]
+
+
+@pytest.mark.parametrize("pokeuds_role", ["join", "host"])
+def test_the_demo_radio_plays_a_sun_console(tmp_path, pokeuds_role, monkeypatch):
+    """``--radio demo:sun``: PokeUDS's own engine plays a Sun in the Festival Plaza, which trades its Rowlet once."""
+    from pokeuds.games import get, profile
+    from pokeuds.games.gen7.trade import Gen7Trade
+    from pokeuds.radio.demo import DEMO_KEY, DemoRadio
+
+    radio = DemoRadio("sun")
+    station = Station(radio, bytes.fromhex("02000000B721"), DEMO_KEY, name="POKEUDS")
+    station.start(6)
+    offer = pk7(0x5555, 25, "Sparky")
+    trade = Gen7Trade(station, get("sm"), profile.load("sm"), offer, tmp_path / "ours", wire.Trainer("Ash"))
+    try:
+        trade.run(pokeuds_role, 30.0)
+        (mine,) = trade.saved
+        assert "_sm_trade1_722_Rowlet_" in mine.name
+        (theirs,) = radio.console.trade.saved
+        assert theirs.read_bytes() == offer[:pkx.STORED_SIZE]
+    finally:
+        station.close()
+        radio.close()
