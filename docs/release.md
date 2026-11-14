@@ -51,10 +51,12 @@ it ad hoc; without an Apple Developer ID it is not notarized, so players allow i
 Security, Open Anyway). The release workflow checks the signature, that its PKHeX answers, and that the
 app's command line starts, but nothing opens its window there: start it on a Mac before publishing.
 
-## Code signing
+## Code signing (prepared, not in use)
 
-The Windows app's own binaries, `PokeUDS.exe` and the PKHeX helper, are signed through SignPath Foundation
-([code_signing.md](code_signing.md)). The release workflow builds `dist/PokeUDS` unzipped, uploads it, submits it
+PokeUDS is not code-signed yet: SignPath Foundation did not accept its application, and it is working towards it
+([code_signing.md](code_signing.md)). The secret below is not set, so every release ships unsigned. The workflow is
+ready for when signing is granted: the Windows app's own binaries, `PokeUDS.exe` and the PKHeX helper, would be
+signed through SignPath. With the secret set, the release workflow builds `dist/PokeUDS` unzipped, uploads it, submits it
 to SignPath (artifact configuration `pokeuds-windows`, `.github/signpath/artifact-configuration.xml`), waits for
 the request to be approved, puts the signed folder in its place and only then zips it
 (`python scripts/build_exe.py --zip-only`), so `SHA256SUMS` and the updater see the signed zip. It needs, in the
@@ -66,7 +68,7 @@ repository's Actions settings:
 | variable `SIGNPATH_ORGANIZATION_ID` | the SignPath organization's id |
 | variable `SIGNPATH_POLICY` | `release-signing` once SignPath Foundation grants it; unset, `test-signing` |
 
-Each release's signing request waits for an approver on SignPath before the workflow goes on.
+With signing in use, each release's signing request waits for an approver on SignPath before the workflow goes on.
 
 ## Checklist
 
