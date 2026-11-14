@@ -277,3 +277,56 @@ def test_a_runs_log_is_on_disk_while_it_runs_and_keeps_every_line(tmp_path, monk
     assert text.startswith("$ pokeuds trade xy\nPSS beacon from Refresh\n") and text.endswith("line 2499\n")
     app.saved_log = None
     assert full_log(app).startswith("line 500\n")
+
+
+def test_an_online_trade_offers_no_queue_and_needs_pkhex(data, monkeypatch):
+    from pokeuds import pkhex
+
+    xy, rby = catalog.BY_KEY["xy"], catalog.BY_KEY["rby"]
+    assert [k for k, e in catalog.BY_KEY.items() if catalog.online_ready(e)] == ["xy", "oras", "sm", "usum"]
+    s = Settings(radio="demo", port="x", output="/out", trainer_name="ASH", online_code=" desk ")
+    run = catalog.command(xy, s, offer=["a.pk6"], role="join", online=True)
+    assert "--offer" not in run and run[-3:] == ["--online", "--online-code", "desk"]
+    s.online_code = ""
+    assert catalog.command(xy, s, offer=["a.pk6"], role="join", online=True)[-1] == "--online"
+    assert "--online" not in catalog.command(xy, s, offer=["a.pk6"], role="join")
+    monkeypatch.setattr(pkhex, "helper_path", lambda: "pkhex.exe")
+    assert catalog.missing_for_start(xy, s, None, online=True) == []
+    monkeypatch.setattr(pkhex, "helper_path", lambda: None)
+    assert ["PKHeX" in p for p in catalog.missing_for_start(xy, s, None, online=True)] == [True]
+    assert catalog.missing_for_start(rby, s, None) == ["Choose a Pokemon to offer: from the bank, Build one, or a file"]
+
+
+def test_progress_follows_the_online_partner():
+    p = Progress()
+    p.start()
+    for event in [{"event": "online", "state": "searching", "text": "waiting for a partner"},
+                  {"event": "online", "state": "paired", "text": "paired with Misty", "partner": "Misty"},
+                  {"event": "online", "state": "paired", "text": "Misty offers Staryu", "partner": "Misty",
+                   "offer": "Staryu level 20 [species 120]"}]:
+        p.take(event)
+    assert (p.online, p.partner, p.partner_offer) == ("paired", "Misty", "Staryu level 20 [species 120]")
+    p.take({"event": "online", "state": "paired", "text": "Misty took back their offer", "offer": ""})
+    assert p.partner_offer == "" and p.notes[-1] == "Misty took back their offer"
+    p.take({"event": "online", "state": "lost", "text": "lost the partner"})
+    assert p.online == "lost" and p.notes[-1] == "Lost the partner"
+
+
+def test_the_trade_page_trades_online(data, monkeypatch):
+    pytest.importorskip("flet")
+    from gui.app import App
+    from gui.views.trade import TradeView
+    from pokeuds import pkhex
+
+    monkeypatch.setattr(pkhex, "helper_path", lambda: "pkhex.exe")
+    settings = Settings(radio="demo", port="x", last_game="xy", online=True, online_code="desk")
+    app = App(None, settings)
+    trade = TradeView(app)
+    assert trade.online and trade.problems() == []
+    trade.control()
+    assert trade.command()[-3:] == ["--online", "--online-code", "desk"] and "--offer" not in trade.command()
+    app.progress.take({"event": "online", "state": "paired", "text": "paired", "partner": "Misty", "offer": "Staryu"})
+    trade.control()
+    trade.pick_game("rby")                       # a game with no online trades: the queue is back
+    assert not trade.online and trade.problems() == ["Choose a Pokemon to offer: from the bank, Build one, or a file"]
+    trade.control()

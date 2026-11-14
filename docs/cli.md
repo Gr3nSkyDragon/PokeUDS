@@ -76,6 +76,18 @@ By default PokeUDS joins the network the 3DS opens (the 3DS asks for the trade).
 `--partner` names the trainer to ask in the PSS or Festival Plaza (default: the first one heard). `--trainer`,
 `--tid` and `--sid` set what the 3DS sees; `--trades` sets how many trades before PokeUDS leaves.
 
+Online, with a player far away who runs the same command beside their own 3DS ([online.md](online.md)):
+
+```bash
+python -m pokeuds trade xy --radio esp32 --online-code 1234
+```
+
+`--online` (or `--online-code`, which implies it) offers the partner's 3DS's Pokemon to this 3DS, so there is no
+`--offer`; each side says yes only once both 3DSs have. Both players type the same code; with `--online` and no code,
+PokeUDS meets anyone else trading the same games online without one. X/Y meets ORAS, Sun/Moon meets USUM. PKHeX
+checks what arrives first, so it must be set up. PokeUDS stays on the trade screen until the partner leaves (or
+`--trades` trades). `POKEUDS_RELAYS=wss://a,wss://b` replaces the relays. Not yet tried with two real 3DSs.
+
 The Virtual Console games (Red, Blue, Yellow, Gold, Silver, Crystal):
 
 ```bash

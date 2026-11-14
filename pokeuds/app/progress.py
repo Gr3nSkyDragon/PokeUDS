@@ -43,6 +43,9 @@ class Progress:
     notes: list[str] = field(default_factory=list)
     received: list[dict] = field(default_factory=list)
     radio: str = ""
+    online: str = ""                     # an online partner: connecting, searching, paired, lost, closed ("": none)
+    partner: str = ""                    # its name
+    partner_offer: str = ""              # what its 3DS offers now, as PKHeX read it
 
     def start(self) -> None:
         self.__init__()
@@ -80,6 +83,17 @@ class Progress:
         elif kind == "note":
             if text := plain_note(event.get("text", "")):
                 self.notes.append(text)
+                del self.notes[:-50]
+        elif kind == "online":
+            self.online = event.get("state", "")
+            if event.get("partner"):
+                self.partner = event["partner"]
+            if "offer" in event:
+                self.partner_offer = event["offer"]
+            if self.online == "lost":
+                self.partner_offer = ""
+            if text := event.get("text", ""):
+                self.notes.append(text[:1].upper() + text[1:])
                 del self.notes[:-50]
         elif kind == "received":
             self.steps["trade"] = True

@@ -14,7 +14,9 @@ messages in every captured session (``wire`` has the message formats):
 5. Leaving: quit (05), the next hub sync, the leave block (00), syncs 0x0A (module 1) and 0x16.
 
 PokeUDS never waits on a human: it answers each step as soon as the console has made it, and offers
-right away. Every sync the console requests is answered at once.
+right away. Every sync the console requests is answered at once. An online partner (``offers``, ``games.offers``)
+is the exception: PokeUDS then offers the partner's record once its console has offered, and says yes once both
+consoles have.
 """
 
 from __future__ import annotations
@@ -29,6 +31,7 @@ from ... import pkx, status
 from ...nex import prudp
 from ...uds import Role, Station
 from ...uds.station import UdsError
+from ..offers import OfferSource, Queue
 from . import wire
 
 log = logging.getLogger(__name__)
@@ -49,6 +52,7 @@ SCREEN_AFTER = 4.5
 # disconnect. The client waits this long for the goodbye.
 GOODBYE_WAIT = 5.0
 YES_BYTE = wire.YES[:1]
+NO = b"\x00" + wire.YES[1:]      # a declined confirmation (command 07 not 01); no console has been seen sending one
 
 
 class TradeEnded(RuntimeError):
@@ -79,10 +83,12 @@ class Gen6Session:
 
     station: Station
     trainer: wire.Trainer
-    offer: bytes                         # The Pokemon we offer: 260 bytes, decrypted, party format.
+    offer: bytes = b""                   # The Pokemon we offer: 260 bytes, decrypted, party format.
     partner_id: bytes = bytes(8)
     trades: int = 1                      # How many trades before PokeUDS leaves the trade screen.
     queue: list[bytes] = field(default_factory=list)   # Offered after ``offer``, one per trade, the same form.
+    # Where the offers come from instead of ``offer``/``queue``/``trades`` (an online partner: ``games.offers``).
+    offers: OfferSource | None = None
     on_received: Callable[[bytes], None] | None = None
     clock: Callable[[], float] = time.monotonic
     step_timeout: float = 300.0          # Longest wait for the console (a human picks and confirms).
@@ -90,10 +96,10 @@ class Gen6Session:
     received: list[bytes] = field(default_factory=list)
 
     def __post_init__(self) -> None:
-        if any(len(o) != pkx.PARTY_SIZE or not pkx.checksum_valid(o) for o in (self.offer, *self.queue)):
-            raise ValueError("the offer must be a decrypted 260-byte party record")
-        self._offers = [self.offer, *self.queue]
-        self._trade_no = 0
+        if self.offers is None:
+            if any(len(o) != pkx.PARTY_SIZE or not pkx.checksum_valid(o) for o in (self.offer, *self.queue)):
+                raise ValueError("the offer must be a decrypted 260-byte party record")
+            self.offers = Queue([self.offer, *self.queue], self.trades)
         self.node = self.station.node_id
         self.peer = 2 if self.node == 1 else 1
         self.host = self.node == 1
@@ -389,14 +395,12 @@ class Gen6Session:
         self._command(wire.TRADE, wire.CMD_STATE, wire.STATE_IDLE)
         self.take(wire.TRADE, wire.CMD_STATE, "the trade screen")
         # The trade screen opens before every trade and once more after the last: players leave from it (exit,
-        # then confirm), and PokeUDS does too once it has traded ``trades`` times, or as soon as the console's player
-        # leaves.
-        done = 0
+        # then confirm), and PokeUDS does too once its offers have ended (``trades`` done, or an online partner gone),
+        # or as soon as the console's player leaves.
         while True:
             self._open_screen()
-            if done >= self.trades or not self._one_trade():
+            if self.offers.ended() or not self._one_trade():
                 break
-            done += 1
         self._leave()
         return self.received
 
@@ -418,7 +422,7 @@ class Gen6Session:
         self._command(wire.TRADE, wire.CMD_DONE, wire.DONE)
         self.take(wire.TRADE, wire.CMD_DONE, "the swap")
         self.received.append(record)
-        self._trade_no += 1
+        self.offers.traded(record)
         if self.on_received:
             self.on_received(record)
         self._emit("phase", phase="swapped")
@@ -435,14 +439,67 @@ class Gen6Session:
         return True
 
     def _offer_and_confirm(self) -> bytes | None:
-        """Offer, take the console's offer, confirm. The console's record once both confirmed, b""
-        if it declined, None if it left the trade screen."""
+        """Offer, take the console's offer, confirm. The console's record once both confirmed, b"" if either side
+        declined, None if the console left the trade screen or PokeUDS should leave it (``offers.ended``).
+
+        From the queue, PokeUDS offers first and says yes before the console does. From an online partner it offers
+        only once the console has (the partner's record, sent when the partner's console offered), and says yes only
+        once its console has and the partner's has too; a partner taking its offer back is a decline here (command
+        07 with a value other than 01: unmeasured, docs/online.md)."""
         self._emit("phase", phase="offer")
-        if not self._peer_sent(wire.TRADE, wire.CMD_POKEMON):
+        source = self.offers
+        if source.offers_first:
+            self._send_offer(source.offer(), first=not self._peer_sent(wire.TRADE, wire.CMD_POKEMON))
+        record = self._console_offer()
+        if record is None:
+            return None
+        source.console_offers(record)
+        if not source.offers_first:
+            quit = lambda: self._peer_sent(wire.TRADE, wire.CMD_QUIT)
+            mine = self._partner_offer(quit)
+            if mine is None:
+                if quit():
+                    self.take(wire.TRADE, wire.CMD_QUIT, "the console leaving")
+                    self._quit_answered = True
+                return None
+            self._send_offer(mine, first=False)
+        s = pkx.summary(record)
+        log.info("the console offers species %d %r", s.species, s.nickname)
+        self._emit("phase", phase="their-offer", summary=f"species {s.species} '{s.nickname}'")
+        self.take(wire.TRADE, wire.CMD_OFFERED, "the console's offer to settle")
+        if source.offers_first:
+            self._command(wire.TRADE, wire.CMD_CONFIRM, wire.YES)
+            self._emit("phase", phase="confirm")
+        answer = self.take(wire.TRADE, wire.CMD_CONFIRM, "the console's confirmation", also=(wire.CMD_QUIT,))
+        if answer.ident == wire.CMD_QUIT:
+            self._quit_answered = True
+            return None
+        if answer.data[:1] != YES_BYTE:
+            source.console_withdrew()
+            if not source.offers_first:
+                self._command(wire.TRADE, wire.CMD_CONFIRM, NO)
+            return b""
+        source.console_accepts()
+        if source.offers_first:
+            return record
+        go = self._wait_on_source(lambda: source.partner_accepts() is not False, "the partner to confirm")
+        if not go or not source.partner_accepts():
+            log.info("the partner %s; declining", "left" if not go else "took its offer back")
+            self._command(wire.TRADE, wire.CMD_CONFIRM, NO)
+            source.console_withdrew()          # declined, the console's offer no longer stands: it offers again
+            return None if not go else b""
+        self._command(wire.TRADE, wire.CMD_CONFIRM, wire.YES)
+        self._emit("phase", phase="confirm")
+        return record
+
+    def _send_offer(self, record: bytes, first: bool) -> None:
+        if first:
             self._command(wire.TRADE, wire.CMD_STATE, wire.STATE_OFFERING)
-        # The queue in order (round again past its end, when asked for more trades than it holds).
-        self._command(wire.TRADE, wire.CMD_POKEMON, pkx.encrypt(self._offers[self._trade_no % len(self._offers)]))
+        self._command(wire.TRADE, wire.CMD_POKEMON, pkx.encrypt(record))
         self._command(wire.TRADE, wire.CMD_OFFERED, wire.OFFERED)
+
+    def _console_offer(self) -> bytes | None:
+        """The console's next offer (decrypted), or None when it left the trade screen instead."""
         while True:
             body = self.take(wire.TRADE, wire.CMD_POKEMON, "the console's offer", also=(wire.CMD_QUIT,))
             if body.ident == wire.CMD_QUIT:
@@ -453,19 +510,27 @@ class Gen6Session:
             except ValueError:
                 record = b""
             if pkx.checksum_valid(record):
-                break
+                return record
             log.warning("the console's offer fails its checksum; waiting for another")
-        s = pkx.summary(record)
-        log.info("the console offers species %d %r", s.species, s.nickname)
-        self._emit("phase", phase="their-offer", summary=f"species {s.species} '{s.nickname}'")
-        self.take(wire.TRADE, wire.CMD_OFFERED, "the console's offer to settle")
-        self._command(wire.TRADE, wire.CMD_CONFIRM, wire.YES)
-        self._emit("phase", phase="confirm")
-        answer = self.take(wire.TRADE, wire.CMD_CONFIRM, "the console's confirmation", also=(wire.CMD_QUIT,))
-        if answer.ident == wire.CMD_QUIT:
-            self._quit_answered = True
-            return None
-        return record if answer.data[:1] == YES_BYTE else b""
+
+    def _partner_offer(self, also: Callable[[], bool]) -> bytes | None:
+        """The source's record once it has one; None when the offers ended or ``also()`` came first."""
+        while True:
+            if not self._wait_on_source(lambda: self.offers.offer() is not None or also(), "the partner's offer"):
+                return None
+            if also():
+                return None
+            record = self.offers.offer()      # asked again: it may have been taken back in between
+            if record is not None:
+                return record
+
+    def _wait_on_source(self, ready: Callable[[], bool], what: str) -> bool:
+        """Keep the console's session going until ``ready()``; False if the offers ended first (PokeUDS leaves)."""
+        self.wait(lambda: bool(self.offers.ended()) or ready(), what)
+        if self.offers.ended():
+            log.info("leaving the trade screen: %s", self.offers.ended())
+            return False
+        return True
 
     def _leave(self) -> None:
         self._emit("phase", phase="leaving")
@@ -520,13 +585,18 @@ PARTY_LEVEL, PARTY_MAX_HP = 0xEC, 0xF2     # In the party block (PKHeX PK6: Stat
 
 
 def trainer_from_offer(offer: bytes, version: int, settings: dict | None = None) -> wire.Trainer:
-    """Our PSS identity: the settings' trainer, else the offered Pokemon's original trainer."""
+    """Our PSS identity: the settings' trainer, else the offered Pokemon's original trainer. With no offer (an online
+    trade offers the partner's Pokemon), the settings' trainer, else "PokeUDS" with IDs made for this run."""
     settings = settings or {}
-    s = pkx.summary(offer)
+    if offer:
+        s = pkx.summary(offer)
+        ot, tid, sid = s.ot_name, s.tid, s.sid
+    else:
+        ot, tid, sid = "", int.from_bytes(os.urandom(2), "little"), int.from_bytes(os.urandom(2), "little")
     pss_id = bytes.fromhex(settings["pss_id"]) if settings.get("pss_id") else os.urandom(8)
     key = bytes.fromhex(settings["pss_key"]) if settings.get("pss_key") else os.urandom(4)
-    return wire.Trainer(settings.get("name") or s.ot_name or "PokeUDS", int(settings.get("tid", s.tid)),
-                        int(settings.get("sid", s.sid)), pss_id, key, version,
+    return wire.Trainer(settings.get("name") or ot or "PokeUDS", int(settings.get("tid", tid)),
+                        int(settings.get("sid", sid)), pss_id, key, version,
                         settings.get("user_name", "PokeUDS"))
 
 

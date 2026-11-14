@@ -228,12 +228,46 @@ class TradeView(View):
         self.app.bank_for = self.entry.key
         self.app.navigate("bank")
 
+    @property
+    def online(self) -> bool:
+        """This trade is with a player far away: the Online switch is on and the game trades online."""
+        return self.app.settings.online and catalog.online_ready(self.entry)
+
     def problems(self) -> list[str]:
-        return catalog.missing_for_start(self.entry, self.app.settings, self.queue)
+        return catalog.missing_for_start(self.entry, self.app.settings, self.queue, online=self.online)
 
     def command(self) -> list[str]:
         return catalog.command(self.entry, self.app.settings, offer=[o.path for o in self.queue] or [""],
-                               role=self.role, host_title=self.host_title, verbose=True)
+                               role=self.role, host_title=self.host_title, verbose=True, online=self.online)
+
+    def _online_changed(self, e) -> None:
+        self.app.settings.online = bool(e.control.value)
+        self.save()
+
+    def _code_changed(self, e) -> None:
+        code = (e.control.value or "").strip()
+        if code != self.app.settings.online_code:
+            self.app.settings.online_code = code
+            self.save()
+
+    def online_switch(self) -> ft.Control:
+        """The Online switch, beside who asks: trade with a player far away, each 3DS beside its own PokeUDS."""
+        return ft.Switch(label="Online", value=self.online, on_change=self._online_changed, disabled=self.app.busy(),
+                         tooltip="Trade with a player far away, through public relays (docs/online.md)")
+
+    def online_control(self) -> ft.Control:
+        """With Online on: the room code, and what an online trade does."""
+        s, busy = self.app.settings, self.app.busy()
+        return ft.Column([
+            ft.Row([ft.TextField(label="Room code", value=s.online_code, width=200, dense=True, disabled=busy,
+                                 max_length=32, on_blur=self._code_changed, on_submit=self._code_changed),
+                    t.label("Your partner types the same code. Leave it empty to meet anyone trading online "
+                            "without one.", size=12, expand=True)],
+                   spacing=12, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+            t.label("Your 3DS is offered your partner's Pokemon, and theirs yours. PokeUDS says yes on each side "
+                    "only once both 3DSs have, and checks what arrives with PKHeX first. Not yet tried with two "
+                    "real 3DSs."),
+        ], spacing=6, tight=True)
 
     def start(self, e=None) -> None:
         if self.app.busy() or self.problems():
@@ -371,7 +405,8 @@ class TradeView(View):
         controls: list[ft.Control] = [
             ft.Row([t.title(entry.name), t.label(f"with {entry.console}")], spacing=12,
                    vertical_alignment=ft.CrossAxisAlignment.END),
-            ft.Row([role], wrap=True),
+            ft.Row([role, *([self.online_switch()] if catalog.online_ready(entry) else [])], spacing=16, wrap=True,
+                   vertical_alignment=ft.CrossAxisAlignment.CENTER),
             t.label(how),
         ]
         if self.role == "host" and entry.host_titles:
@@ -384,8 +419,22 @@ class TradeView(View):
             controls.append(t.notice(f"{entry.name} is session-only for now: PokeUDS joins or hosts and records what the "
                                      "3DS sends, but cannot offer its Pokemon until the trade messages are mapped from "
                                      "captures.", t.INFO))
-        controls.append(self.queue_control())
-        controls.append(ft.Row([
+        if self.online:
+            controls.append(self.online_control())
+        if not self.online:          # online, the partner's Pokemon is offered: no queue of our own
+            controls += self.offer_controls()
+        for problem in self.problems():
+            controls.append(t.notice(problem, t.WARN, ft.Icons.WARNING_AMBER_ROUNDED))
+        button = (t.secondary("Stop", lambda e: self.app.stop(), ft.Icons.STOP_ROUNDED) if busy and self.app.run_kind == "trade"
+                  else t.primary("Start", self.start, ft.Icons.PLAY_ARROW_ROUNDED, disabled=bool(self.problems()) or busy))
+        controls.append(self.connection())
+        controls.append(ft.Row([button], spacing=16))
+        return t.card(*controls, spacing=14)
+
+    def offer_controls(self) -> list[ft.Control]:
+        """The trade queue and the ways to fill it."""
+        entry, busy = self.entry, self.app.busy()
+        controls: list[ft.Control] = [self.queue_control(), ft.Row([
             (t.primary if self.building else t.secondary)("Build one", self.toggle_builder, ft.Icons.AUTO_FIX_HIGH,
                                                          disabled=busy),
             (t.primary if self.pasting else t.secondary)("Import paste", self.toggle_paste, ft.Icons.CONTENT_PASTE,
@@ -393,7 +442,7 @@ class TradeView(View):
             t.secondary("Add a file", self.choose_offer, ft.Icons.FOLDER_OPEN, disabled=busy),
             *([ft.TextButton("Clear the queue", icon=ft.Icons.CLEAR_ALL, on_click=self._clear, disabled=busy)]
               if len(self.queue) > 1 else []),
-        ], spacing=10, wrap=True))
+        ], spacing=10, wrap=True)]
         if self.pasting:
             controls.append(self.builder.paste_control())
         if self.building:
@@ -402,13 +451,7 @@ class TradeView(View):
             controls.append(t.notice(self.note, self.note_color, ft.Icons.CHECK_CIRCLE_OUTLINE))
         if self.offer and not self.offer.problem:
             controls.append(t.label(catalog.trade_mode(entry, self.offer), color=t.TEXT))
-        for problem in self.problems():
-            controls.append(t.notice(problem, t.WARN, ft.Icons.WARNING_AMBER_ROUNDED))
-        button = (t.secondary("Stop", lambda e: self.app.stop(), ft.Icons.STOP_ROUNDED) if busy and self.app.run_kind == "trade"
-                  else t.primary("Start", self.start, ft.Icons.PLAY_ARROW_ROUNDED, disabled=bool(self.problems()) or busy))
-        controls.append(self.connection())
-        controls.append(ft.Row([button], spacing=16))
-        return t.card(*controls, spacing=14)
+        return controls
 
     def connection(self) -> ft.Control:
         """How PokeUDS reaches the air, as pokeldn's Connection choice: the board, or a USB Wi-Fi adapter."""
@@ -468,6 +511,8 @@ class TradeView(View):
         if p.detail:
             controls.append(t.label(p.detail))
         controls.append(steps)
+        if p.online:
+            controls.append(self.partner_row(p))
         if p.received:
             controls.append(t.heading("Received"))
             for item in p.received:
@@ -484,6 +529,19 @@ class TradeView(View):
         if self.show_log:
             controls.append(log_box(self.app.log, app=self.app))
         return t.card(*controls, spacing=12)
+
+    @staticmethod
+    def partner_row(p) -> ft.Control:
+        """The online partner: where the search is, who it is, what their 3DS offers."""
+        words = {"connecting": ("Reaching the relays", t.MUTED), "searching": ("Waiting for a partner", t.INFO),
+                 "paired": ("Paired", t.GOOD), "lost": ("Partner gone", t.BAD), "closed": ("Closed", t.MUTED)}
+        word, color = words.get(p.online, (p.online, t.MUTED))
+        lines: list[ft.Control] = [ft.Row([t.heading("Online"), t.pill(word, color),
+                                           *([t.label(p.partner, color=t.TEXT)] if p.partner else [])],
+                                          spacing=10, wrap=True)]
+        if p.partner_offer:
+            lines.append(t.label(f"Their 3DS offers {p.partner_offer}", color=t.TEXT))
+        return ft.Column(lines, spacing=4, tight=True)
 
     # -- events ---------------------------------------------------------------------------------
 

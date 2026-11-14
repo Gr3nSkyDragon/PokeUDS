@@ -65,13 +65,10 @@ class Gen7Session(gen6.Gen6Session):
         self.sync_point(wire.SYNC_PERSONS)
         for ident in wire.SYNC_HUB:
             self.sync_point(ident)
-        done = 0
         self._peer_left = False
-        while done < self.trades:
-            record = self._one_trade()
-            if record is None:
+        while not self.offers.ended():
+            if self._one_trade() is None:
                 break
-            done += 1
         self._leave()
         return self.received
 
@@ -83,24 +80,27 @@ class Gen7Session(gen6.Gen6Session):
         return self._peer_sent(wire.SCREEN, wire.CMD_SHOW) or self._peer_sent(wire.TRADE, wire.CMD_OFFER)
 
     def _one_trade(self) -> bytes | None:
-        """Offer, take the console's offer, confirm, swap. The console's record, or None when it left instead."""
+        """Offer, take the console's offer, confirm, swap. The console's record, or None when it left instead, or
+        PokeUDS should leave (``offers.ended``).
+
+        From the queue PokeUDS offers once the console's screen is up and answers its yes at once. From an online
+        partner it takes the console's offer first, offers the partner's record once it has come, and answers the
+        console's "Trade?" yes only once the partner's console said yes too; a partner taking its offer back is
+        PokeUDS's "no" (the screen message a console sends for no: unmeasured, docs/online.md)."""
+        source = self.offers
         first = True
+        if not source.offers_first and self.received:
+            # The screen is back after a trade: show what arrived, as a console does (and as ``_leave`` does), so a
+            # console that waits for it before its player picks or leaves is not kept waiting for the partner.
+            self._show_first(*self._sealed(self.received[-1]), wait=False)
         while True:
-            offer = self._offers[self._trade_no % len(self._offers)]
-            sealed, species = pkx.encrypt(offer), pkx.summary(offer).species
             self._emit("phase", phase="offer")
-            if first:
-                self._command(wire.SCREEN, wire.CMD_SHOW, wire.show(sealed, species, chosen=False))
-                self._command(wire.CURSOR, wire.CMD_CURSOR, sealed)
-                # Offer once the console's trade screen is up (it announces it with the Pokemon it shows first), as
-                # both consoles of the captures did: an offer sent before the console is there can be dropped, and
-                # the console then shows our Pokemon but waits for an offer it never got.
-                self.wait_or(self._console_screen_up, SCREEN_WAIT)
-                if not self._console_screen_up():
-                    log.info("the console has not shown its trade screen after %.0f s; offering anyway", SCREEN_WAIT)
-                first = False
-            self._command(wire.SCREEN, wire.CMD_SHOW, wire.show(sealed, species, chosen=True))
-            self._command(wire.TRADE, wire.CMD_OFFER, sealed)
+            if source.offers_first:
+                sealed, species = self._sealed(source.offer())
+                if first:
+                    self._show_first(sealed, species)
+                    first = False
+                self._offer(sealed, species)
             body = self.take(wire.TRADE, wire.CMD_OFFER, "the console's offer", also=(wire.CMD_LEAVE,))
             if body.ident == wire.CMD_LEAVE:
                 self._peer_left = True
@@ -112,11 +112,24 @@ class Gen7Session(gen6.Gen6Session):
             if not pkx.checksum_valid(record):
                 log.warning("the console's offer fails its checksum; waiting for another")
                 continue
+            source.console_offers(record)
             s = pkx.summary(record)
             log.info("the console offers species %d %r", s.species, s.nickname)
             self._emit("phase", phase="their-offer", summary=f"species {s.species} '{s.nickname}'")
+            if not source.offers_first:
+                left = lambda: self._peer_sent(wire.TRADE, wire.CMD_LEAVE)
+                mine = self._partner_offer(left)
+                if mine is None:
+                    self._peer_left = left()
+                    return None
+                sealed, species = self._sealed(mine)
+                if first:
+                    self._show_first(sealed, species, wait=False)    # the console's offer says its screen is up
+                    first = False
+                self._offer(sealed, species)
             if not self._confirm():
                 log.info("the console declined the trade; offering again")
+                source.console_withdrew()
                 continue
             if self.answer_first:
                 self._say_yes(sealed, wait=False)
@@ -126,8 +139,19 @@ class Gen7Session(gen6.Gen6Session):
                 return None
             if answer == "no":
                 log.info("the console's player said no; offering again")
+                source.console_withdrew()
                 continue
-            break
+            source.console_accepts()
+            if source.offers_first:
+                break
+            go = self._wait_on_source(lambda: source.partner_accepts() is not False, "the partner to confirm")
+            if go and source.partner_accepts():
+                break
+            log.info("the partner %s; saying no", "left" if not go else "took its offer back")
+            self._command(wire.SCREEN, wire.CMD_SHOW, wire.show(sealed, species, chosen=False))
+            source.console_withdrew()
+            if not go:
+                return None
         # Our "yes", sent once the console's player has said yes, as the second console answered in both captures (the
         # client's carries module 3 cmd 05: without it the console host waited for "the other trainer's response").
         if not self.answer_first:
@@ -140,7 +164,7 @@ class Gen7Session(gen6.Gen6Session):
         for ident in wire.SYNC_SWAP:
             self.sync_point(ident, wire.TRADE)
         self.received.append(record)
-        self._trade_no += 1
+        self.offers.traded(record)
         if self.on_received:
             self.on_received(record)
         self._emit("phase", phase="swapped")
@@ -152,6 +176,27 @@ class Gen7Session(gen6.Gen6Session):
             self._command(wire.TRADE, wire.CMD_CLIENT_DONE, bytes([wire.CMD_CLIENT_DONE]))
             self.take(wire.TRADE, wire.CMD_HOST_DONE, "the console to finish the trade")
         return record
+
+    @staticmethod
+    def _sealed(record: bytes) -> tuple[bytes, int]:
+        return pkx.encrypt(record), pkx.summary(record).species
+
+    def _show_first(self, sealed: bytes, species: int, wait: bool = True) -> None:
+        """What a trade screen shows before its first offer: the Pokemon on show and under the cursor."""
+        self._command(wire.SCREEN, wire.CMD_SHOW, wire.show(sealed, species, chosen=False))
+        self._command(wire.CURSOR, wire.CMD_CURSOR, sealed)
+        if not wait:
+            return
+        # Offer once the console's trade screen is up (it announces it with the Pokemon it shows first), as both
+        # consoles of the captures did: an offer sent before the console is there can be dropped, and the console
+        # then shows our Pokemon but waits for an offer it never got.
+        self.wait_or(self._console_screen_up, SCREEN_WAIT)
+        if not self._console_screen_up():
+            log.info("the console has not shown its trade screen after %.0f s; offering anyway", SCREEN_WAIT)
+
+    def _offer(self, sealed: bytes, species: int) -> None:
+        self._command(wire.SCREEN, wire.CMD_SHOW, wire.show(sealed, species, chosen=True))
+        self._command(wire.TRADE, wire.CMD_OFFER, sealed)
 
     def _say_yes(self, sealed: bytes, wait: bool = True) -> None:
         """Our player's "yes": the host sends its Pokemon again (module 2); the client sends that and module 3 cmd 05

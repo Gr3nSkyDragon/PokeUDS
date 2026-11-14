@@ -25,6 +25,7 @@ class Store:
         self.clock = clock
         self.lock = threading.Lock()
         self.refuse = False             # a relay that takes nothing
+        self.live: list[tuple[object, str, list[dict]]] = []    # open subscriptions: (connection, id, filters)
 
     def add(self, event: dict) -> bool:
         if self.refuse or not relays.valid(event):
@@ -44,7 +45,19 @@ class Store:
                         del self.events[ident]
             if not 20000 <= kind < 30000:           # ephemeral events are passed on, never stored
                 self.events[event["id"]] = event
-            return True
+            live = [(conn, sub) for conn, sub, filters in self.live
+                    if any(relays.matches(event, f) for f in filters)]
+        for conn, sub in live:                      # every open subscription it matches hears it now
+            conn.push(json.dumps(["EVENT", sub, event]))
+        return True
+
+    def subscribe(self, conn, sub: str, filters: list[dict]) -> None:
+        with self.lock:
+            self.live = [entry for entry in self.live if entry[:2] != (conn, sub)] + [(conn, sub, filters)]
+
+    def forget(self, conn) -> None:
+        with self.lock:
+            self.live = [entry for entry in self.live if entry[0] is not conn]
 
     def query(self, flt: dict) -> list[dict]:
         now = self.clock()
@@ -116,7 +129,22 @@ def _send(conn: socket.socket, text: str, pieces: int = 1, opcode: int = 0x1) ->
         conn.sendall(head + chunk)
 
 
+class _Client:
+    """One connection to the relay; ``push`` sends from any thread."""
+
+    def __init__(self, conn: socket.socket, fragment: bool) -> None:
+        self.conn, self.fragment, self.lock = conn, fragment, threading.Lock()
+
+    def push(self, text: str, opcode: int = 0x1) -> None:
+        with self.lock:
+            try:
+                _send(self.conn, text, pieces=3 if self.fragment and opcode == 0x1 else 1, opcode=opcode)
+            except OSError:
+                pass
+
+
 def _serve_one(conn: socket.socket, store: Store, fragment: bool) -> None:
+    client = _Client(conn, fragment)
     try:
         head = b""
         while b"\r\n\r\n" not in head:
@@ -126,7 +154,7 @@ def _serve_one(conn: socket.socket, store: Store, fragment: bool) -> None:
         accept = base64.b64encode(hashlib.sha1((key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode()).digest()).decode()
         conn.sendall(f"HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
                      f"Sec-WebSocket-Accept: {accept}\r\n\r\n".encode())
-        _send(conn, "", opcode=0x9)                         # a ping first: the client answers and carries on
+        client.push("", opcode=0x9)                         # a ping first: the client answers and carries on
         while True:
             first, second = _read(conn, 2)
             size = second & 0x7F
@@ -143,14 +171,21 @@ def _serve_one(conn: socket.socket, store: Store, fragment: bool) -> None:
             message = json.loads(payload.decode())
             if message[0] == "EVENT":
                 ok = store.add(message[1])
-                _send(conn, json.dumps(["OK", message[1].get("id", ""), ok, "" if ok else "invalid: refused"]))
+                client.push(json.dumps(["OK", message[1].get("id", ""), ok, "" if ok else "invalid: refused"]))
             elif message[0] == "REQ":
-                for event in store.query(message[2]):
-                    _send(conn, json.dumps(["EVENT", message[1], event]), pieces=3 if fragment else 1)
-                _send(conn, json.dumps(["EOSE", message[1]]))
+                filters = message[2:]
+                store.subscribe(client, message[1], filters)
+                stored = {e["id"]: e for f in filters for e in store.query(f)}
+                for event in stored.values():
+                    client.push(json.dumps(["EVENT", message[1], event]))
+                client.push(json.dumps(["EOSE", message[1]]))
+            elif message[0] == "CLOSE":
+                with store.lock:
+                    store.live = [e for e in store.live if e[:2] != (client, message[1])]
     except (OSError, ValueError, StopIteration, IndexError):
         pass
     finally:
+        store.forget(client)
         conn.close()
 
 

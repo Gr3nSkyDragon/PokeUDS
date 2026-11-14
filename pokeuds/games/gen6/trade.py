@@ -29,6 +29,7 @@ from ... import pkx, received, status
 from ...uds import Beacon, Role, Station
 from ...util import mac_str
 from ..base import Game
+from ..offers import OfferSource
 from ..profile import Profile
 from . import session, wire
 
@@ -64,7 +65,8 @@ class Gen6Trade:
     trainer: wire.Trainer
     trades: int = 1
     partner: str | None = None
-    queue: list[bytes] = field(default_factory=list)   # Offered after ``offer``, one per trade (decrypted).     # As host: the trainer name to ask (default: the first heard).
+    queue: list[bytes] = field(default_factory=list)   # Offered after ``offer``, one per trade (decrypted).
+    offers: OfferSource | None = None   # Instead of offer/queue/trades: an online partner (``games.offers``).
     channels: tuple[int, ...] = PSS_CHANNELS
     announce: bool = True          # Print progress and emit status events (off for the demo console).
     saved: list[Path] = field(default_factory=list)
@@ -73,7 +75,7 @@ class Gen6Trade:
         self._lock = threading.Lock()
         self.players: dict[bytes, Seen] = {}
         self.trade_networks: dict[bytes, Beacon] = {}
-        self.party = session.party_record(self.offer)
+        self.party = session.party_record(self.offer) if self.offers is None else b""
         self.queue_party = [session.party_record(o) for o in self.queue]
         self._logged: set[bytes] = set()          # Beacons already in the log.
         self._beacon_args: dict = {}              # What we advertise now (partner, request, token).
@@ -254,7 +256,7 @@ class Gen6Trade:
         self._say(f"connected to {partner.name} as {self.station.role.value}, node {self.station.node_id}")
         self._emit("session", state="trading")
         trade = session.Gen6Session(self.station, self.trainer, self.party, partner.pss_id, self.trades,
-                                    queue=self.queue_party,
+                                    queue=self.queue_party, offers=self.offers,
                                     on_received=self._received, announce=self.announce)
         trade.run()
 

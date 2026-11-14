@@ -55,7 +55,7 @@ class Gen7Trade(gen6_trade.Gen6Trade):
         self._lock = threading.Lock()
         self.players: dict[int, Seen] = {}
         self.trade_networks: dict[bytes, tuple[Beacon, plaza.Player | None]] = {}
-        self.party = session.party_record(self.offer)
+        self.party = session.party_record(self.offer) if self.offers is None else b""
         self.queue_party = [session.party_record(o) for o in self.queue]
         self._logged: set[bytes] = set()
         self._beacon_args: dict = {}
@@ -209,6 +209,7 @@ class Gen7Trade(gen6_trade.Gen6Trade):
         self._say(f"connected to {partner} as {self.station.role.value}, node {self.station.node_id}")
         self._emit("session", state="trading")
         trade = session.Gen7Session(self.station, self.trainer, self.party, trades=self.trades, queue=self.queue_party,
-                                    on_received=self._received, announce=self.announce, person_clock=clock,
+                                    offers=self.offers, on_received=self._received, announce=self.announce,
+                                    person_clock=clock,
                                     answer_first=self.answer_first)
         trade.run()

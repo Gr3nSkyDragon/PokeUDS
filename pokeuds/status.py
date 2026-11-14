@@ -7,7 +7,8 @@ prints one line per event:
 
 The plain log and the ``[done] trade N complete: <path>`` lines are unchanged, so a terminal user
 sees nothing new. Events: ``radio``, ``searching``, ``found``, ``hosting``, ``joined``,
-``partner-joined``, ``session``, ``phase``, ``note``, ``received``, ``stopped``, ``error``.
+``partner-joined``, ``session``, ``phase``, ``note``, ``received``, ``stopped``, ``error``, and ``online``
+(an online partner: its ``state`` and a ``text`` for the player, ``pokeuds.online.link``).
 """
 
 from __future__ import annotations

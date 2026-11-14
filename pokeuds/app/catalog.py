@@ -143,13 +143,23 @@ def profile_gaps(entry: Entry) -> list[str]:
     return profile.load(entry.key).missing()
 
 
+def online_ready(entry: Entry) -> bool:
+    """Whether the game trades online (docs/online.md): X/Y, ORAS, Sun/Moon and USUM."""
+    from ..online.trade import ROOMS
+
+    return entry.key in ROOMS and (entry.group == "Generation 6" or entry.complete)
+
+
 def command(entry: Entry, settings: Settings, *, offer: str | list[str], role: str, host_title: str = "",
-            trades: int | None = None, verbose: bool = False) -> list[str]:
-    """The run for a trade; ``offer`` is one file or the trade queue in order (one trade each, unless ``trades``)."""
+            trades: int | None = None, verbose: bool = False, online: bool = False) -> list[str]:
+    """The run for a trade; ``offer`` is one file or the trade queue in order (one trade each, unless ``trades``).
+    ``online``: the partner's Pokemon is offered instead (no ``--offer``), in the settings' room code."""
     radio = settings.radio_spec()
-    queue = [offer] if isinstance(offer, str) else list(offer)
+    queue = [] if online else [offer] if isinstance(offer, str) else list(offer)
     common = ["--radio", radio, *[x for path in queue for x in ("--offer", path)], "--output", settings.output,
               "--role", role, "--name", settings.trainer_name]
+    if online:
+        common += ["--online", *(["--online-code", settings.online_code.strip()] if settings.online_code.strip() else [])]
     if settings.keys and not radio.startswith("demo"):
         common += ["--keys", settings.keys]
     args = (["-v"] if verbose else [])
@@ -177,11 +187,21 @@ def queue_problems(entry: Entry, queue: list[Offer]) -> list[str]:
     return problems
 
 
-def missing_for_start(entry: Entry, settings: Settings, offer: Offer | list[Offer] | None) -> list[str]:
-    """Everything that stops a run from starting, in the words the app shows. ``offer``: one, or the queue."""
+def missing_for_start(entry: Entry, settings: Settings, offer: Offer | list[Offer] | None,
+                      online: bool = False) -> list[str]:
+    """Everything that stops a run from starting, in the words the app shows. ``offer``: one, or the queue; none is
+    needed ``online``, where the partner's Pokemon is offered and PKHeX checks it."""
     problems = []
     if not settings.radio_spec().startswith("demo") and (keys := settings.keys_problem()):
         problems.append(f"Console keys: {keys} (Settings)")
+    if online:
+        from .. import pkhex
+
+        if pkhex.helper_path() is None:
+            problems.append("An online trade checks the partner's Pokemon with PKHeX, which is not set up (Settings)")
+        for gap in profile_gaps(entry):
+            problems.append(f"profiles/{entry.key}.toml has no {gap.split('.')[-1]} yet (needs captures)")
+        return problems
     queue = [] if offer is None else [offer] if isinstance(offer, Offer) else list(offer)
     if not queue:
         problems.append("Choose a Pokemon to offer: from the bank, Build one, or a file")

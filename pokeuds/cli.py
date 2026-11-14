@@ -312,8 +312,9 @@ def cmd_trade(args) -> int:
     game = get(args.game)
     from . import plugins
 
+    online = _online_setup(args, game)
     offers = []
-    args.offer = [_offer_file(p) for p in args.offer]
+    args.offer = [_offer_file(p) for p in args.offer or []]
     for path in args.offer:                       # the trade queue, in order
         offer = pkx.load(path)
         try:
@@ -325,8 +326,8 @@ def cmd_trade(args) -> int:
         except ValueError as exc:
             raise SystemExit(f"{path}: {exc}; {game.name} cannot receive it")
         offers.append(offer)
-    offer = offers[0]
-    if args.trades is None:
+    offer = offers[0] if offers else b""
+    if args.trades is None and not online:
         args.trades = len(offers)
     prof = profile.load(game.key, args.profile)
     if missing := prof.missing():
@@ -336,9 +337,9 @@ def cmd_trade(args) -> int:
     station.start(args.channel)
     status.emit("radio", description=station.radio.describe())
     if game.generation == 6:
-        return _trade_gen6(args, station, game, prof, offer, offers[1:])
+        return _trade_gen6(args, station, game, prof, offer, offers[1:], online)
     if game.generation == 7:
-        return _trade_gen7(args, station, game, prof, offer, offers[1:])
+        return _trade_gen7(args, station, game, prof, offer, offers[1:], online)
     trade = LocalTrade(station, game, prof, offer, Path(args.output))
     try:
         if args.role == "host":
@@ -400,7 +401,9 @@ def _gen6_trainer(game, offer: bytes, args):
         if value is not None:
             chosen[key] = value
     version = wire.VERSION_CODES["X" if game.key == "xy" else "Omega Ruby"]
-    return session.trainer_from_offer(pkx.decrypt(offer) if not pkx.checksum_valid(offer) else offer, version, chosen)
+    if offer and not pkx.checksum_valid(offer):
+        offer = pkx.decrypt(offer)
+    return session.trainer_from_offer(offer, version, chosen)
 
 
 def _gen7_trainer(game, offer: bytes, args):
@@ -420,24 +423,29 @@ def _gen7_trainer(game, offer: bytes, args):
             settings.save()
         except OSError as exc:
             log.warning("could not keep the plaza id in the settings: %s", exc)
-    record = pkx.decrypt(offer) if not pkx.checksum_valid(offer) else offer
-    s = pkx.summary(record)
-    name = args.trainer or trainer.get("ot") or s.ot_name or "PokeUDS"
+    if offer:
+        s = pkx.summary(pkx.decrypt(offer) if not pkx.checksum_valid(offer) else offer)
+        ot, own_tid, own_sid = s.ot_name, s.tid, s.sid
+    else:                       # an online trade offers the partner's Pokemon: no OT of our own
+        ot, own_tid, own_sid = "", int.from_bytes(os.urandom(2), "little"), int.from_bytes(os.urandom(2), "little")
+    name = args.trainer or trainer.get("ot") or ot or "PokeUDS"
     same = args.trainer is None or args.trainer == trainer.get("ot")
-    tid = args.tid if args.tid is not None else int(trainer["tid"]) if same and trainer.get("tid") is not None else s.tid
-    sid = args.sid if args.sid is not None else int(trainer["sid"]) if same and trainer.get("sid") is not None else s.sid
+    tid = args.tid if args.tid is not None else int(trainer["tid"]) if same and trainer.get("tid") is not None else own_tid
+    sid = args.sid if args.sid is not None else int(trainer["sid"]) if same and trainer.get("sid") is not None else own_sid
     return wire.Trainer(name, tid & 0xFFFF, sid & 0xFFFF, int(plaza["pid"], 16), bytes.fromhex(plaza["id8"]),
                         wire.VERSION_CODES["Ultra Moon" if game.key == "usum" else "Moon"])
 
 
-def _trade_gen7(args, station, game, prof, offer: bytes, queue: list[bytes]) -> int:
+def _trade_gen7(args, station, game, prof, offer: bytes, queue: list[bytes], online: bool = False) -> int:
     from .games.gen6.session import TradeEnded
     from .games.gen7.trade import Gen7Trade
 
     trainer = _gen7_trainer(game, offer, args)
     queue = [pkx.decrypt(q) if not pkx.checksum_valid(q) else q for q in queue]
-    trade = Gen7Trade(station, game, prof, offer, Path(args.output), trainer, trades=args.trades, partner=args.partner,
-                      queue=queue)
+    source = _online_offers(args, game, trainer.name) if online else None
+    trades = args.trades if args.trades is not None else 1
+    trade = Gen7Trade(station, game, prof, offer, Path(args.output), trainer, trades=trades, partner=args.partner,
+                      queue=queue, offers=source)
     try:
         trade.run(args.role, args.seconds)
     except (TimeoutError, TradeEnded) as exc:
@@ -449,18 +457,22 @@ def _trade_gen7(args, station, game, prof, offer: bytes, queue: list[bytes]) -> 
         return 130
     finally:
         station.close()
+        if source is not None:
+            source.close()
     status.emit("stopped", reason="done")
     return 0
 
 
-def _trade_gen6(args, station, game, prof, offer: bytes, queue: list[bytes]) -> int:
+def _trade_gen6(args, station, game, prof, offer: bytes, queue: list[bytes], online: bool = False) -> int:
     from .games.gen6.trade import Gen6Trade
     from .games.gen6.session import TradeEnded
 
     trainer = _gen6_trainer(game, offer, args)
     queue = [pkx.decrypt(q) if not pkx.checksum_valid(q) else q for q in queue]
-    trade = Gen6Trade(station, game, prof, offer, Path(args.output), trainer, trades=args.trades, partner=args.partner,
-                      queue=queue)
+    source = _online_offers(args, game, trainer.name) if online else None
+    trades = args.trades if args.trades is not None else 1
+    trade = Gen6Trade(station, game, prof, offer, Path(args.output), trainer, trades=trades, partner=args.partner,
+                      queue=queue, offers=source)
     try:
         trade.run(args.role, args.seconds)
     except (TimeoutError, TradeEnded) as exc:
@@ -472,8 +484,44 @@ def _trade_gen6(args, station, game, prof, offer: bytes, queue: list[bytes]) -> 
         return 130
     finally:
         station.close()
+        if source is not None:
+            source.close()
     status.emit("stopped", reason="done")
     return 0
+
+
+def _online_setup(args, game) -> bool:
+    """Whether this trade is online (--online, or --online-code), after checking it can be: a Generation 6 or 7 game,
+    no --offer (the partner's Pokemon is what PokeUDS offers), and PKHeX to check it with."""
+    from .online import trade as online
+
+    if args.online_code is not None:
+        args.online = True
+    if not args.online:
+        if not args.offer:
+            raise SystemExit("--offer is needed (or --online, to offer a far-away player's Pokemon)")
+        return False
+    if game.key not in online.ROOMS:
+        raise SystemExit(f"{game.name} has no online trades yet: X/Y, ORAS, Sun/Moon and USUM do (docs/online.md)")
+    if args.offer:
+        raise SystemExit("--online offers the partner's Pokemon to the console: leave out --offer")
+    from . import pkhex
+
+    if pkhex.helper_path() is None:
+        raise SystemExit("an online trade checks the partner's Pokemon with PKHeX, which is not set up: "
+                         + pkhex.status())
+    return True
+
+
+def _online_offers(args, game, name: str):
+    """The partner, started, as the trade's offer source."""
+    from .online import trade as online
+
+    code = (args.online_code or "").strip()
+    print(f"online: room {online.ROOMS[game.key]}, " + (f"code {code}" if code else "no code (anyone without one)"),
+          flush=True)
+    partner = online.partner(game.key, code, name=name, say=lambda text: print(text, flush=True))
+    return online.Offers(partner, trades=args.trades)
 
 
 def cmd_vc_show(args) -> int:
@@ -1219,8 +1267,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("game", choices=GAME_KEYS)
     _add_radio(p)
     _add_keys(p)
-    p.add_argument("--offer", required=True, action="append",
-                   help="the .pk6 (X/Y, ORAS) or .pk7 (SM, USUM) to send; repeat it to queue more, traded in order")
+    p.add_argument("--offer", action="append",
+                   help="the .pk6 (X/Y, ORAS) or .pk7 (SM, USUM) to send; repeat it to queue more, traded in order "
+                        "(needed unless --online)")
     p.add_argument("--output", default="received", help="folder for the Pokemon received (default: received/)")
     p.add_argument("--role", choices=["join", "host"], default="join",
                    help="join the console's network (default) or host one for it to join")
@@ -1237,6 +1286,12 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--trainer", help="Gen 6/7: the trainer name shown in the PSS or plaza (default: the app's trainer, else the offer's OT)")
     p.add_argument("--tid", type=int, help="Gen 6/7: trainer ID shown on the trade screen")
     p.add_argument("--sid", type=int, help="Gen 6/7: secret ID")
+    p.add_argument("--online", action="store_true",
+                   help="Gen 6/7: trade with a player far away through public relays: their console's Pokemon is "
+                        "offered to this one, and each side says yes only once both consoles have (docs/online.md)")
+    p.add_argument("--online-code", metavar="CODE",
+                   help="with --online (and implies it): the room both players type; without one, PokeUDS meets "
+                        "anyone else trading the same games online without a code")
     p.set_defaults(func=cmd_trade)
 
     args = parser.parse_args(argv)

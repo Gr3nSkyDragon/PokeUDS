@@ -4,8 +4,8 @@ PokeUDS trades over the internet in two ways:
 
 | | what it is | state |
 |---|---|---|
-| **The GTS** | list a banked Pokemon against what you want; anyone can offer on it, at any time. Bank to bank, no console needed at either end. | written and tested against a fake relay; **never run against the public relays yet** |
-| **Online trades** | two players trade live, each with their own 3DS beside their own PokeUDS. Each board hosts a local trade; the two apps carry the offers between them. | not set up yet; designed (below) after pokeldn; needs the offer-source refactor, then hardware |
+| **The GTS** | list a banked Pokemon against what you want; anyone can offer on it, at any time. Bank to bank, no console needed at either end. | working: a GTS trade run against the public relays (2026-11-14) |
+| **Online trades** | two players trade live, each with their own 3DS beside their own PokeUDS. Each board hosts a local trade; the two apps carry the offers between them. | Gen 6 and Gen 7: in the command line (`--online`, `--online-code`) and on the Trade page (Trade online); tested in simulation (two consoles, two PokeUDS, one relay); **never run on hardware** |
 
 Both ride on [Nostr](https://github.com/nostr-protocol/nips) relays: public servers that keep and pass on signed
 JSON events. Nobody runs a PokeUDS server, there is no account, and no relay has to be trusted with anything but
@@ -21,11 +21,14 @@ Languages), and live online they would also need the cross-language conversion t
 | file | what it does |
 |---|---|
 | `pokeuds/online/schnorr.py` | secp256k1 keys, BIP-340 signatures, the shared secret of two keys. Pure Python; checked against BIP-340's vectors and `cryptography`'s ECDH. |
-| `pokeuds/online/relays.py` | events (NIP-01) signed and checked; a small WebSocket client; `Pool`, which talks to several relays at once and believes only correctly signed events that match what it asked for. |
+| `pokeuds/online/relays.py` | events (NIP-01) signed and checked; a small WebSocket client; `Pool`, which talks to several relays at once and believes only correctly signed events that match what it asked for; `LivePool`, relays kept open with standing subscriptions, for a live trade. |
 | `pokeuds/online/gts.py` | the GTS's events: listing, offer, answer, deletion; sealing. Touches neither the bank nor a relay. |
 | `pokeuds/app/gts.py` | the GTS against the bank: what leaves it, what joins it, and the round that settles everything. |
 | `gui/views/gts.py` | the GTS page. |
-| `tests/fake_relay.py` | a relay for the tests: the store, a pool over it, and the store behind a real loopback WebSocket. |
+| `pokeuds/online/link.py` | an online trade's partner: the room, meeting, the pair channel (ported from pokeldn). |
+| `pokeuds/online/trade.py` | the partner as a trade's offer source (`Offers`), and the PKHeX check of a partner's record (`checker`). |
+| `pokeuds/games/offers.py` | where a Gen 6/7 trade's offers come from: the local queue, or an online partner. |
+| `tests/fake_relay.py` | a relay for the tests: the store, a pool over it, and the store behind a real loopback WebSocket that also passes new events to open subscriptions. |
 
 Relays: seven public relays by default (`relays.DEFAULT_RELAYS`). `POKEUDS_GTS_RELAYS=wss://a,wss://b` replaces
 them, for a private relay or a test. A relay that refuses a connection is left alone for a minute. A read-only
@@ -111,18 +114,18 @@ withdrawal, expiry and clean-up, a lister that sends the wrong Pokemon, relays t
 and crashes mid-trade; and the page headless. `tests/test_online.py` covers the signatures and the relay client
 against loopback WebSocket relays.
 
-**Not yet done:** a run against the public relays. Publishing there is outward-facing (the events are public and
-may be kept), so it waits for a deliberate first listing. Unmeasured until then: relay limits on event size (a
-listing is about 1 KB, an offer about 0.5 KB), how long the relays keep kind 1059 events, and how they treat NIP-40.
+A GTS trade has since run against the public relays and worked (2026-11-14). Still unmeasured: relay limits on
+event size (a listing is about 1 KB, an offer about 0.5 KB), how long the relays keep kind 1059 events, and how
+they treat NIP-40.
 
-## Online trades (planned)
+## Online trades
 
 A live trade between two players, each with a 3DS and a board. **Each side is an ordinary local trade**: PokeUDS
 hosts the 3DS's trade over its own board, exactly as today, and the two apps pass what each 3DS offers to the
 other over the relays. Nothing changes on the 3DS side. This is how pokeldn trades online (its `docs/online.md`
-and `pokeldn/online/link.py` at `d701560`, which PokeUDS may now take with its notice: both are AGPL-3.0); pokeldn
-does it for its own games (FireRed/LeafGreen, Let's Go, Sword/Shield, BDSP, Legends, Scarlet/Violet, Z-A), so the
-Gen 6/7 and VC parts below are PokeUDS's own.
+and `pokeldn/online/link.py`, which `pokeuds/online/link.py` is ported from); pokeldn does it for its own games
+(FireRed/LeafGreen, Let's Go, Sword/Shield, BDSP, Legends, Scarlet/Violet, Z-A), so the Gen 6/7 and VC parts
+below are PokeUDS's own.
 
 ### Meeting (as pokeldn)
 
@@ -136,50 +139,90 @@ Gen 6/7 and VC parts below are PokeUDS's own.
   that app for 10 s.
 * Paired, the two talk on a **pair channel**: an inner AES-GCM under a key from both apps' X25519 keys
   (`pokeuds pair|` + room + both keys + their shared secret). Every message is numbered and acknowledged,
-  resent every 2 s until acknowledged, with a ping every 4 s; a partner silent for 45 s is lost.
+  resent every 2 s until acknowledged, with a ping every 4 s; a partner silent for 45 s is lost (and replaced, if
+  nothing was offered yet).
+* The relays are kept open (`relays.LivePool`, one thread per relay, reconnecting after 2 s and up to 30 s).
+  By default the six relays pokeldn measured passing 8 of 8 ephemeral events (`relays.LIVE_RELAYS`);
+  `POKEUDS_RELAYS=wss://a,wss://b` replaces them.
 
 ### Trading
 
 | message | meaning |
 |---|---|
 | `offer` / `withdraw` | trade *r*: this player's 3DS put this record up, or took it back |
-| `accept` / `unaccept` | trade *r*: this player's 3DS said yes, or changed its mind |
+| `accept` / `unaccept` | trade *r*: this player's 3DS said yes, or changed its mind. `accept` carries `h`, the first 32 hex digits of the SHA-256 of the record the 3DS said yes to; a yes naming another record than the one now offered is dropped |
 | `refused` | trade *r*: this app will not show the other's record to its 3DS, and why |
 | `done` | trade *r* finished on this side; the next is *r* + 1 |
 
-Each app checks the partner's record with PKHeX before its 3DS sees it: one PKHeX cannot read, or with an item or
-move the game never released, is refused (the sender is told why); any other legality flag reaches the receiver
-as a warning. Each app says yes to its own 3DS only once **both** 3DSs have said yes, so neither trade completes
+`h` is PokeUDS's addition to pokeldn's protocol: without it, a 3DS that took its offer back and offered again
+before the relays carried the withdrawal could meet the partner's yes to the first offer, and one side's trade
+would complete alone.
+
+Each app checks the partner's record with PKHeX, as **its own 3DS's game** (`online.trade.checker`), before its 3DS
+sees it: one that is not a Gen 6/7 record, that PKHeX cannot read, or with an item or move the game never released,
+is refused (the sender is told why); any other legality flag reaches the receiver as a warning. So an Omega Ruby
+Pokemon holding what X never had never reaches an X. Without PKHeX set up, nothing can be checked, so every record
+is refused. Each app says yes to its own 3DS only once **both** 3DSs have said yes, so neither trade completes
 alone.
 
-### How a trade takes its partner (as pokeldn)
+### How a trade takes its partner
 
-pokeldn's trade hosts hold a `Partner` and drive it from their own loop: every call returns at once, and the
-partner's state is something the host polls (`theirs()`: their offer, whether they accepted, whether they are
-lost). The host calls `offer`, `accept`, `withdraw`, `done` as its own console acts. PokeUDS's trades take their
-offers up front instead (`games/gen6/trade.py` `offer` and `queue`, `games/gen7/session.py` `self._offers`,
-`vc/trade.py` `link.Party`), so the first step is an **offer source** with that same polling shape: the local
-queue becomes one source (offers known at once, the console's yes answered at once) and `Partner` the other.
+A Gen 6/7 session takes its offers from an **offer source** (`pokeuds/games/offers.py`). Every call returns at
+once; while it waits on one, the session keeps its 3DS's connection alive (heartbeats, syncs), so the 3DS never
+times out on PokeUDS.
 
-| | the partner's offer goes to the 3DS as | the 3DS's offer goes out from | PokeUDS's yes waits for | the partner withdrawing becomes |
-|---|---|---|---|---|
-| Sun / Moon, USUM | the offer `_one_trade` makes once the console's trade screen is up (today after up to `SCREEN_WAIT`, 20 s): online, once the partner's record has arrived and passed PKHeX | the record the console offers (already parsed for the bank) | the console's yes (as today) **and** the partner's `accept` | a decline in `_confirm` |
-| X / Y, ORAS | module 0 command 01 (the 260-byte record) | the console's command 01 | as Gen 7 | command 07 with a value other than 01 |
-| Virtual Console | the partner's party block, patch lists and Gen 2 mail, relayed whole before anyone picks (as pokeldn's FireRed does); PokeUDS holds its own block at the block window until the partner's arrives | the console's blocks and its pick (`$6x`/`$7x` + slot) | `$62` accept held until the partner's console accepted | `$6F` cancel |
+| | the local queue (`offers.Queue`) | an online partner (`online.trade.Offers`) |
+|---|---|---|
+| PokeUDS's offer | the next queued record, offered first | the partner's 3DS's record, offered once this 3DS has offered (its offer goes to the partner) and the partner's has come |
+| PokeUDS's yes | at once | once this 3DS said yes and the partner's 3DS said yes to this 3DS's offer |
+| a decline (either side) | offer again | both sides offer afresh: the partner's standing offer is not shown again |
+| PokeUDS leaves the trade screen | after `trades` trades | when the partner has left or been lost |
 
-### What is set up today
+| | the partner's offer goes to the 3DS as | the 3DS's offer goes out from | the partner taking its offer back becomes |
+|---|---|---|---|
+| Sun / Moon, USUM | module 1 cmd 00 (shown, then chosen) with module 2 cmd 01, then module 3 cmd 00 (the offer), once the console's own offer has come | the console's module 3 cmd 00 | PokeUDS's "no" at "Trade?": module 1 cmd 00, not chosen (what a console sends for no) |
+| X / Y, ORAS | module 1 cmd 01 (the 260-byte record) and cmd 06, after the console's cmd 01 | the console's cmd 01 | cmd 07 `00e2` (a value other than 01) |
+| Virtual Console | the partner's party block, patch lists and Gen 2 mail, relayed whole before anyone picks (as pokeldn's FireRed does); PokeUDS holds its own block at the block window until the partner's arrives | the console's blocks and its pick (`$6x`/`$7x` + slot) | `$6F` cancel |
 
-* `pokeuds/online/schnorr.py` and `relays.py`: keys, signatures, the relay pool (shared with the GTS).
-* Nothing of the rooms, the pair channel or the offer source yet: **Gen 6 and Gen 7 online trades are not set
-  up.** Order: the offer source (no hardware needed; the local trades must behave exactly as before), then
-  `pokeuds/online/link.py` (`Partner`, tested as two apps over the fake relay), then Gen 7 (the best understood
-  trade, with the most patience for waiting), then Gen 6, then the VC (the least patient link).
-* Hardware decides the rest: how long each game waits at the offer and at "Trade?" before it gives up (Gen 6/7),
-  at the block window and at `CheckLinkTimeout_Gen2` (VC), and two consoles, two boards and two app instances on
-  one desk with a code.
+After a Sun/Moon trade PokeUDS shows the Pokemon it received as its screen comes back, as a console does, before the
+next offer is known.
+
+### Tested, and not
+
+`tests/test_offers.py` drives a Gen 6 and a Gen 7 session from a scripted partner against a second engine standing
+in for the console: offering after the console, the yes held for the partner, a partner taking its offer back, a
+partner gone. `tests/test_online_trade.py` covers the channel (pokeldn's tests of it, ported: pairing among many
+with loss, rooms and codes apart, rounds in order, refusals, a silent or departed partner, forged and flooding
+events, bounded state; and a yes to an offer since replaced), the PKHeX check, two partners meeting through a
+loopback WebSocket relay with `LivePool`, and **whole trades**: a console and a PokeUDS on each of two simulated
+desks, their PokeUDS joined through the relays, two Gen 6 trades and one Gen 7 trade, each console ending with the
+other's Pokemon.
+
+`test_two_command_line_runs_trade_online_through_a_relay` runs two `pokeuds trade xy --online-code desk` processes,
+each beside the demo radio's X, through a loopback relay, with PKHeX checking each Pokemon.
+
+### Using it
+
+Command line: `pokeuds trade <xy|oras|sm|usum> --online-code CODE` (no `--offer`; [cli.md](cli.md), Trading).
+App: on the Trade page, for X/Y, ORAS, Sun/Moon or USUM, turn on **Online** (beside who asks) and type
+the room code your partner types (Settings' `online`, `online_code`). The queue gives way to the partner's
+Pokemon; the session panel shows the partner (waiting, paired, gone) and what their 3DS offers, from the `online`
+status events. PokeUDS stays on the trade screen until the partner leaves or the 3DS's player does.
+
+**Not yet done:**
+
+* The VC (rooms `gb1`, `gb2`): it needs the party blocks relayed before anyone picks; `Partner.share` carries them.
+* Anything on hardware. Unmeasured until then:
+  * how long each game waits at the offer and at "Trade?" while the partner decides;
+  * whether a Sun/Moon offers before PokeUDS's screen shows a Pokemon (online, PokeUDS has none to show until the
+    partner's has come; the engine standing in for a console waits up to `SCREEN_WAIT`, 20 s, then offers);
+  * whether an X/Y takes PokeUDS offering second and confirming after it, and what it does with a cmd 07 `00e2`;
+  * whether a Sun/Moon takes PokeUDS's "no" at "Trade?" as a console's;
+  * the whole path with two consoles, two boards and two app instances on one desk, with a code.
 
 ## Licence
 
 PokeUDS is AGPL-3.0 ([LICENSE](../LICENSE)), as pokeldn is, so pokeldn's code may be used here with its notice kept.
-The online and GTS code so far was written from the public specifications (NIP-01, -09, -40, -99, BIP-340,
-RFC 6455) and pokeldn's documented design; none of it is copied from pokeldn's source.
+`pokeuds/online/link.py` is ported from pokeldn's `pokeldn/online/link.py` (Decryptu/pokeldn, AGPL-3.0), and
+`tests/test_online_trade.py` from its tests of it, each saying so. The rest of the online and GTS code was written
+from the public specifications (NIP-01, -09, -40, -99, BIP-340, RFC 6455) and pokeldn's documented design.

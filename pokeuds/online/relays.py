@@ -10,6 +10,9 @@ things the GTS needs, against several relays at once, since any one may be down 
 
 The WebSocket client is the little of RFC 6455 a relay conversation uses: the upgrade, masked text frames out,
 text, ping and close frames in. ``POKEUDS_GTS_RELAYS`` (comma-separated ``wss://`` addresses) replaces the pool.
+
+A live trade needs relays kept open instead: ``LivePool`` holds one thread per relay with standing subscriptions, hands
+each new event on as it comes, and reconnects a relay that drops (``POKEUDS_RELAYS`` replaces its relays).
 """
 
 from __future__ import annotations
@@ -390,3 +393,157 @@ class Pool:
     def close(self) -> None:
         for relay in self.relays:
             relay.close()
+
+
+# -- relays kept open, for a live trade --------------------------------------------------------------
+
+# Relays that took and passed on 8 of 8 ephemeral events at one per 2 s (pokeldn's docs/online.md, The relays).
+LIVE_RELAYS = ("wss://relay.primal.net", "wss://relay.snort.social", "wss://offchain.pub", "wss://relay.nostr.net",
+               "wss://nostr.oxtr.dev", "wss://nostr-pub.wellorder.net")
+RECONNECT_MIN, RECONNECT_MAX = 2.0, 30.0
+LIVE_POLL = 0.05                # s a relay's thread listens before it sends what is waiting
+SEEN_LIMIT = 4096
+
+
+def live_relay_urls() -> tuple[str, ...]:
+    urls = tuple(u.strip() for u in os.environ.get("POKEUDS_RELAYS", "").split(",") if u.strip())
+    return urls or LIVE_RELAYS
+
+
+class LiveRelay(threading.Thread):
+    """One relay, connected for as long as the pool is open and again after it drops. Only this thread touches its
+    socket: what is published waits in ``outbox`` until the thread next looks up from listening (TLS sockets are not
+    for two threads at once)."""
+
+    def __init__(self, url: str, pool: "LivePool") -> None:
+        super().__init__(name=f"relay {url}", daemon=True)
+        self.url, self.pool = url, pool
+        self.outbox: list[str] = []
+        self.lock = threading.Lock()
+        self.connected = False
+        self.failed = ""
+        self.refusals: set[str] = set()
+
+    def send(self, message: list) -> bool:
+        """Queue a message; False when the relay is not connected (it is dropped: senders repeat what matters)."""
+        with self.lock:
+            if not self.connected:
+                return False
+            self.outbox.append(json.dumps(message, separators=(",", ":"), ensure_ascii=False))
+            return True
+
+    def run(self) -> None:
+        delay = RECONNECT_MIN
+        while not self.pool.closed.is_set():
+            ws = None
+            try:
+                ws = WebSocket(self.url)
+                with self.lock:
+                    self.connected, self.outbox, self.failed = True, [], ""
+                # After ``connected``: a subscription made meanwhile is sent twice, which a relay takes as one.
+                for sub, filters in self.pool.subscriptions():
+                    ws.send(json.dumps(["REQ", sub, *filters], separators=(",", ":")))
+                delay = RECONNECT_MIN
+                self.pool.changed()
+                while not self.pool.closed.is_set():
+                    with self.lock:
+                        waiting, self.outbox = self.outbox, []
+                    for text in waiting:
+                        ws.send(text)
+                    text = ws.recv(LIVE_POLL)
+                    while text is not None:
+                        self._on_message(text)
+                        text = ws.recv(0)
+            except (OSError, ValueError) as exc:
+                self.failed = str(exc) or type(exc).__name__
+                if not self.pool.closed.is_set():
+                    log.debug("%s: %s", self.url, self.failed)
+            finally:
+                with self.lock:
+                    was, self.connected, self.outbox = self.connected, False, []
+                if ws is not None:
+                    ws.close()
+                if was:
+                    self.pool.changed()
+            if self.pool.closed.wait(delay * (1 + 0.5 * os.urandom(1)[0] / 255)):
+                return
+            delay = min(delay * 2, RECONNECT_MAX)
+
+    def _on_message(self, text: str) -> None:
+        message = _json(text)
+        if not isinstance(message, list) or not message:
+            return
+        if message[0] == "EVENT" and len(message) >= 3 and isinstance(message[2], dict):
+            self.pool.received(message[2])
+        elif message[0] == "OK" and len(message) >= 3 and message[2] is not True:
+            reason = str(message[3])[:200] if len(message) > 3 else "refused"
+            if reason not in self.refusals and len(self.refusals) < 32:
+                self.refusals.add(reason)
+                log.info("%s refused an event: %s", self.url, reason)
+
+
+class LivePool:
+    """Relays kept open with standing subscriptions. ``on_event(event)`` sees each event id once, on a relay's thread,
+    unchecked (the caller checks it: ``valid``). ``publish`` sends to every connected relay and returns at once."""
+
+    def __init__(self, urls, on_event, on_change=None) -> None:
+        self.on_event, self.on_change = on_event, on_change
+        self.closed = threading.Event()
+        self.lock = threading.Lock()
+        self.subs: dict[str, list[dict]] = {}
+        self.seen: dict[str, float] = {}
+        self.relays = [LiveRelay(url, self) for url in urls]
+
+    def start(self) -> None:
+        for relay in self.relays:
+            relay.start()
+
+    def close(self) -> None:
+        self.closed.set()
+        for relay in self.relays:
+            if relay.is_alive():
+                relay.join(timeout=3)
+
+    def connected(self) -> int:
+        return sum(relay.connected for relay in self.relays)
+
+    def problems(self) -> list[str]:
+        return [f"{relay.url}: {relay.failed}" for relay in self.relays if relay.failed and not relay.connected]
+
+    def changed(self) -> None:
+        if self.on_change:
+            self.on_change()
+
+    def subscriptions(self) -> list[tuple[str, list[dict]]]:
+        with self.lock:
+            return list(self.subs.items())
+
+    def subscribe(self, sub: str, *filters: dict) -> None:
+        with self.lock:
+            self.subs[sub] = list(filters)
+        for relay in self.relays:
+            relay.send(["REQ", sub, *filters])
+
+    def publish(self, event: dict) -> int:
+        """-> how many connected relays it was queued for."""
+        with self.lock:
+            self.seen[event["id"]] = time.time()       # our own, when a relay echoes it back
+        return sum(relay.send(["EVENT", event]) for relay in self.relays)
+
+    def received(self, event: dict) -> None:
+        ident = event.get("id")
+        if not isinstance(ident, str):
+            return
+        now = time.time()
+        with self.lock:
+            if ident in self.seen:
+                return
+            self.seen[ident] = now
+            if len(self.seen) > SEEN_LIMIT:
+                self.seen = {k: t for k, t in self.seen.items() if now - t < 120}
+                while len(self.seen) > SEEN_LIMIT:
+                    del self.seen[next(iter(self.seen))]
+        try:
+            self.on_event(event)
+        except Exception:  # noqa: BLE001 - one bad event must not take the relay's thread down
+            log.exception("an online event handler failed")
