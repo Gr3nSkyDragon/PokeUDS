@@ -112,9 +112,9 @@ item number), Special Attack and Special Defense from Gen 2 base stats, friendsh
 - **Derived**: every other title's comm id (title id + 0x10, Blue and Silver their pair's; unmeasured): English
   Yellow and Crystal, and every non-English title (Languages, below). Joining matches the comm id against the title table, so a wrong
   guess means that title is not found: `python -m pokeuds scan` shows the comm id a console really sends.
-- **Hosting.** The host's messages, including the mesh state and system data replayed
-  from the retail host's frames, are what a retail host sends, and PokeUDS-as-host trades with the
-  model. Its network now matches a retail host's (id `1`, attributes `0x8000`, the application data's shape);
+- **Hosting.** PokeUDS hosting has traded with a retail 3DS, Gen 1 with Gen 1 and Gen 2 with Gen 2; the Time
+  Capsule as host is not yet confirmed. The host's messages, including the mesh state and system data replayed
+  from the retail host's frames, are what a retail host sends. Its network matches a retail host's (id `1`, attributes `0x8000`, the application data's shape);
   with id `0` and attributes `0`, no console joined it. As in a sniff of two retail consoles (2026-10-04), every
   frame goes on the air as a broadcast and the setup messages (station info, profile, mesh state) are for
   destination `0`: a retail joiner answered PokeUDS's hello, took its acks (destination `0`) and ignored its
@@ -122,9 +122,9 @@ item number), Special Attack and Special Defense from Gen 2 base stats, friendsh
   station info after the joiner's, its profile after the joiner's, the mesh state after the join request),
   re-sends its system data every 0.25 s until it is acked, and only then sends its Start: its first game unit,
   `EF`, with role flags `FE 00 00` (every later host unit `00 00 00`; all six captures). Host units carry a
-  per-session 32-bit value. A retail joiner acked an `EF` flagged `00 00 00` and stayed in the link menu. Azahar hosting a retail joiner never completed a trade,
-  for a cause not visible on the wire. PokeUDS hosting has since traded with a retail 3DS, Gen 1 with Gen 1 and
-  Gen 2 with Gen 2; the Time Capsule as host is not yet confirmed.
+  per-session 32-bit value. A retail joiner acked an `EF` flagged `00 00 00` and stayed in the link menu.
+  Separately, Azahar's own VC hosting a retail joiner, which these messages were compared against, never
+  completed a trade, for a cause not visible on the wire.
 - **Unknown**: whether a VC checks the application data; Gen 2 against a retail console over the air
   (Gen 2 was measured through Azahar's local bridge); Crystal; everything about the non-English titles on
   the air (Languages, below).

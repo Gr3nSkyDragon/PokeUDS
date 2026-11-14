@@ -9,8 +9,9 @@ Joiner (measured: the retail 2DS and Azahar as joiners; mGBA-LDN trades with ret
     host system data (every 10 s)  -> system ack
     game stream                    one reliable unit per Game Boy serial exchange, from index -2001
 
-Host (**experimental**: built from the retail host's frames in the same capture; Azahar hosting a
-retail joiner never completed a trade, for a cause not visible on the wire): the same messages in
+Host (traded with a retail 3DS joiner, Gen 1 with Gen 1 and Gen 2 with Gen 2; the Time Capsule as host is not
+confirmed. Built from the retail host's frames in the same capture. Azahar's own VC hosting a retail joiner, which
+the host code was compared against, never completed a trade, for a cause not visible on the wire): the same messages in
 the other direction, with the mesh state and system data replayed from the retail host's. Its setup
 messages (station info, profile, mesh state) go to destination 0, as a retail 3DS XL host's did in a sniff of
 two retail consoles (2026-10-04): the joiner has no station id until the mesh state, and a retail joiner ignored

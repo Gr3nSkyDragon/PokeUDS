@@ -149,7 +149,7 @@ class VcTrade:
         self._open(Role.JOINER, target.info.application_data)
 
     def host(self, title: titles.VcTitle, partner_generation: int, seconds: float = 120.0) -> None:
-        """Open a network as ``title`` and wait for the 3DS to join. Experimental (see session.py)."""
+        """Open a network as ``title`` and wait for the 3DS to join (traded on hardware; see session.py)."""
         if why := self._why_not(title):
             raise ValueError(why)
         appdata = host_application_data()
