@@ -24,9 +24,9 @@ python -m pokeuds trade xy --role host --radio esp32 --keys aes_keys.txt --offer
 python -m pokeuds trade xy --radio demo:x --keys none --offer my.pk6
 ```
 
-- `--role join` (the default, "3DS asks"): PokeUDS appears in the PSS under the trainer name; on the
+- `--role join` (the default; in the app, PokeUDS **Joins**): PokeUDS appears in the PSS under the trainer name; on the
   3DS, tap it and ask for a trade. PokeUDS answers, joins the console's trade network and trades.
-- `--role host` ("PokeUDS asks"): PokeUDS asks the first trainer it hears in the PSS (or `--partner`);
+- `--role host` (in the app, PokeUDS **Hosts**): PokeUDS asks the first trainer it hears in the PSS (or `--partner`);
   accept on the 3DS.
 - `--offer` repeats: the trade queue, one Pokemon per trade in order, as many as the game's boxes and party
   hold. PokeUDS offers as soon as the screen opens and confirms as soon as the console has offered; the player

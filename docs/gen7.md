@@ -13,10 +13,12 @@ python -m pokeuds trade sm --radio esp32 --keys aes_keys.txt --offer my.pk7
 python -m pokeuds trade sm --role host --radio esp32 --keys aes_keys.txt --offer my.pk7 --partner Lillie
 ```
 
-- `--role join` (the default, "3DS asks"): PokeUDS joins the Festival Plaza as a guest under the trainer name. On
+- `--role join` (the default; in the app, PokeUDS **Joins**): PokeUDS joins the Festival Plaza as a guest under the trainer name. On
   the 3DS, invite it to a Link Trade; PokeUDS accepts by hosting the trade network, and the 3DS joins it.
-- `--role host` ("PokeUDS asks"): PokeUDS invites the first player it hears in the plaza (or `--partner`); accept
+- `--role host` (in the app, PokeUDS **Hosts**): PokeUDS invites the first player it hears in the plaza (or `--partner`); accept
   on the 3DS, which hosts the trade network for PokeUDS to join.
+- The app's labels follow the player's experience (the 3DS invites: Joins; PokeUDS invites: Hosts), the opposite
+  of the network roles here; see [gui.md](gui.md), Pages.
 - `--offer` repeats: the trade queue, one Pokemon per trade, in order. `--trades N` as for Gen 6.
 - The trainer is `--trainer/--tid/--sid`, else the app's trainer, else the offer's original trainer. The plaza knows
   a player by a principal id and an 8-byte id, which PokeUDS makes once and keeps in the settings (`plaza`), so a

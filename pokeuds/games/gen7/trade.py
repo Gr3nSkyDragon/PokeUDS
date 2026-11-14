@@ -5,11 +5,11 @@ and cycles through five records; an invite travels in those beacons. The other w
 the INVITED player hosts the trade network (``id=1``, four nodes) with an accept in its data, and the inviter joins
 it (read off Azahar logs of Sun/Moon Link Trades, each console inviting once):
 
-``role="join"`` ("3DS asks"): PokeUDS shows up in the console's plaza and waits for the player there to invite it,
-then accepts by hosting the trade network for the console to join (PokeUDS is node 1).
+``role="join"`` (the 3DS invites; the app's "Joins"): PokeUDS shows up in the console's plaza and waits for the
+player there to invite it, then accepts by hosting the trade network for the console to join (PokeUDS is node 1).
 
-``role="host"`` ("PokeUDS asks"): PokeUDS invites a player it hears in the plaza (the first, or the one named
-``partner``), waits for that console's trade network to accept, and joins it (PokeUDS is node 2).
+``role="host"`` (PokeUDS invites; the app's "Hosts"): PokeUDS invites a player it hears in the plaza (the first, or
+the one named ``partner``), waits for that console's trade network to accept, and joins it (PokeUDS is node 2).
 
 Consoles host their plaza networks on channel 1, 6 or 11, so PokeUDS hops all three while it waits, its own beacon
 moving with the radio and changing record every RECORD_EVERY, as a console's does.

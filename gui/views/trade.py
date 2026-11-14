@@ -272,7 +272,8 @@ class TradeView(View):
             self.save()
 
     def online_switch(self) -> ft.Control:
-        """The Online switch, beside who asks: trade with a player far away, each 3DS beside its own PokeUDS."""
+        """The Online switch, beside PokeUDS's Joins/Hosts choice: trade with a player far away, each 3DS beside its
+        own PokeUDS."""
         return ft.Switch(label="Online", value=self.online, on_change=self._online_changed, disabled=self.app.busy(),
                          tooltip="Trade with a player far away, through public relays (docs/online.md)")
 
@@ -413,12 +414,12 @@ class TradeView(View):
 
     def setup(self) -> ft.Control:
         entry, busy = self.entry, self.app.busy()
-        # In the PSS (Gen 6) and the Festival Plaza (Gen 7) a trade starts with one player asking the other, so the roles
-        # are named by who asks. Literal texts, so scripts/extract_strings.py lists them for language packs.
-        if entry.group == "Generation 6" or (entry.group == "Generation 7" and entry.complete):
-            segments = [ft.Segment("join", label=ft.Text("3DS asks")), ft.Segment("host", label=ft.Text("PokeUDS asks"))]
-        else:
-            segments = [ft.Segment("join", label=ft.Text("3DS hosts")), ft.Segment("host", label=ft.Text("PokeUDS hosts"))]
+        # Under a "PokeUDS" heading, Joins is the 3DS starting the trade and Hosts is PokeUDS starting it: the player's
+        # view, not the radio's. The role keys are the command line's ("join": the 3DS asks; "host": PokeUDS asks). In
+        # the PSS (Gen 6) and for the VC that is also who hosts the trade network; in the Festival Plaza (Gen 7) the
+        # invited player hosts it, so Joins runs PokeUDS hosting there and Hosts runs it joining (docs/gui.md, docs/gen7.md).
+        # Literal texts, so scripts/extract_strings.py lists them for language packs.
+        segments = [ft.Segment("join", label=ft.Text("Joins")), ft.Segment("host", label=ft.Text("Hosts"))]
         role = ft.SegmentedButton(
             segments=segments,
             selected=[self.role], on_change=self._role_changed, disabled=busy)
@@ -426,9 +427,10 @@ class TradeView(View):
         controls: list[ft.Control] = [
             ft.Row([t.title(entry.name), t.label(f"with {entry.console}")], spacing=12,
                    vertical_alignment=ft.CrossAxisAlignment.END),
-            ft.Row([role, *([self.online_switch(), self.touch_switch()] if catalog.online_ready(entry) else [])],
-                   spacing=16, wrap=True,
-                   vertical_alignment=ft.CrossAxisAlignment.CENTER),
+            # The heading sits above the whole row, so the buttons and the switches stay centred on one line.
+            ft.Column([t.label("PokeUDS"), ft.Row(
+                [role, *([self.online_switch(), self.touch_switch()] if catalog.online_ready(entry) else [])],
+                spacing=16, wrap=True, vertical_alignment=ft.CrossAxisAlignment.CENTER)], spacing=4, tight=True),
             t.label(how),
         ]
         if self.role == "host" and entry.host_titles:

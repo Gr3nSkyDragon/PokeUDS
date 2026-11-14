@@ -258,7 +258,7 @@ and two `pokeuds vc trade --online-code desk` processes beside the demo radio's 
 ### Using it
 
 Command line: `pokeuds trade <xy|oras|sm|usum> --online-code CODE`, `pokeuds vc trade --online-code CODE` (no
-`--offer`; [cli.md](cli.md), Trading). App: on the Trade page, turn on **Online** (beside who asks or hosts) and type
+`--offer`; [cli.md](cli.md), Trading). App: on the Trade page, turn on **Online** (beside PokeUDS's Joins/Hosts choice) and type
 the room code your partner types (Settings' `online`, `online_code`). The queue gives way to the partner's
 Pokemon; the session panel shows the partner (waiting, paired, gone) and what their 3DS offers, from the `online`
 status events. PokeUDS stays on the trade screen until the partner leaves or the 3DS's player does.

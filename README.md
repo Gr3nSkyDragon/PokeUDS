@@ -125,7 +125,7 @@ On macOS or Linux, activate with `. .venv/bin/activate`. To use PokeUDS from a t
 1. Settings: choose `aes_keys.txt`, and set your trainer (name, TID/SID) for Pokemon you build.
 2. Trade: pick the game and the connection (ESP32 board or USB Wi-Fi adapter).
 3. Add Pokemon to the trade queue: the **+** row picks from the bank, or Build one (or Import paste), or Add a file.
-4. Pick who asks, then Start, and follow the steps the page shows on the 3DS:
+4. Pick whether PokeUDS joins or hosts, then Start, and follow the steps the page shows on the 3DS:
    - **VC games**: choose Host (or Join) in the VC link menu, then sit at the Trade Center table.
    - **X/Y, ORAS**: open the PSS with local wireless on, then ask PokeUDS for a trade (or accept its request).
    - **Sun/Moon, USUM**: open the Festival Plaza, then invite PokeUDS to a Link Trade (or accept its invite).
