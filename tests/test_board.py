@@ -2,6 +2,7 @@
 how a classic ESP32's USB-UART bridge is found and opened."""
 
 import hashlib
+import struct
 
 import pytest
 
@@ -31,19 +32,19 @@ def s3_image() -> bytes:
             return f.read()
 
 
-@pytest.mark.parametrize("chip", board.CHIPS)
-def test_each_chip_has_its_2_0_uds_image(chip):
+@pytest.mark.parametrize("chip", [chip for chip in board.CHIPS if board.IMAGES[chip][1] is not None])
+def test_each_chip_has_its_uds_image(chip):
     from esptool.targets import CHIP_DEFS
 
     path = board.firmware(chip)
-    assert path.name == f"esp32-uds-bridge-2.0-uds-{board.IMAGES[chip][0]}.bin" and board.FIRMWARE == "2.0-uds"
+    assert path.name == f"esp32-uds-bridge-2.0-uds-{board.IMAGES[chip][0]}.bin"
     assert hashlib.sha256(path.read_bytes()).hexdigest() == board.IMAGES[chip][1]
     rom = next(c for c in CHIP_DEFS.values() if c.CHIP_NAME == chip)
     board.check_image(path, rom)                 # a real merged image for that chip (the classic's bootloader at 0x1000)
     other = next(c for c in CHIP_DEFS.values() if c.CHIP_NAME in board.CHIPS and c.CHIP_NAME != chip)
     with pytest.raises(esptool.FatalError):
         board.check_image(path, other)           # never another chip's
-    assert board.IMAGES[chip][2] == (chip == "ESP32")         # alpha: only the classic ESP32 (the S3, C3, C6 traded)
+    assert board.IMAGES[chip][2] == (chip in {"ESP32", "ESP32-S2"})
 
 
 def test_a_changed_firmware_file_is_refused(tmp_path, monkeypatch):
@@ -86,8 +87,8 @@ def test_image_check(tmp_path):
 
 
 class FakePort:
-    def __init__(self, device, vid, pid):
-        self.device, self.vid, self.pid = device, vid, pid
+    def __init__(self, device, vid, pid, product=None):
+        self.device, self.vid, self.pid, self.product = device, vid, pid, product
 
 
 def test_a_classic_esp32s_bridge_is_found_after_native_usb(monkeypatch):
@@ -101,6 +102,84 @@ def test_a_classic_esp32s_bridge_is_found_after_native_usb(monkeypatch):
     monkeypatch.setattr(list_ports, "comports", lambda: [other, cp210x])
     assert esp32.find_port() == "COM7" and esp32.is_bridge("COM7")
     assert [p.device for p in board.ports()] == ["COM7"] and "classic ESP32" in board.ports()[0].description
+
+
+@pytest.mark.parametrize("usb_id,product", [
+    (esp32.S2_CDC_USB, "VC-Adapter ESP32-S2 UDS"),
+    (esp32.S2_CDC_USB, None),
+    ((0x303A, 0x1001), None),
+])
+def test_discovery_skips_switch_mode_flipper(monkeypatch, usb_id, product):
+    from serial.tools import list_ports
+
+    switch = FakePort("COM1", *esp32.S2_CDC_USB, product="pokeldn ESP32-S2")
+    uds = FakePort("COM2", *usb_id, product=product)
+    monkeypatch.setattr(list_ports, "comports", lambda: [switch, uds])
+
+    assert esp32.find_port() == "COM2"
+    assert esp32.board_ports() == ["COM2"]
+    assert [port.device for port in board.ports()] == ["COM2"]
+
+
+def test_s2_runtime_and_download_ports_have_different_jobs(tmp_path, monkeypatch):
+    from contextlib import nullcontext
+    from esptool.targets import ESP32S2ROM
+    from serial.tools import list_ports
+
+    monkeypatch.setattr(list_ports, "comports", lambda: [
+        FakePort("COM2", *esp32.S2_ROM_USB), FakePort("COM3", *esp32.S2_CDC_USB),
+    ])
+    assert esp32.find_port() == "COM3"
+    assert esp32.board_ports() == ["COM3"]
+    rom, cdc = board.ports()
+    assert rom.rom and rom.chip == "ESP32-S2"
+    assert cdc.native and not cdc.rom and cdc.chip == "ESP32-S2"
+    assert "2.0-uds" in board.advice(board.Identity("COM3", (1, 8), "1.8", "", ""))
+    assert not board.advice(board.Identity("COM3", (2, 0), "2.0", "", "uds"))
+    with pytest.raises(RuntimeError, match="download mode"):
+        board.identify("COM2")
+
+    connects, writes = [], []
+    def connect(port, **options):
+        connects.append((port, options))
+        return nullcontext(ESP32S2ROM)
+    monkeypatch.setattr(esptool, "detect_chip", connect)
+    monkeypatch.setattr(esptool, "main", lambda args, **kw: writes.append((args, kw)))
+    with pytest.raises(esptool.FatalError, match="Put the ESP32-S2 in download mode"):
+        board.flash("COM3")
+    assert not connects and not writes
+
+    with pytest.raises(esptool.FatalError, match="not a merged ESP32-S2 image"):
+        board.flash("COM2", board.firmware("ESP32-S3"))
+    assert not writes
+    with pytest.raises(esptool.FatalError, match="pending"):
+        board.flash("COM2")
+    assert not writes
+
+    from esptool.bin_image import ESP32S2FirmwareImage, ImageSegment
+    image = ESP32S2FirmwareImage()
+    bootloader = tmp_path / "bootloader.bin"
+    image.entrypoint = 0x40024000
+    segment = ImageSegment(image.entrypoint, bytes(64))
+    segment.name = ".iram"
+    image.segments = [segment]
+    image.append_digest = True
+    image.save(str(bootloader))
+
+    # Match the release layout with a bootloader, a factory app entry, and an app image.
+    app_offset = 0x10000
+    partition = struct.pack("<HBBII16sI", 0x50AA, 0, 0, app_offset, 0x300000, b"factory", 0)
+    partition += b"\xeb\xeb" + b"\xff" * 14 + hashlib.md5(partition).digest()
+    merged_bytes = bytearray(b"\xff" * app_offset)
+    bootloader_bytes = bootloader.read_bytes()
+    merged_bytes[0x1000:0x1000 + len(bootloader_bytes)] = bootloader_bytes
+    merged_bytes[0x8000:0x8000 + len(partition)] = partition
+    merged_bytes.extend(bootloader_bytes)  # A second well-formed S2 image stands in for the app.
+    merged = tmp_path / board.image_name("ESP32-S2")
+    merged.write_bytes(merged_bytes)
+    board.flash("COM2", merged)
+    assert connects == [("COM2", {"connect_mode": "no-reset"})] * 3
+    assert writes[0][0][-3:] == ["write-flash", "0x0", str(merged)]
 
 
 def test_a_bridge_opens_at_921600_without_resetting_the_board(monkeypatch):
@@ -222,12 +301,15 @@ def test_the_board_page_hands_its_board_to_the_trade_page(tmp_path, monkeypatch)
     assert app.settings.port == "COM3" and "no board on it now" not in repr(trade.connection())
 
     app.settings.port = "COM9"
-    view._install("COM3")
+    view._install(board.Port("COM3", "Native USB", True))
     runs[-1][1]["on_exit"](1)                                            # a failed install hands nothing over
     assert app.settings.port == "COM9"
-    view._install("COM3")
+    view._install(board.Port("COM3", "Native USB", True))
     runs[-1][1]["on_exit"](0)
     assert app.settings.port == "COM3"
+    view._install(board.Port("COM2", "Download mode", True, rom=True, chip="ESP32-S2"))
+    runs[-1][1]["on_exit"](0)
+    assert app.settings.port == "COM3"  # only the running application port can be handed to trades
 
 
 def test_a_check_that_never_answers_is_stopped_with_a_reason(tmp_path, monkeypatch):

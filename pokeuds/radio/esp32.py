@@ -23,6 +23,9 @@ log = logging.getLogger(__name__)
 # Espressif USB Serial/JTAG, the native USB port of the S3, C3 and C6.
 ESPRESSIF_VID = 0x303A
 ESPRESSIF_JTAG_PID = 0x1001
+S2_CDC_USB = (ESPRESSIF_VID, 0x4001)
+S2_ROM_USB = (ESPRESSIF_VID, 0x0002)
+NATIVE_USB = {(ESPRESSIF_VID, ESPRESSIF_JTAG_PID), S2_CDC_USB}
 # USB-UART bridges boards put on a UART: the classic ESP32's only way in.
 BRIDGES = {(0x10C4, 0xEA60): "CP210x", (0x1A86, 0x7523): "CH340", (0x1A86, 0x55D3): "CH343",
            (0x0403, 0x6001): "FTDI", (0x0403, 0x6010): "FTDI"}
@@ -39,14 +42,21 @@ REOPEN_DELAY = 1.0
 MIN_FIRMWARE = (1, 7)   # the first 3DS-only image with the screen; 1.8 adds the Switch side
 
 
+def is_native_radio_port(port) -> bool:
+    """Identify native radio candidates without opening a known pokeldn port."""
+    usb_id = (port.vid, port.pid)
+    # Both S2 runtimes share a USB ID. Keep CDC devices without a product string eligible.
+    return usb_id in NATIVE_USB and not (usb_id == S2_CDC_USB and port.product == "pokeldn ESP32-S2")
+
+
 def find_port() -> str | None:
-    """The serial port of an attached ESP32: a native USB port first (S3, C3, C6), else a USB-UART bridge (a
+    """The serial port of an attached ESP32: a native USB radio candidate first (S2, S3, C3, C6), else a USB-UART bridge (a
     classic ESP32); None when there is neither."""
     from serial.tools import list_ports
 
     ports = list(list_ports.comports())
     for port in ports:
-        if port.vid == ESPRESSIF_VID and port.pid == ESPRESSIF_JTAG_PID:
+        if is_native_radio_port(port):
             return port.device
     for port in ports:
         if (port.vid, port.pid) in BRIDGES:
@@ -62,7 +72,7 @@ def board_ports() -> list[str]:
         ports = list(list_ports.comports())
     except (ImportError, OSError):
         return []
-    native = [p.device for p in ports if (p.vid, p.pid) == (ESPRESSIF_VID, ESPRESSIF_JTAG_PID)]
+    native = [p.device for p in ports if is_native_radio_port(p)]
     return native + [p.device for p in ports if (p.vid, p.pid) in BRIDGES]
 
 
@@ -77,14 +87,18 @@ def unopened(name: str) -> str:
     return f"No board on {name}: it is not connected. Plug the board in by its USB port, then check it on the Board page."
 
 
+def port_usb_id(device: str) -> tuple[int | None, int | None] | None:
+    from serial.tools import list_ports
+
+    try:
+        return next(((p.vid, p.pid) for p in list_ports.comports() if p.device == device), None)
+    except OSError:
+        return None
+
+
 def is_bridge(device: str) -> bool:
     """Whether ``device`` is a USB-UART bridge (a classic ESP32's port) rather than a chip's native USB."""
-    try:
-        from serial.tools import list_ports
-
-        return any(p.device == device and (p.vid, p.pid) in BRIDGES for p in list_ports.comports())
-    except (ImportError, OSError):
-        return False
+    return port_usb_id(device) in BRIDGES
 
 
 def open_serial(name: str, baud: int, bridge: bool):
@@ -141,15 +155,19 @@ class Esp32Radio(Radio):
         name = self.port_name or find_port()
         if not name:
             raise RuntimeError(
-                "No ESP32 found. Connect an S3, C3 or C6 board's native USB port (Espressif USB Serial/JTAG, "
-                "303A:1001), or a classic ESP32 board's USB port (its CP210x or CH340), or pass --port.")
+                "No ESP32 found. Connect an S2, S3, C3 or C6 board's native USB port (Espressif USB CDC or Serial/JTAG, "
+                "303A:4001 or 303A:1001), or a classic ESP32 board's USB port (its CP210x or CH340), or pass --port.")
         began = time.monotonic()
         deadline = began + OPEN_TIMEOUT
         restarted = opened = False
         while True:
             try:
-                bridge = is_bridge(name)
-                baud = self.baud or (BRIDGE_BAUD if bridge else NATIVE_BAUD)
+                usb_id = port_usb_id(name)
+                bridge = usb_id in BRIDGES
+                default_baud = BRIDGE_BAUD if bridge else NATIVE_BAUD
+                if usb_id == S2_CDC_USB:
+                    default_baud = 115200  # CDC line coding only; the S2 sends at USB speed.
+                baud = self.baud or default_baud
                 self._attach(open_serial(name, baud, bridge))
                 opened = True
                 if self._say_hello(min(deadline, time.monotonic() + HELLO_WINDOW)):

@@ -9,6 +9,7 @@ HELLO). One image per chip:
 
 | chip | image | host link | state |
 |---|---|---|---|
+| ESP32-S2 | ``esp32-uds-bridge-2.0-uds-esp32s2.bin`` | native USB CDC (``303A:4001``) | alpha |
 | ESP32-S3 | ``esp32-uds-bridge-2.0-uds-esp32s3.bin`` | native USB (``303A:1001``) | the chip 1.8 ran on |
 | ESP32-C3, ESP32-C6 | ``...-esp32c3.bin``, ``...-esp32c6.bin`` | native USB (``303A:1001``) | traded on (0.1.5) |
 | ESP32 (classic) | ``...-esp32.bin`` (bootloader at 0x1000 inside it) | its board's USB-UART bridge (CP210x, CH340...), 921600 baud | alpha |
@@ -32,8 +33,9 @@ from pathlib import Path
 
 FIRMWARE_VERSION = (2, 0)
 FIRMWARE = "2.0-uds"
-# esptool's chip name -> (the image's chip part, its SHA-256, alpha: not yet seen working on that chip).
+# esptool's chip name -> (image target, SHA-256 or None pending an upstream bundle, alpha).
 IMAGES = {
+    "ESP32-S2": ("esp32s2", None, True),
     "ESP32-S3": ("esp32s3", "ac7af250ad2f531e2b987c6752bbd36ff8137a4842a13b79a1be16adc17392bd", False),
     "ESP32-C3": ("esp32c3", "a50dfe3cf5e91b676917b1a4c36d0fdd4aa83cbe53117ea41037d032c8b2a9f0", False),
     "ESP32-C6": ("esp32c6", "f7821911cf529b6e4e57a5b755133a913d1228ded81d6892ea4b6b186992f6b6", False),
@@ -42,11 +44,11 @@ IMAGES = {
 CHIPS = tuple(IMAGES)
 IMAGE_BYTES = 8 << 20          # a merged image is well under the flash of the boards it targets
 FLASH_BAUD = "460800"
-CLASSIC_BOOTLOADER = 0x1000    # the classic ESP32's ROM looks for its bootloader there; the others at 0x0
+BOOTLOADER_OFFSET = {"ESP32": 0x1000, "ESP32-S2": 0x1000}
 
 # USB ids: the native USB Serial/JTAG of the S3, C3 and C6, and the USB-UART bridges boards put on a UART port (the
 # classic ESP32's only way in).
-from ..radio.esp32 import BRIDGE_BAUD, BRIDGES, ESPRESSIF_JTAG_PID, ESPRESSIF_VID  # noqa: E402,F401
+from ..radio.esp32 import BRIDGES, S2_CDC_USB, S2_ROM_USB, is_native_radio_port, port_usb_id  # noqa: E402
 
 
 def image_name(chip: str) -> str:
@@ -61,6 +63,9 @@ class Port:
     description: str
     native: bool            # an S3, C3 or C6's own USB; else a USB-UART bridge (a classic ESP32's way in)
 
+    rom: bool = False
+    chip: str = ""
+
     def label(self) -> str:
         return f"{self.device} ({self.description})"
 
@@ -70,8 +75,14 @@ def ports() -> list[Port]:
 
     found = []
     for p in list_ports.comports():
-        if (p.vid, p.pid) == (ESPRESSIF_VID, ESPRESSIF_JTAG_PID):
-            found.append(Port(p.device, "ESP32 native USB (S3, C3 or C6)", True))
+        usb_id = (p.vid, p.pid)
+        if usb_id == S2_ROM_USB:
+            found.append(Port(p.device, "ESP32-S2 download mode", True, rom=True, chip="ESP32-S2"))
+        elif is_native_radio_port(p):
+            if usb_id == S2_CDC_USB:
+                found.append(Port(p.device, "ESP32-S2 native USB CDC", True, chip="ESP32-S2"))
+            else:
+                found.append(Port(p.device, "ESP32 native USB (S3, C3 or C6)", True))
         elif (p.vid, p.pid) in BRIDGES:
             found.append(Port(p.device, f"{BRIDGES[(p.vid, p.pid)]} USB-UART (a classic ESP32's port)", False))
     return sorted(found, key=lambda p: (not p.native, p.device))
@@ -106,6 +117,9 @@ def identify(port: str) -> Identity:
     from ..radio.esp32 import Esp32Radio
     from ..radio import esp32_wire as wire
 
+    usb_id = port_usb_id(port)
+    if usb_id == S2_ROM_USB:
+        raise RuntimeError("The ESP32-S2 is in download mode. Install firmware or press RESET to run the existing image.")
     radio = Esp32Radio(port)
     radio.open()
     try:
@@ -128,13 +142,17 @@ def firmware_path(chip: str = "ESP32-S3") -> Path:
 
 
 def firmware(chip: str = "ESP32-S3") -> Path:
-    """The bundled 2.0-uds image for ``chip`` (esptool's name), after checking it is the one PokeUDS shipped with."""
+    """The bundled image for ``chip`` (esptool's name), verified against its release checksum."""
     if chip not in IMAGES:
         raise OSError(f"esp32-uds-bridge has no build for the {chip}: it runs on the {', '.join(CHIPS)}")
+    digest = IMAGES[chip][1]
+    if digest is None:
+        raise FileNotFoundError(f"The bundled {FIRMWARE} image for {chip} is pending. Use a VC-Adapter release image "
+                                "with `pokeuds board flash --firmware IMAGE`.")
     path = firmware_path(chip)
     if not path.is_file():
         raise FileNotFoundError(f"{path} is missing: reinstall PokeUDS")
-    if hashlib.sha256(path.read_bytes()).hexdigest() != IMAGES[chip][1]:
+    if hashlib.sha256(path.read_bytes()).hexdigest() != digest:
         raise OSError(f"{path} is not the firmware PokeUDS shipped with (its SHA-256 differs): reinstall PokeUDS")
     return path
 
@@ -151,7 +169,7 @@ def bundled() -> dict[str, Path | str]:
 
 
 def advice(identity: Identity) -> str:
-    """Why to install PokeUDS's 2.0-uds on this board, or "" when it already runs the line PokeUDS is made for."""
+    """Why to install PokeUDS firmware, or "" when this board already has a suitable build."""
     if identity.build in ("aio", "vcadapter"):
         return (f"This is VC-Adapter's standalone board firmware ({identity.firmware}). PokeUDS uses {FIRMWARE}, the "
                 "line for a board on a computer; installing replaces it.")
@@ -164,7 +182,7 @@ def advice(identity: Identity) -> str:
 
 def check_image(path: str | Path, chip=None) -> None:
     """Refuse anything but a merged image for ``chip`` (esptool's chip class, default the S3): its bootloader, at
-    0x0 (or 0x1000 on the classic ESP32), with that chip's id, and esptool's own checksum and digest over it."""
+    0x0 (or 0x1000 on the classic ESP32 and S2), with that chip's id, and esptool's own checksum and digest over it."""
     import esptool
     from esptool.bin_image import LoadFirmwareImage
     from esptool.targets import ESP32S3ROM
@@ -174,7 +192,7 @@ def check_image(path: str | Path, chip=None) -> None:
     data = Path(path).read_bytes()
     if len(data) > IMAGE_BYTES:
         raise esptool.FatalError(f"{path} is too large to be a firmware image")
-    start = CLASSIC_BOOTLOADER if name == "ESP32" else 0
+    start = BOOTLOADER_OFFSET.get(name, 0)
     head = data[start:]
     if len(head) < 24 or head[0] != 0xE9 or int.from_bytes(head[12:14], "little") != chip.IMAGE_CHIP_ID:
         raise esptool.FatalError(f"{path} is not a merged {name} image (write a release .bin for this chip, not the "
@@ -194,7 +212,12 @@ def flash(port: str, image: str | Path | None = None, say=print) -> None:
 
     if image is not None and not Path(image).is_file():
         raise esptool.FatalError(f"{image} does not exist")
-    with esptool.detect_chip(port) as chip:
+    usb_id = port_usb_id(port)
+    if usb_id == S2_CDC_USB:
+        raise esptool.FatalError("Put the ESP32-S2 in download mode: hold BOOT, press and release RESET, then release BOOT. "
+                                 "Refresh the Board page and choose the download port.")
+    options = {"connect_mode": "no-reset"} if usb_id == S2_ROM_USB else {}
+    with esptool.detect_chip(port, **options) as chip:
         name = chip.CHIP_NAME
         if name not in IMAGES:
             raise esptool.FatalError(f"this is an {name}; esp32-uds-bridge runs on the {', '.join(CHIPS)}")
