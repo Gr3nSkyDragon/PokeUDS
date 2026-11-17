@@ -295,3 +295,103 @@ def test_ds_wifi_files_match_the_real_ones(helper, game, card_id, text, sha):
             g = helper.gift(game, data=base64.b64decode(card["card_data"]), trainer=ds_trainer(card), distribution_text=text)
             made.add(hashlib.sha256(g.wifi_data).hexdigest())
     assert sha in made
+
+
+# -- custom DS cards (services/pkhex/CardEditorDs.cs) ---------------------------------------------------------------
+
+DS_KINDS = [("dp", "pokemon"), ("pt", "item"), ("hgss", "pokemon"), ("bw", "pokemon"), ("bw", "egg"), ("b2w2", "item")]
+
+
+@pytest.mark.parametrize("game,kind", DS_KINDS)
+def test_custom_ds_cards_build_reopen_and_go_out_as_beacons(helper, game, kind):
+    """A Gen 4/5 card from the editor's blank fields: built, opened back into the same fields and card, and made into
+    the gift file the DS beacons carry."""
+    from pokeuds.app import giftfile
+    from pokeuds.games.ds import delivery
+
+    gift = helper.card(game, trainer=TRAINER, **giftfile.new_fields(game, kind))
+    gen = giftfile.generation(game)
+    assert gift.extension == ("pcd" if gen == 4 else "pgf") and gift.custom
+    assert len(gift.wifi_data) == (delivery.GEN4_FILE_SIZE if gen == 4 else delivery.GEN5_FILE_SIZE)
+    fields = helper.card_fields(game, data=gift.card_data)
+    assert fields["kind"] == ("item" if kind == "item" else "pokemon")
+    again = helper.card(game, trainer=TRAINER, **fields)
+    assert again.card_data == gift.card_data and again.wifi_data == gift.wifi_data
+    dist = delivery.prepare(gen, gift.wifi_data, "ENG")
+    if gen == 4:
+        assert delivery.gen4_decode(dist.fragments) == gift.wifi_data
+    else:
+        assert delivery.gen5_decode(dist.fragments)[:0xAC] == gift.wifi_data[:0xAC]
+    if kind == "item":
+        assert gift.pokemon is None and gift.card["item"] == "Master Ball"
+    else:
+        p = gift.pokemon.summary
+        assert p["species_name"] == ("Pikachu" if kind == "pokemon" else p["species_name"])
+        assert p["level"] == (1 if kind == "egg" else 10) and [m for m in p["moves"] if m]
+        assert p["ot_name"] == "DANA"                     # the receiver; written into the card except on a Gen 5 egg
+        # A custom card matches no real event, so PKHeX flags that and nothing else about it.
+        report = [line for line in gift.pokemon.report.splitlines() if line.startswith("Invalid")]
+        assert report and all("Mystery Gift" in r or "event" in r or "Fateful" in r or "Met Date" in r for r in report), report
+
+
+def test_custom_gen4_card_holds_what_was_asked(helper):
+    from pokeuds.games.ds import delivery
+
+    gift = helper.card("hgss", trainer=TRAINER, kind="pokemon", species=151, level=5, shiny="fixed", pid=0x12345678,
+                       ot="GREEN", tid=111, sid=222, nickname="MEWMEW", held_item=50, versions=0x80,
+                       title="Mew from PokeUDS", distribution_text="A Mew for you!")
+    s = gift.pokemon.summary
+    assert (s["species_name"], s["level"], s["ot_name"], s["tid"]) == ("Mew", 5, "GREEN", 111)
+    assert gift.card["games"] == ["HeartGold"] and gift.card["title"] == "Mew from PokeUDS"
+    fields = helper.card_fields("hgss", data=gift.card_data)
+    assert (fields["pid"], fields["nickname"], fields["distribution_text"]) == (0x12345678, "MEWMEW", "A Mew for you!")
+    assert delivery.gen4_decode(delivery.prepare(4, gift.wifi_data).fragments) == gift.wifi_data
+
+
+def test_custom_gen5_card_holds_what_was_asked(helper):
+    gift = helper.card("bw", trainer=TRAINER, kind="pokemon", species=494, level=15, shiny="never", ivs=[31] * 6,
+                       nature=3, ability="hidden", versions=1, title="Victini")
+    s = gift.pokemon.summary
+    assert s["level"] == 15 and s["ivs"] == [31] * 6 and s["nature"] == "Adamant" and not s["shiny"]
+    assert gift.card["games"] == ["White"]
+    assert gift.card_data[0x1E:0x34] == b"\xff" * 0x16        # no nickname: all 0xFF, as official cards
+
+
+def test_gen4_cards_are_never_or_always_shiny(helper):
+    """Gen 4: a random PID (the game rolls it) is never shiny, as on every official card; Always shiny picks a PID shiny
+    for the card's OT, with the nature, gender and ability asked for, the same PID each time."""
+    base = {"kind": "pokemon", "species": 25, "level": 15, "title": "Pikachu"}
+    never = helper.card("pt", trainer=TRAINER, **base, shiny="never")
+    assert not never.pokemon.summary["shiny"] and helper.card_fields("pt", data=never.card_data)["shiny"] == "never"
+    shiny = helper.card("pt", trainer=TRAINER, **base, shiny="always", nature=3, gender=1)
+    s = shiny.pokemon.summary
+    assert s["shiny"] and s["nature"] == "Adamant" and s["gender"] == "female"
+    assert helper.card("pt", trainer=TRAINER, **base, shiny="always", nature=3, gender=1).card_data == shiny.card_data
+    fields = helper.card_fields("pt", data=shiny.card_data)
+    assert fields["shiny"] == "fixed" and fields["pid"] % 25 == 3
+    assert helper.card("pt", trainer=TRAINER, **base, shiny="random").card_data == never.card_data   # the older name
+
+
+@pytest.mark.parametrize("game,fields,why", [
+    ("pt", {"kind": "egg", "species": 1}, "egg"),
+    ("pt", {"kind": "pokemon", "species": 25, "ivs": [31, -1, -1, -1, -1, -1]}, "IVs"),
+    ("pt", {"kind": "pokemon", "species": 128, "shiny": "always", "gender": 1}, "never female"),
+    ("pt", {"kind": "pokemon", "species": 25, "shiny": "sometimes"}, "never shiny, always shiny or a fixed PID"),
+    ("bw", {"kind": "pokemon", "species": 25, "shiny": "fixed", "pid": 1}, "random, always or never"),
+    ("bw", {"kind": "item", "items": [{"item": 1}, {"item": 2}]}, "one item"),
+    ("bw", {"kind": "pokemon", "species": 25, "ot": "TOOLONGNAME"}, "7 characters"),
+])
+def test_custom_ds_cards_refuse_what_the_card_cannot_hold(helper, game, fields, why):
+    with pytest.raises(ValueError, match=why):
+        helper.card(game, trainer=TRAINER, **fields)
+
+
+def test_official_gen5_cards_open_into_the_editor_and_rebuild(helper):
+    """Customize: an official Gen 5 card's fields build that card again, byte for byte."""
+    cards = [c for c in helper.gifts("bw", all=True) if c.get("card_data")][:25]
+    for card in cards:
+        data = base64.b64decode(card["card_data"])
+        fields = helper.card_fields("bw", data=data)
+        if fields["kind"] == "pokemon" and not any(fields["moves"]):
+            continue                         # a card with no moves gets its level-up moves written in
+        assert helper.card("bw", trainer=TRAINER, **fields).card_data == data, card["key"]

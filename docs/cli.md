@@ -98,7 +98,7 @@ PokeUDS plays the partner's console to yours: the room your 3DS chooses (the Tra
 Capsule) decides where it meets the partner, Red/Blue/Yellow and the Time Capsule together, Gold/Silver/Crystal's
 Trade Center apart. Each 3DS sees the other's real party, pick and answer. PKHeX is not needed.
 
-**Touch Trade**, for trade evolutions (Kadabra, Machoke, Graveler, Haunter, and the held-item ones):
+**Touch Trade** (experimental), for trade evolutions (Kadabra, Machoke, Graveler, Haunter, and the held-item ones):
 
 ```bash
 python -m pokeuds trade xy --radio esp32 --touch-trade

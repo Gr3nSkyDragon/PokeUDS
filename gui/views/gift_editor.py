@@ -1,4 +1,5 @@
-"""The custom Mystery Gift editor (Gifts page, Build your own): every field of a Gen 6/7 card.
+"""The custom Mystery Gift editor (Gifts page, Build your own): every field of a Gen 6/7 card, and of the DS
+games' Gen 4/5 cards (a Pokemon, an egg in Gen 5, or an item; services/pkhex/CardEditorDs.cs).
 
 The state is the helper's card schema (services/pkhex/CardEditor.cs, docs/wonder_cards.md) as a dict, so what is
 saved (.udsgift), exported (.wc6/.wc7, full file) and opened (any of those, or an official card via Customize)
@@ -21,17 +22,29 @@ from .. import theme as t
 from .common import View, awaiting
 from .picker import name_field
 
-KINDS = {6: (("pokemon", "Pokemon"), ("egg", "Pokemon egg"), ("item", "Item")),
+KINDS = {4: (("pokemon", "Pokemon"), ("item", "Item")),
+         5: (("pokemon", "Pokemon"), ("egg", "Pokemon egg"), ("item", "Item")),
+         6: (("pokemon", "Pokemon"), ("egg", "Pokemon egg"), ("item", "Item")),
          7: (("pokemon", "Pokemon"), ("egg", "Pokemon egg"), ("item", "Items"), ("bp", "Battle Points"),
              ("beans", "Poke Beans"))}
-VERSION_BITS = {6: (("X", 1), ("Y", 2), ("Alpha Sapphire", 4), ("Omega Ruby", 8)),
+VERSION_BITS = {4: (("Diamond", 0x400), ("Pearl", 0x800), ("Platinum", 0x1000), ("HeartGold", 0x80), ("SoulSilver", 0x100)),
+                5: (("White", 1), ("Black", 2), ("White 2", 4), ("Black 2", 8)),
+                6: (("X", 1), ("Y", 2), ("Alpha Sapphire", 4), ("Omega Ruby", 8)),
                 7: (("Sun", 1), ("Moon", 2), ("Ultra Sun", 4), ("Ultra Moon", 8))}
-ORIGINS = {6: ((0, "The receiver's game"), (24, "X"), (25, "Y"), (26, "Alpha Sapphire"), (27, "Omega Ruby")),
+ORIGINS = {5: ((0, "The receiver's game"), (20, "White"), (21, "Black"), (22, "White 2"), (23, "Black 2")),
+           6: ((0, "The receiver's game"), (24, "X"), (25, "Y"), (26, "Alpha Sapphire"), (27, "Omega Ruby")),
            7: ((0, "The receiver's game"), (30, "Sun"), (31, "Moon"), (32, "Ultra Sun"), (33, "Ultra Moon"))}
 SHINY = (("random", "May be shiny"), ("always", "Always shiny"), ("never", "Never shiny"), ("fixed", "Fixed PID"))
+SHINY_DS = {4: (("never", "Never shiny"), ("always", "Always shiny"), ("fixed", "Fixed PID")),
+            5: (("random", "May be shiny"), ("always", "Always shiny"), ("never", "Never shiny"))}
+DS_FILES = {4: ("pcd", "myg"), 5: ("pgf", "bin")}        # the card, and the gift file the DS beacons carry
 ABILITY = (("random12", "First or second"), ("random12h", "Any, hidden too"), ("1", "First"), ("2", "Second"),
            ("hidden", "Hidden"))
 GENDER = ((-1, "Random"), (0, "Male"), (1, "Female"), (2, "Genderless"))
+ABILITY_G4 = (("either", "First or second"), ("1", "First"), ("2", "Second"))   # Gen 4: the PID's lowest bit
+# A row holding a box with a character counter under it (Title, Nickname) is that much taller; Flet centres the
+# other boxes against it, so they sat low. Rows of boxes align to the top.
+TOP = ft.CrossAxisAlignment.START
 NONE = "-"
 
 
@@ -58,12 +71,23 @@ class GiftEditor(View):
     def gen(self) -> int:
         return giftfile.generation(self.game)
 
+    @property
+    def ds(self) -> bool:
+        return self.gen in (4, 5)
+
     def set_game(self, game: str) -> None:
         """Follow the page's game; ids of moves, items and texts are each game's own, so a kind or text the
         other generation lacks falls back to the default."""
         if game == self.game:
             return
         old_gen, self.game = self.gen, game
+        if old_gen != self.gen and (old_gen in (4, 5) or self.gen in (4, 5)):
+            # Between the DS and 3DS cards little carries over: start again, keeping the title and number.
+            kind = self.f["kind"] if self.f["kind"] in [k for k, _ in KINDS[self.gen]] else "pokemon"
+            keep = {k: self.f[k] for k in ("card_id", "title") if k in self.f}
+            self.f = {**giftfile.new_fields(game, kind), **keep}
+            self.last = None
+            return
         if self.f["kind"] in ("bp", "beans") and self.gen == 6:
             self.f = giftfile.new_fields(game)
         if old_gen != self.gen:
@@ -143,8 +167,42 @@ class GiftEditor(View):
 
     # sections
 
+    def _version_rows(self, gen: int) -> list[ft.Control]:
+        """The game boxes, three to a row: Flet stacks checkboxes in a wrapped row (as the ribbons' note says)."""
+        boxes = [ft.Container(ft.Checkbox(label=name, value=bool(int(self.f.get("versions", 0)) & bit),
+                                          on_change=lambda e, b=bit: self._version(b, e.control.value)), width=150)
+                 for name, bit in VERSION_BITS[gen]]
+        return [ft.Row(boxes[i:i + 3], spacing=4) for i in range(0, len(boxes), 3)]
+
+    def _ds_card_section(self) -> ft.Control:
+        f, gen = self.f, self.gen
+        limit = 192 if gen == 4 else 252
+        rows: list[ft.Control] = [
+            t.heading("The card"),
+            ft.Row([self._text("Title", "title", 380, 36),
+                    self._num("Card number", f["card_id"], lambda v: self._set("card_id", v), 130, 0, 0xFFFF),
+                    *([ft.TextField(label="Date (YYYY-MM-DD)", value=f.get("date", ""), width=170, dense=True,
+                                    on_blur=lambda e: self._set("date", (e.control.value or "").strip()))] if gen == 5 else [])],
+                   wrap=True, spacing=12, vertical_alignment=TOP),
+            ft.Row([self._dd("Gives", self._shown_kind(), KINDS[gen], self._kind, 200),
+                    *([ft.Switch(label="Can be received more than once", value=bool(f.get("multi_obtain")),
+                                 on_change=lambda e: self._set("multi_obtain", bool(e.control.value)))] if gen == 5 else [])],
+                   wrap=True, spacing=16, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+            t.label("For these games (none ticked: all of them)", size=12),
+            *self._version_rows(gen),
+            ft.TextField(label="Card text" if gen == 4 else "Distribution text", value=f.get("distribution_text", ""),
+                         width=480, dense=True, multiline=True, min_lines=2, max_lines=4, max_length=limit,
+                         hint_text="Empty: \"<what it gives> will be given to you as a gift!\"",
+                         on_blur=lambda e: self._set("distribution_text", e.control.value or "")),
+            t.label("The message written on the card itself." if gen == 4 else
+                    "What the game shows while it receives the gift; the .bin carries it.", size=12),
+        ]
+        return t.card(*rows, spacing=10)
+
     def _card_section(self, texts) -> ft.Control:
         f, gen = self.f, self.gen
+        if self.ds:
+            return self._ds_card_section()
         text_options = [(i, f"Text {i} · {n} official card{'s' if n != 1 else ''}" + (f", e.g. {ex[0]}" if ex else ""))
                         for i, n, ex in texts]
         if f["text"] not in [i for i, *_ in texts]:
@@ -155,7 +213,7 @@ class GiftEditor(View):
                     self._num("Card number", f["card_id"], lambda v: self._set("card_id", v), 130, 0, 0xFFFF),
                     ft.TextField(label="Date (YYYY-MM-DD)", value=f.get("date", ""), width=170, dense=True,
                                  on_blur=lambda e: self._set("date", (e.control.value or "").strip()))],
-                   wrap=True, spacing=12),
+                   wrap=True, spacing=12, vertical_alignment=TOP),
             ft.Row([self._dd("Card text", f["text"], text_options, lambda v: self._set("text", int(v)), 560)],
                    spacing=12),
             t.label("The title is yours to write. The card's text is one of the game's own messages, chosen by number: "
@@ -194,39 +252,62 @@ class GiftEditor(View):
             row1.append(name_field("Egg from", f.get("egg_location", giftfile.EGG_PLACE), lists.get("egg_locations", []),
                                    lambda v: self._set("egg_location", v or giftfile.EGG_PLACE), 240))
         else:
-            row1 += [self._num("Level", f["level"], lambda v: self._set("level", v), 90, 1, 100),
-                     self._num("Met level", f.get("met_level", f["level"]), lambda v: self._set("met_level", v), 100, 0, 100),
-                     self._text("Nickname", "nickname", 180, 12)]
-        row2 = [self._dd("Shiny", f.get("shiny", "random"), SHINY, lambda v: self._set("shiny", v), 170)]
+            row1.append(self._num("Level", f["level"], lambda v: self._set("level", v), 90, 1, 100))
+            if gen != 4:
+                row1.append(self._num("Met level", f.get("met_level", f["level"]), lambda v: self._set("met_level", v),
+                                      100, 0, 100))
+            row1.append(self._text("Nickname", "nickname", 180, 10 if self.ds else 12))
+        row2 = [self._dd("Shiny", f.get("shiny", "random"), SHINY_DS.get(gen, SHINY), self._shiny, 200)]
         if f.get("shiny") == "fixed":
             row2.append(self._num("PID (0x...)", f.get("pid", 0), lambda v: self._set("pid", v), 150, 0, 0xFFFFFFFF))
-        row2 += [self._dd("Gender", f.get("gender", -1), GENDER, lambda v: self._int("gender", v), 140),
-                 self._dd("Nature", f.get("nature", -1), [(-1, "Random")] + sorted(lists["natures"], key=lambda x: x[1]),
-                          lambda v: self._int("nature", v), 150),
-                 self._dd("Ability", f.get("ability", "random12"), ABILITY, lambda v: self._set("ability", v), 180)]
+        if gen == 4 and f.get("shiny") == "always":
+            row2 += [self._dd("Gender", f.get("gender", -1), GENDER[:3], lambda v: self._int("gender", v), 140),
+                     self._dd("Nature", f.get("nature", -1), [(-1, "Random")] + sorted(lists["natures"], key=lambda x: x[1]),
+                              lambda v: self._int("nature", v), 150),
+                     self._dd("Ability", f.get("ability", "either"), ABILITY_G4, lambda v: self._set("ability", v), 180)]
+        elif gen != 4:
+            row2 += [self._dd("Gender", f.get("gender", -1), GENDER, lambda v: self._int("gender", v), 140),
+                     self._dd("Nature", f.get("nature", -1), [(-1, "Random")] + sorted(lists["natures"], key=lambda x: x[1]),
+                              lambda v: self._int("nature", v), 150),
+                     self._dd("Ability", f.get("ability", "random12"), ABILITY, lambda v: self._set("ability", v), 180)]
         row3 = [self._dd("Ball", f.get("ball", 4), lists["balls"], lambda v: self._int("ball", v), 180),
                 name_field("Held item", f.get("held_item", 0), lists["items"], lambda v: self._set("held_item", v), 220,
-                           empty="none")]
+                           empty="none", tall=True)]
         if gen == 7:
             row3.append(name_field("Second item (bag)", f.get("additional_item", 0), lists["items"],
-                                   lambda v: self._set("additional_item", v), 220, empty="none"))
+                                   lambda v: self._set("additional_item", v), 220, empty="none", tall=True))
         row3.append(self._dd("Language", f.get("language", 0), languages, lambda v: self._int("language", v), 200))
-        rows: list[ft.Control] = [t.heading("The egg" if egg else "The Pokemon"), ft.Row(row1, wrap=True, spacing=12)]
-        if egg:
+        rows: list[ft.Control] = [t.heading("The egg" if egg else "The Pokemon"),
+                                  ft.Row(row1, wrap=True, spacing=12, vertical_alignment=TOP)]
+        if egg and self.ds:
+            rows.append(t.label("It arrives as an Egg and hatches at level 1 for whoever hatches it, the receiver as its "
+                                "OT, with the nature, ability, IVs, moves, ball and item set here.", size=12))
+        elif egg:
             rows.append(t.label("It arrives as an Egg (the game names it so) and hatches at level 1 for whoever hatches "
                                 "it, with the nature, ability, IVs, moves, ball and item set here. Official event eggs: "
                                 "from a Pokemon Center, the receiver as OT; Gen 6 never shiny in a Poke Ball, Gen 7 in "
                                 "a Cherish Ball.", size=12))
-        rows += [ft.Row(row2, wrap=True, spacing=12),
-                 ft.Row(row3, wrap=True, spacing=12, vertical_alignment=ft.CrossAxisAlignment.CENTER)]
+        rows.append(ft.Row(row2, wrap=True, spacing=12, vertical_alignment=TOP))
+        if gen == 4:
+            rows.append(t.label({
+                "always": "PokeUDS picks a PID that is shiny for the card's OT, with the gender, nature and ability chosen "
+                          "here (Gen 4 works all of them out from the PID), so everyone gets that same Pokemon.",
+                "fixed": "The PID decides whether it is shiny (for the card's OT), and its gender, nature and ability.",
+            }.get(f.get("shiny"), "The game rolls the PID when the gift is received: a random gender, nature and ability, "
+                                  "and never shiny, as on every official card that leaves the PID to the game."), size=12))
+        rows.append(ft.Row(row3, wrap=True, spacing=12, vertical_alignment=TOP))
         return t.card(*rows, spacing=10)
 
     def _moves_section(self, lists) -> ft.Control:
         def row(key: str, label: str) -> ft.Row:
             current = (list(self.f.get(key) or []) + [0, 0, 0, 0])[:4]
             return ft.Row([name_field(f"{label} {i + 1}", m, lists["moves"], lambda v, i=i: self._slot(key, i, v, 4), 190,
-                                      empty="none") for i, m in enumerate(current)], wrap=True, spacing=12)
+                                      empty="none") for i, m in enumerate(current)], wrap=True, spacing=12,
+                          vertical_alignment=TOP)
 
+        if self.ds:
+            return t.card(t.heading("Moves"), t.label("Empty moves: what the species knows at its level.", size=12),
+                          row("moves", "Move"), spacing=10)
         return t.card(t.heading("Moves"),
                       t.label("Empty moves: what the species knows at its level. Relearn moves are the ones it can "
                               "always relearn (the event moves on official cards).", size=12),
@@ -234,7 +315,18 @@ class GiftEditor(View):
 
     def _stats_section(self) -> ft.Control:
         f = self.f
+        if self.gen == 4:
+            return t.card(t.heading("Stats"), t.label("Gen 4 cards hold no IVs or EVs: the game rolls the IVs when the gift "
+                                                     "is received, as every official card does.", size=12), spacing=8)
         ivs = (list(f.get("ivs") or []) + [-1] * 6)[:6]
+        if self.gen == 5:
+            return t.card(
+                t.heading("Stats"),
+                t.label("A Gen 5 card holds IVs but no EVs; the game works out the stats.", size=12),
+                t.label("IVs (0 to 31; empty: random)", color=t.TEXT, size=13),
+                ft.Row([self._num(name, iv, lambda v, i=i: self._six("ivs", i, v, -1), 80, 0, 31, blank=-1, hint="random")
+                        for i, (name, iv) in enumerate(zip(STATS, ivs))], wrap=True, spacing=8),
+                spacing=8)
         evs = (list(f.get("evs") or []) + [0] * 6)[:6]
         rows: list[ft.Control] = [
             t.heading("Stats"),
@@ -269,18 +361,21 @@ class GiftEditor(View):
         ]
         if named:
             rows.append(ft.Row([
-                self._text("OT name", "ot", 180, 12),
+                self._text("OT name", "ot", 180, 7 if self.ds else 12),
                 self._num("TID", f.get("tid", 0), lambda v: self._set("tid", v), 100, 0, 65535),
                 self._num("SID", f.get("sid", 0), lambda v: self._set("sid", v), 100, 0, 65535),
-                ft.Switch(label="Female OT", value=f.get("ot_gender") == 1,
-                          on_change=lambda e: self._set("ot_gender", 1 if e.control.value else 0)),
-            ], wrap=True, spacing=12, vertical_alignment=ft.CrossAxisAlignment.CENTER))
+                ft.Container(ft.Switch(label="Female OT", value=f.get("ot_gender") == 1,
+                                       on_change=lambda e: self._set("ot_gender", 1 if e.control.value else 0)),
+                             padding=ft.Padding(0, 4, 0, 0)),          # level with the boxes, not their counters
+            ], wrap=True, spacing=12, vertical_alignment=TOP))
             rows.append(t.label("A Pokemon traded from that trainer, as most official events give.", size=12))
         else:
             rows.append(t.label("The receiving save becomes its OT." + (
-                " (Gen 6 cards cannot say that for a Pokemon, so PokeUDS writes the trainer from the Builder's settings "
-                "into the card.)" if gen == 6 else ""), size=12))
-        rows.append(self._dd("Origin game", f.get("origin_game", 0), ORIGINS[gen], lambda v: self._int("origin_game", v), 240))
+                f" (Gen {gen} cards cannot say that for a Pokemon, so PokeUDS writes the trainer from the Builder's "
+                "settings into the card.)" if gen in (4, 6) or (gen == 5 and not giftfile.is_egg(f)) else ""), size=12))
+        if gen in ORIGINS:
+            rows.append(self._dd("Origin game", f.get("origin_game", 0), ORIGINS[gen], lambda v: self._int("origin_game", v),
+                                 240))
         return t.card(*rows, spacing=10)
 
     def _ribbons_section(self) -> ft.Control:
@@ -295,7 +390,18 @@ class GiftEditor(View):
         f = self.f
         rows: list[ft.Control] = [ft.Row([t.heading("More"), ft.Container(expand=True),
                                           ft.TextButton("Hide" if self.more else "Show", on_click=self._toggle_more)])]
-        if self.more:
+        if self.more and self.ds:
+            contest = (list(f.get("contest") or []) + [0] * 6)[:6]
+            if self.gen == 5:
+                rows.append(ft.Row([name_field("Met at", f.get("met_location", giftfile.LOVELY_PLACE), lists.get("locations", []),
+                                               lambda v: self._set("met_location", v), 300),
+                                    name_field("Egg from", f.get("egg_location", 0), lists.get("egg_locations", []),
+                                               lambda v: self._set("egg_location", v), 300, empty="none")],
+                                   wrap=True, spacing=12))
+            rows += [t.label("Contest stats", color=t.TEXT, size=13),
+                     ft.Row([self._num(name, v, lambda x, i=i: self._six("contest", i, x, 0), 90, 0, 255)
+                             for i, (name, v) in enumerate(zip(CONTEST, contest))], wrap=True, spacing=8)]
+        elif self.more:
             contest = (list(f.get("contest") or []) + [0] * 6)[:6]
             memory = f.get("memory") or {}
             rows += [
@@ -322,12 +428,15 @@ class GiftEditor(View):
 
     def _items_section(self, lists) -> ft.Control:
         items = list(self.f.get("items") or [{"item": 1, "quantity": 1}])
-        limit = 1 if self.gen == 6 else 6
+        limit = 6 if self.gen == 7 else 1
         rows: list[ft.Control] = [t.heading("Items" if limit > 1 else "Item")]
+        if self.ds:
+            rows.append(t.label("A DS card gives one of the item.", size=12))
         for i, item in enumerate(items):
             rows.append(ft.Row([
                 name_field("Item", item.get("item", 1), lists["items"], lambda v, i=i: self._item(i, "item", v or 1), 260),
-                self._num("How many", item.get("quantity", 1), lambda v, i=i: self._item(i, "quantity", v), 110, 1, 999),
+                *([] if self.ds else [
+                    self._num("How many", item.get("quantity", 1), lambda v, i=i: self._item(i, "quantity", v), 110, 1, 999)]),
                 *([ft.IconButton(ft.Icons.REMOVE_CIRCLE_OUTLINE, tooltip="Remove", on_click=lambda e, i=i: self._drop_item(i))]
                   if len(items) > 1 else []),
             ], spacing=12))
@@ -344,6 +453,20 @@ class GiftEditor(View):
         return t.card(*rows, spacing=10)
 
     def _actions(self) -> ft.Control:
+        if self.ds:
+            card, wifi = DS_FILES[self.gen]
+            return t.card(
+                ft.Row([t.primary("Preview", self._preview, ft.Icons.VISIBILITY, disabled=self.working),
+                        ft.ProgressRing(width=18, height=18, visible=self.working),
+                        t.secondary("Save gift...", self._save, ft.Icons.SAVE),
+                        t.secondary("Open...", self._open, ft.Icons.FOLDER_OPEN),
+                        t.secondary(f"Export .{card}", awaiting(self._export, False), ft.Icons.FILE_DOWNLOAD_OUTLINED),
+                        t.secondary(f"Export .{wifi}", awaiting(self._export, True), ft.Icons.FILE_DOWNLOAD_OUTLINED),
+                        ft.TextButton("Start over", on_click=self._reset)], wrap=True, spacing=8),
+                t.label("Preview puts the card in the panel beside, where Start sending sends it to a DS. Save gift keeps "
+                        f"everything you set in a .udsgift. Export writes the .{card} card, or the .{wifi} gift file the "
+                        "DS beacons carry." + (f"  Last saved: {self.path.name}" if self.path else ""), size=12),
+                spacing=8)
         ext = f"wc{self.gen}"
         return t.card(
             ft.Row([t.primary("Preview", self._preview, ft.Icons.VISIBILITY, disabled=self.working),
@@ -363,6 +486,10 @@ class GiftEditor(View):
     def _say(self, text: str, color: str = t.INFO) -> None:
         self.message, self.message_color = text, color
         self.refresh()
+
+    def _shiny(self, value) -> None:
+        self.f["shiny"] = value
+        self.refresh()                       # Gen 4 shows the PID's choices only for some of them
 
     def _int(self, key: str, value, none=None) -> None:
         if value in (None, "", NONE):
@@ -515,8 +642,9 @@ class GiftEditor(View):
 
     async def _open(self, e) -> None:
         ext = f"wc{self.gen}"
+        cards = list(DS_FILES[self.gen]) if self.ds else [ext, ext + "full"]
         files = await self.app.picker.pick_files(dialog_title="Open a gift", file_type=ft.FilePickerFileType.CUSTOM,
-                                                 allowed_extensions=[giftfile.EXTENSION.lstrip("."), ext, ext + "full"])
+                                                 allowed_extensions=[giftfile.EXTENSION.lstrip("."), *cards])
         if not (files and files[0].path):
             return
         path = Path(files[0].path)
@@ -543,8 +671,11 @@ class GiftEditor(View):
         except Exception as exc:
             self._say(f"The card cannot be made: {exc}", t.BAD)
             return
-        ext = gift.extension + ("full" if full else "")
-        data = gift.full_data if full else gift.card_data
+        if self.ds:
+            ext, data = (DS_FILES[self.gen][1], gift.wifi_data) if full else (gift.extension, gift.card_data)
+        else:
+            ext = gift.extension + ("full" if full else "")
+            data = gift.full_data if full else gift.card_data
         name = "".join(ch for ch in (self.f.get("title") or "gift") if ch.isalnum() or ch in " -_").strip()[:40] or "gift"
         path = await self.app.picker.save_file(dialog_title="Export the card", file_name=f"{self.f['card_id']:04d} {name}.{ext}",
                                                file_type=ft.FilePickerFileType.CUSTOM, allowed_extensions=[ext], src_bytes=data)

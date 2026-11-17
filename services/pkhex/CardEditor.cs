@@ -1,4 +1,5 @@
-// The card editor's schema: every field a Gen 6/7 Wonder Card holds, as JSON, both ways (docs/wonder_cards.md).
+// The card editor's schema: every field a Gen 6/7 Wonder Card holds, as JSON, both ways (docs/wonder_cards.md);
+// the DS games' Gen 4/5 cards are in CardEditorDs.cs.
 //
 //   card        {fields} -> the card (and the full file) built from them, and what it gives
 //   card_fields {data | key} -> any card as {fields}, so an official card or a file can be opened and changed
@@ -76,9 +77,9 @@ static partial class Program
 
     static JsonObject BuildCard(Game game, JsonObject r)
     {
-        if (game.Generation is not (6 or 7))
-            throw new ArgumentException("custom cards are Gen 6 and 7");
-        var card = MakeCard(game, r);
+        if (game.Generation is not (4 or 5 or 6 or 7))
+            throw new ArgumentException("custom cards are Gen 4 to 7");
+        var card = game.Generation >= 6 ? MakeCard(game, r) : MakeDsCard(game, r);     // CardEditorDs.cs
         return GiftReply(game, card, r, custom: true);
     }
 
@@ -288,6 +289,8 @@ static partial class Program
         else
             gift = CardFromBytes(game, Convert.FromBase64String((string)request["data"]!), out header);
         var card = (DataMysteryGift)gift;
+        if (game.Generation is 4 or 5)
+            return new JsonObject { ["ok"] = true, ["fields"] = DsCardFields(game, card, header) };
         var fields = CardFields(game, card);
         // The distribution header's own fields: from the full file the card came from, or PKHeX's official one.
         var bytes = card.Data.ToArray();

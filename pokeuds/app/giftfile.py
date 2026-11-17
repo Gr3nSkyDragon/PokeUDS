@@ -23,7 +23,8 @@ from pathlib import Path
 FORMAT = "pokeuds.gift"
 VERSION = 1
 EXTENSION = ".udsgift"
-GAMES = ("xy", "oras", "sm", "usum")
+GAMES = ("xy", "oras", "sm", "usum", "dp", "pt", "hgss", "bw", "b2w2")
+DS_GAMES = ("dp", "pt", "hgss", "bw", "b2w2")
 MAX_BYTES = 256 * 1024
 CARD_SIZE, FULL_SIZE = 0x108, 0x310
 
@@ -40,6 +41,10 @@ LOVELY_PLACE = 40001
 
 
 def generation(game: str) -> int:
+    if game in ("dp", "pt", "hgss"):
+        return 4
+    if game in ("bw", "b2w2"):
+        return 5
     return 6 if game in ("xy", "oras") else 7
 
 
@@ -54,6 +59,8 @@ def new_fields(game: str, kind: str = "pokemon") -> dict:
     """A blank card as the editor starts it: what most official cards hold. ``kind`` "egg" is a Pokemon card
     set as official event eggs are (the 70 of ORAS and 12 of Sun/Moon in PKHeX's database)."""
     gen = generation(game)
+    if gen in (4, 5):
+        return _new_ds_fields(game, kind)
     if kind == "egg":
         fields = new_fields(game, "pokemon")
         fields.update(is_egg=True, level=1, met_level=1, met_location=0, egg_location=EGG_PLACE, ability="hidden",
@@ -77,6 +84,29 @@ def new_fields(game: str, kind: str = "pokemon") -> dict:
         fields.update(quantity=1)
         if kind == "beans":
             fields["bean"] = 0
+    return fields
+
+
+def _new_ds_fields(game: str, kind: str) -> dict:
+    """A blank Gen 4 or Gen 5 card (services/pkhex/CardEditorDs.cs): what official DS cards mostly hold, a Cherish
+    Ball and no ribbon. ``distribution_text`` is a Gen 4 card's own text, or a Gen 5 .bin's."""
+    gen = generation(game)
+    if kind == "egg":
+        fields = _new_ds_fields(game, "pokemon")
+        fields.update(is_egg=True, level=1, met_level=1, title="A Pokemon Egg for you!")
+        return fields
+    fields = {"card_id": 2000, "title": "PokeUDS gift", "kind": kind, "versions": 0, "multi_obtain": False,
+              "distribution_text": ""}
+    if gen == 5:
+        fields["date"] = date.today().isoformat()
+    if kind == "pokemon":
+        fields.update(species=25, form=0, level=10, ball=16, held_item=0, moves=[0, 0, 0, 0], nickname="", language=0,
+                      ot="", shiny="never" if gen == 4 else "random", pid=0, contest=[0] * 6, ribbons=[])
+        if gen == 5:
+            fields.update(met_level=10, is_egg=False, egg_location=0, met_location=LOVELY_PLACE, origin_game=0,
+                          nature=-1, gender=-1, ability="random12", ivs=[-1] * 6)
+    else:
+        fields["items"] = [{"item": 1, "quantity": 1}]
     return fields
 
 

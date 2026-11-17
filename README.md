@@ -33,8 +33,8 @@ Poke Transporter and Pokemon Bank do.
 
 - **Trade** with the 3DS asking PokeUDS or PokeUDS asking the 3DS, one Pokemon or a queue of them in one session
   (up to six for the Game Boy games, a box's worth and more for the 3DS games).
-- **Touch Trade** for trade evolutions: PokeUDS offers back whatever the 3DS offers, so the 3DS receives its own
-  Pokemon and evolves it, in every game ([docs/cli.md](docs/cli.md#trading)).
+- **Touch Trade, experimental**, for trade evolutions: PokeUDS offers back whatever the 3DS offers, so the 3DS
+  receives its own Pokemon and evolves it, in every game ([docs/cli.md](docs/cli.md#trading)).
 - **Bank** every Pokemon received, imported or built: legality checks with PKHeX (one or the whole bank), Time
   Capsule copies, migration to Gen 7, duplicates caught, sprites.
 - **Build** a legal Pokemon to offer when you have no file (PKHeX.Core, built into the app), with the IVs and EVs
@@ -49,12 +49,14 @@ Poke Transporter and Pokemon Bank do.
     reads it from your own dump of the Gen 7 Local Distributor (00040000001A8900) and keeps it in `rsa_d_key.txt`
     beside `aes_keys.txt`. Retail game dumps hold only the public key.
 - **DS Mystery Gifts (Gen 4/5)**: Diamond, Pearl, Platinum, HeartGold, SoulSilver, Black, White, Black 2 and
-  White 2 receive PKHeX's official cards over DS local wireless, as a store distribution sent them: the Gifts page's
-  Nintendo DS game, on the same board and firmware. Gen 4 received on a retail DS; Gen 5 not yet tried
+  White 2 receive PKHeX's official cards, or a Pokemon or item card you build, over DS local wireless, as a store
+  distribution sent them: the Gifts page's Nintendo DS game, on the same board and firmware. Working: Gen 4 on a
+  retail DS, a custom Gen 4 item card from the builder included; Gen 5 confirmed by Shinygati, whose sender PokeUDS's
+  is ported from, along with custom cards of both generations made with their own tools
   ([docs/mystery_gift.md](docs/mystery_gift.md)).
 - **GTS**: list a banked Pokemon against what you want, or offer on someone else's listing, bank to bank over
   public Nostr relays; a trade settles when the lister's app next opens ([docs/online.md](docs/online.md)).
-- **Online trades, pre-alpha**: X/Y, ORAS, Sun/Moon, USUM and the Virtual Console games trade live with a player
+- **Online trades, experimental**: X/Y, ORAS, Sun/Moon, USUM and the Virtual Console games trade live with a player
   far away, each 3DS beside its own PokeUDS and board, through the same relays: each 3DS is offered the other's
   Pokemon, and each trades only once both have said yes ([docs/online.md](docs/online.md)). Tested in simulation;
   **not yet tried with two real 3DSs**.

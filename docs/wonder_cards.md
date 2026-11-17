@@ -1,4 +1,4 @@
-# Wonder Cards (WC6, WC7)
+# Wonder Cards (WC6, WC7, and the DS games' PCD and PGF)
 
 The Gen 6 and Gen 7 Mystery Gift card, byte by byte, as PokeUDS reads and writes it, and what the card editor
 (Gifts page, Build your own; `pokeuds gift card`) can set. Mapped by setting each field PKHeX.Core 26.10.18
@@ -122,6 +122,43 @@ that copies an official egg's species but not its moves is flagged for the moves
 expected to know Thrash and Rage, as card 142's does). An egg with a met place fails PKHeX's met-date check,
 so the editor leaves it empty.
 
+## The DS games' cards (PCD, PGF)
+
+**Build your own** works for the Gifts page's Nintendo DS games too (`services/pkhex/CardEditorDs.cs`): a Gen 4
+`.pcd` or Gen 5 `.pgf` giving a Pokemon or an item (Gen 5 also an egg), exported as the card or as the gift file
+the DS beacons carry (`.myg`, `.bin`; docs/mystery_gift.md), and sent from the page with **Start sending**. Each
+DS card gives one item, with no amount: across every official Gen 4 and Gen 5 item card in PKHeX, the item number is
+the only thing that changes, so neither card has room for a count.
+
+| | Gen 4 (`.pcd`, 856 bytes) | Gen 5 (`.pgf`, 204 bytes) |
+|---|---|---|
+| card text | free text written on the card (0x154, 192 characters, the game's encoding) | none; the `.bin`'s distribution text instead |
+| games | the compatibility bits at 0x14C: 0x400 Diamond, 0x800 Pearl, 0x1000 Platinum, 0x80 HeartGold, 0x100 SoulSilver | `RestrictVersion`: 1 White, 2 Black, 4 White 2, 8 Black 2 |
+| date | none | the card's date |
+| shiny | never (PID 1: the game rolls a PID, and such a gift is never shiny; all 247 of PKHeX's Gen 4 Pokemon cards bear this out), always (PokeUDS picks a PID shiny for the card's OT, as the 45 official shiny Gen 4 events are fixed-PID cards), or a fixed PID | random, always or never |
+| nature, gender, ability | follow the PID; with Always shiny, PokeUDS picks one that gives those chosen | set on the card, or random |
+| IVs | rolled by the game (no official card sets them) | set on the card, or random; no EVs |
+| OT | named on the card | named on the card; an egg's is the receiver's |
+| names | OT 7 characters, nickname 10 | the same |
+
+- **Gen 4 is written onto an official card.** A `.pcd` holds a PGT gift, a whole PK4 for a Pokemon, inside card
+  information PKHeX names only in part. PokeUDS starts from PKHeX's first random-PID Pokemon card (or first item
+  card) and sets everything the editor shows, so the bytes nobody has named (0x152, 0x348, 0x354, and the PK4's
+  fateful flag and Cherish Ball) are a real card's. The card shows the Pokemon's species as its middle icon
+  (0x34C), as official cards do; an item card shows none. A custom Gen 4 card rebuilds byte for byte from its
+  fields; an official one opened with Customize is rebuilt onto that base card, so it is not the same bytes.
+- **Gen 5's text fields** end with 0xFFFF and are filled with 0xFF, as on official cards (an unset nickname is all
+  0xFF: the species' own name); an item card's nickname and OT stay zero, as official item cards'.
+- **PKHeX.Core 26.10.18's `PGF.Level`** reads 0x5B but its setter writes 0x5C, the egg flag; PokeUDS writes 0x5B
+  itself. Of PKHeX's 837 official Gen 5 cards, 828 rebuild byte for byte from their fields; the other 9 list no moves
+  at all, and PokeUDS writes the species' level-up moves into them, which is what the game gives.
+- **A Pokemon "for whoever receives it"** gets the trainer from the Builder's settings written in, as in Gen 6: no
+  official Gen 4 card, and no Gen 5 card but eggs, leaves the OT to the receiver.
+
+On a DS (2026-11-17): a custom Gen 4 item card from this builder was received on a retail DS. Shinygati has received
+custom Gen 4 and Gen 5 cards made with their own tools; this builder's Gen 4 Pokemon cards and its Gen 5 cards are
+not yet tried. Gen 4/5 cards carry CRCs and checksums but no signature, so nothing should stop a game taking one.
+
 ## Working with them
 
 | | in the app (Gifts) | command line |
@@ -132,6 +169,7 @@ so the editor leaves it empty.
 | save to change later | Save gift... (`.udsgift`) | edit the `.udsgift`'s JSON |
 | export the card | Export .wc6/.wc7, Export full | `pokeuds gift card oras --project ray.udsgift --out ray.wc6` |
 | send its Pokemon by trade | Keep its Pokemon in the bank, Offer | `pokeuds gift make oras ray.wc6` |
+| send a DS card to a DS | Nintendo DS, Build your own, Preview, Start sending | `pokeuds gift distribute pt card.myg` (an exported `.myg`/`.bin`) |
 
 A custom card's Pokemon is flagged by PKHeX ("Unable to match to a Mystery Gift in the database"): no such
 event existed. Handing a card to a game over local wireless is the open question in docs/mystery_gift.md.

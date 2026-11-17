@@ -14,7 +14,7 @@ OPSSR signature are decoded and reproduced).
 | Gold / Silver / Crystal (VC) | the 3DS's **infrared** port, between two consoles | items and decorations | no: infrared, not wireless |
 | X / Y, Omega Ruby / Alpha Sapphire | **local wireless** from a distributor (store and event distributions), and the internet | Pokemon, items | possibly: the radio side is the same UDS PokeUDS speaks; the gift protocol is unknown |
 | Sun / Moon, Ultra Sun / Ultra Moon | **local wireless** from a distributor (event distributions), and the internet | Pokemon, items, Festival Coins, Poke Beans, BP | yes: the beacon and the OPSSR signature are decoded; PokeUDS signs its Gen 7 cards (see below) |
-| Diamond / Pearl / Platinum, HeartGold / SoulSilver, Black / White, Black 2 / White 2 (DS) | **DS local wireless** from a distributor, and Nintendo WFC (Wi-Fi, closed in 2014) | Pokemon, items, Gen 4 seals, accessories and Pokétch apps | yes, over DS local wireless (below): received on a retail DS (Gen 4, 2026-11-17) |
+| Diamond / Pearl / Platinum, HeartGold / SoulSilver, Black / White, Black 2 / White 2 (DS) | **DS local wireless** from a distributor, and Nintendo WFC (Wi-Fi, closed in 2014) | Pokemon, items, Gen 4 seals, accessories and Pokétch apps | yes, over DS local wireless (below): working, Gen 4 and Gen 5 (2026-11-17) |
 
 The Switch games' local gifts run over LDN, which is pokeldn's territory; the 3DS games use UDS.
 
@@ -291,8 +291,13 @@ PokeUDS's sender (`pokeuds/games/ds/delivery.py`, `pokeuds gift distribute dp|pt
 fifth game, **Nintendo DS**) is ported from Shinygati's
 [PokeLDN-Bluetooth](https://github.com/Shinygati/PokeLDN-Bluetooth) fork of pokeldn (AGPL-3.0): `Gen4.java` and
 `Gen5.java` for the encoders, `firmware/esp32/main/ds_compat.c` for the beacon. Those credit an unpublished DS sender.
-Their author reports gifts received on DS games. **PokeUDS's port works on a retail DS for Gen 4**
-(2026-11-17, an ESP32 on firmware 2.0-uds, sent from the Gifts page as is); Gen 5 is not yet tried.
+**Working** (2026-11-17):
+
+- **Gen 4**, PokeUDS's port on a retail DS (an ESP32 on firmware 2.0-uds, sent from the Gifts page): official cards,
+  and a custom Gen 4 item card made with PokeUDS's own builder.
+- **Gen 5**, confirmed by Shinygati, whose sender PokeUDS's is ported from.
+- **Custom cards of both generations**, confirmed by Shinygati with cards made by their own tools, not PokeUDS's
+  builder. PokeUDS's own Gen 4 Pokemon cards and Gen 5 cards are not yet tried on a DS.
 
 **The gift is the Wi-Fi gift file above**, byte for byte: Gen 4's 936-byte `.myg`, Gen 5's 720-byte `.bin`. So every
 card the helper makes for Wi-Fi can go over local wireless too.
@@ -317,8 +322,8 @@ card the helper makes for Wi-Fi can go over local wireless too.
 holds one frame, so it is not used. The PC's pace was good enough for the Gen 4 test, so no firmware that cycles
 the fragments itself is planned.
 
-Still to measure on a DS: Gen 5 (Black/White, Black 2/White 2); the other Gen 4 games; and the European Gen 4
-GGIDs.
+Still to measure on a DS with PokeUDS itself: Gen 5 (Black/White, Black 2/White 2), the other Gen 4 games, and the
+European Gen 4 GGIDs.
 
 ## What works today
 
@@ -371,6 +376,10 @@ any official card or card file in the editor. A gift is saved as a `.udsgift` (t
 exported as the card itself (`.wc6`/`.wc7`, or the 784-byte full file). The whole format, byte by byte, and
 what a card cannot hold (stats, a message of your own, a background) are in
 [docs/wonder_cards.md](wonder_cards.md).
+
+The DS games' cards are built the same way, under the Gifts page's **Nintendo DS** game: a Gen 4 or Gen 5 card
+giving a Pokemon (Gen 5 also an egg) or an item, sent to a DS from the page. What each holds is in
+[docs/wonder_cards.md](wonder_cards.md), "The DS games' cards".
 
 A custom card's Pokemon can go by trade today, but **PKHeX flags it** ("Unable to match to a Mystery Gift in
 the database"): no such event existed, and a check such as the GTS's, or a future one, would refuse it.

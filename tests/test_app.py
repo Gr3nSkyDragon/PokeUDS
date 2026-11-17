@@ -208,7 +208,7 @@ def test_gifts_page_sends_gen6_and_gen7_cards_over_local_wireless(data, tmp_path
 
 def test_gifts_page_sends_ds_cards_over_ds_local_wireless(data, tmp_path, monkeypatch):
     """The fifth game, DS: a Gen 4/5 card gets Start sending (`gift distribute <ds game>`, its .myg/.bin), with no
-    console keys, no bank and no custom cards."""
+    console keys and no bank; Build your own stays open (custom DS cards)."""
     pytest.importorskip("flet")
     from pathlib import Path
     from types import SimpleNamespace
@@ -227,7 +227,7 @@ def test_gifts_page_sends_ds_cards_over_ds_local_wireless(data, tmp_path, monkey
                                       "item": "Liberty Pass", "quantity": 1}, pokemon=None, extension="pgf",
                                 custom=False, full_data=b"", card_data=bytes(204), wifi_data=wifi)
     view.control()
-    assert view.mode == "official" and view.generation == 5 and view.helper_game == "bw"
+    assert view.mode == "custom" and view.generation == 5 and view.helper_game == "bw"
     rows = view._wireless()
     assert not any(getattr(c, "value", None) == app.settings.keys_problem() for c in rows if app.settings.keys_problem())
     view.ds_language = "FRE"
@@ -377,3 +377,65 @@ def test_the_trade_page_trades_online(data, monkeypatch):
     settings.online = False                      # Online off: the queue is back
     assert not trade.online and trade.problems() == ["Choose a Pokemon to offer: from the bank, Build one, or a file"]
     trade.control()
+
+
+def test_the_card_editor_builds_ds_cards(tmp_path):
+    """Build your own under Nintendo DS: Gen 4 and Gen 5 Pokemon, egg (Gen 5) and item cards, each with the fields its
+    card holds; moving between a DS and a 3DS game starts the card again."""
+    pytest.importorskip("flet")
+    import flet as ft
+
+    from gui.app import App
+    from gui.views.gift_editor import GiftEditor
+    from gui.views.gifts import GiftsView
+    from pokeuds.app import giftfile
+
+    app = App(None, Settings(radio="esp32", output=str(tmp_path / "received")))
+    lists = {"species": [[25, "Pikachu"]], "moves": [[1, "Pound"]], "items": [[1, "Master Ball"]], "balls": [[16, "Cherish"]],
+             "natures": [[3, "Adamant"]], "languages": [[2, "English"]], "locations": [[40001, "a lovely place"]],
+             "egg_locations": []}
+
+    def texts(control) -> list[str]:
+        found: list[str] = []
+
+        def walk(c):
+            for attr in ("value", "text", "label", "content"):       # a button's label is its str content
+                v = getattr(c, attr, None)
+                if isinstance(v, str):
+                    found.append(v)
+            for attr in ("content", "controls"):
+                v = getattr(c, attr, None)
+                for child in (v if isinstance(v, list) else [v] if isinstance(v, ft.Control) else []):
+                    walk(child)
+        walk(control)
+        return found
+
+    editor = GiftEditor(app, "pt", lambda: {"ot": "DANA", "tid": 1, "sid": 2}, lambda gift: None)
+    for game in ("dp", "pt", "hgss", "bw", "b2w2"):
+        editor.lists[game], editor.texts[game] = lists, []
+    editor.f = giftfile.new_fields("pt", "pokemon")
+    shown = texts(editor.control())
+    assert "Card text" in shown and "Export .pcd" in shown and "Export .myg" in shown
+    assert "Nature" not in shown and "Relearn 1" not in shown and "Halo while receiving" not in shown
+    assert editor.f["shiny"] == "never"
+    editor._shiny("always")                                      # Gen 4 Always shiny: the PID's choices show
+    shown = texts(editor.control())
+    assert "Nature" in shown and "Gender" in shown and "Ability" in shown
+    editor.set_game("bw")
+    assert editor.gen == 5 and "date" in editor.f and editor.f["ivs"] == [-1] * 6
+    shown = texts(editor.control())
+    assert "Distribution text" in shown and "Nature" in shown and "Export .bin" in shown and "Origin game" in shown
+    for kind in ("egg", "item"):
+        editor._kind(kind)
+        assert editor.control() is not None
+    assert "How many" not in texts(editor.control())          # a DS item card gives one
+    editor.set_game("xy")                                        # back to a 3DS card: Gen 6's fields again
+    assert editor.gen == 6 and editor.f["kind"] == "item" and "text" in editor.f and "halo" in editor.f
+
+    view = GiftsView(app)
+    view.game, view.ds_game, view.mode = "ds", "hgss", "custom"
+    view.editor.lists["hgss"], view.editor.texts["hgss"] = lists, []
+    view.control()
+    assert view.editor.game == "hgss" and view.mode == "custom"
+    view.follow_editor("b2w2")
+    assert (view.game, view.ds_game) == ("ds", "b2w2")

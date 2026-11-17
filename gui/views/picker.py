@@ -68,9 +68,15 @@ def _show(field: ft.TextField) -> None:
         pass
 
 
+# A dense text field is shorter than a dense dropdown; this padding makes one as tall, for a row that has both (the
+# builder's BOX_PADDING, measured there).
+DROPDOWN_HEIGHT = ft.Padding(12, 12, 12, 12)
+
+
 def name_field(label: str, value: int, options: list, on_pick: Callable[[int], None], width: int = 220,
-               empty: str = "", disabled: bool = False) -> ft.TextField:
-    """A field showing the name for ``value`` (``empty`` for 0); a new name calls ``on_pick`` with its id."""
+               empty: str = "", disabled: bool = False, tall: bool = False) -> ft.TextField:
+    """A field showing the name for ``value`` (``empty`` for 0); a new name calls ``on_pick`` with its id. ``tall``: as
+    tall as the dropdowns beside it."""
     _, _, by_id = _index(options)
     shown = by_id.get(int(value or 0), "") if value else ""
 
@@ -90,4 +96,5 @@ def name_field(label: str, value: int, options: list, on_pick: Callable[[int], N
 
     return ft.TextField(label=label, value=shown, width=width, dense=True, disabled=disabled, on_blur=commit,
                         on_submit=commit, hint_text=empty or "type a name", helper=f"#{value}" if value else None,
-                        helper_style=ft.TextStyle(color=t.MUTED, size=11))
+                        helper_style=ft.TextStyle(color=t.MUTED, size=11),
+                        content_padding=DROPDOWN_HEIGHT if tall else None)

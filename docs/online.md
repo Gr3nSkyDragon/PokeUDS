@@ -5,7 +5,7 @@ PokeUDS trades over the internet in two ways:
 | | what it is | state |
 |---|---|---|
 | **The GTS** | list a banked Pokemon against what you want; anyone can offer on it, at any time. Bank to bank, no console needed at either end. | working: a GTS trade run against the public relays (2026-11-14) |
-| **Online trades** | two players trade live, each with their own 3DS beside their own PokeUDS. Each board hosts a local trade; the two apps carry the offers between them. | X/Y, ORAS, Sun/Moon, USUM and the Virtual Console games: in the command line (`--online`, `--online-code`) and on the Trade page (the Online switch); tested in simulation (two consoles, two PokeUDS, one relay); **never run on hardware** |
+| **Online trades** (experimental) | two players trade live, each with their own 3DS beside their own PokeUDS. Each board hosts a local trade; the two apps carry the offers between them. | X/Y, ORAS, Sun/Moon, USUM and the Virtual Console games: in the command line (`--online`, `--online-code`) and on the Trade page (the Online switch); tested in simulation (two consoles, two PokeUDS, one relay); **never run on hardware** |
 
 Both ride on [Nostr](https://github.com/nostr-protocol/nips) relays: public servers that keep and pass on signed
 JSON events. Nobody runs a PokeUDS server, there is no account, and no relay has to be trusted with anything but

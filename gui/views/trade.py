@@ -261,7 +261,7 @@ class TradeView(View):
 
     def touch_switch(self) -> ft.Control:
         """The Touch Trade switch, beside Online: offer back what the 3DS offers, for trade evolutions."""
-        return ft.Switch(label="Touch Trade", value=self.touch, on_change=self._touch_changed,
+        return ft.Switch(label="Touch Trade (experimental)", value=self.touch, on_change=self._touch_changed,
                          disabled=self.app.busy(),
                          tooltip="PokeUDS offers back whatever the 3DS offers, so a trade evolution happens on the 3DS")
 
@@ -274,7 +274,8 @@ class TradeView(View):
     def online_switch(self) -> ft.Control:
         """The Online switch, beside PokeUDS's Joins/Hosts choice: trade with a player far away, each 3DS beside its
         own PokeUDS."""
-        return ft.Switch(label="Online", value=self.online, on_change=self._online_changed, disabled=self.app.busy(),
+        return ft.Switch(label="Online (experimental)", value=self.online, on_change=self._online_changed,
+                         disabled=self.app.busy(),
                          tooltip="Trade with a player far away, through public relays (docs/online.md)")
 
     def online_control(self) -> ft.Control:

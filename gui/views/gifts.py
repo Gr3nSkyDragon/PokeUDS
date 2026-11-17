@@ -11,8 +11,8 @@ bank and offered in a trade: the gift Pokemon by trade, until local distribution
 card's Pokemon matches no real event, so PKHeX flags it; the page says so.
 
 The fifth game, "Nintendo DS", holds Diamond/Pearl, Platinum, HeartGold/SoulSilver, Black/White and Black 2/White 2: their
-official cards and card files, sent over DS local wireless (pokeuds.games.ds.delivery). Custom cards, the bank and
-trades are for the 3DS games only.
+official cards, card files and custom cards (a Pokemon or an item), sent over DS local wireless
+(pokeuds.games.ds.delivery). The bank and trades are for the 3DS games only.
 """
 
 from __future__ import annotations
@@ -103,9 +103,7 @@ class GiftsView(View):
 
             controls.append(pkhex_setup.card(self.app, [t.heading("Gifts need PKHeX")]))
             return ft.Column(controls, spacing=t.GAP, scroll=ft.ScrollMode.AUTO)
-        if self.is_ds and self.mode == "custom":
-            self.mode = "official"
-        modes = [(k, v) for k, v in MODES if not (self.is_ds and k == "custom")]
+        modes = MODES
         controls.append(ft.Row([
             ft.Dropdown(label="Game", value=self.game, width=280, dense=True, on_select=self._game,
                         options=[ft.DropdownOption(key=k, text=v) for k, v in GAMES.items()]),
@@ -216,7 +214,7 @@ class GiftsView(View):
             spacing=12)
 
     def _custom(self) -> ft.Control:
-        self.editor.set_game(self.game)
+        self.editor.set_game(self.helper_game)
         return self.editor.control()
 
     def _editor_result(self, gift) -> None:
@@ -226,7 +224,10 @@ class GiftsView(View):
 
     def follow_editor(self, game: str) -> None:
         """A .udsgift for another game was opened in the editor."""
-        self.game, self.mode = game, "custom"
+        if game in ds.GAMES:
+            self.game, self.ds_game, self.mode = "ds", game, "custom"
+        else:
+            self.game, self.mode = game, "custom"
 
     def _customize(self, e) -> None:
         """Open the card on show in the editor, to change anything on it."""
@@ -236,7 +237,7 @@ class GiftsView(View):
         from pokeuds import pkhex
 
         try:
-            fields = pkhex.shared().card_fields(self.game, data=g.card_data)
+            fields = pkhex.shared().card_fields(self.helper_game, data=g.card_data)
         except ValueError as exc:
             self._say(str(exc), t.BAD)
             self.refresh()
@@ -245,7 +246,7 @@ class GiftsView(View):
             self._say("This card's kind cannot be edited here.", t.WARN)
             self.refresh()
             return
-        self.editor.load_fields(self.game, giftfile.unreceived(fields), name=g.card.get("title", ""))
+        self.editor.load_fields(self.helper_game, giftfile.unreceived(fields), name=g.card.get("title", ""))
         self.mode = "custom"
         self.refresh()
 
@@ -307,7 +308,8 @@ class GiftsView(View):
         if self.is_ds:
             saves = [t.secondary(f"Save .{g.extension}", awaiting(self._save, "card"), ft.Icons.SAVE_ALT),
                      *([t.secondary(f"Save .{DS_EXTENSIONS[self.generation][1]}", awaiting(self._save, "wifi"),
-                                    ft.Icons.SAVE_ALT)] if g.wifi_data else [])]
+                                    ft.Icons.SAVE_ALT)] if g.wifi_data else []),
+                     *([t.secondary("Customize", self._customize, ft.Icons.EDIT)] if self.mode != "custom" else [])]
         else:
             saves = [t.secondary(f"Save .{g.extension}", awaiting(self._save, "card"), ft.Icons.SAVE_ALT),
                      t.secondary(f"Save .{g.extension}full", awaiting(self._save, "full"), ft.Icons.SAVE_ALT),

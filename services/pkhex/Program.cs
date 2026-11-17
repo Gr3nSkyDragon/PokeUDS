@@ -106,6 +106,11 @@ static partial class Program
         return array;
     }
 
+    static EntityContext MetContext(Game game) => game.Generation switch
+    {
+        4 => EntityContext.Gen4, 5 => EntityContext.Gen5, 6 => EntityContext.Gen6, _ => EntityContext.Gen7,
+    };
+
     static JsonObject Lists(Game game)
     {
         var sav = game.Save();
@@ -120,8 +125,8 @@ static partial class Program
             ["natures"] = game.Generation >= 3 ? Combo(source.Natures) : new JsonArray(),
             ["languages"] = Combo(source.Languages),
             // Where a Pokemon was met, and for an egg where it came from (the event places are 40001 on).
-            ["locations"] = game.Generation >= 6 ? Combo(GameInfo.Sources.Met.GetLocationList(game.Versions[0], game.Generation == 6 ? EntityContext.Gen6 : EntityContext.Gen7, false)) : new JsonArray(),
-            ["egg_locations"] = game.Generation >= 6 ? Combo(GameInfo.Sources.Met.GetLocationList(game.Versions[0], game.Generation == 6 ? EntityContext.Gen6 : EntityContext.Gen7, true)) : new JsonArray(),
+            ["locations"] = game.Generation >= 4 ? Combo(GameInfo.Sources.Met.GetLocationList(game.Versions[0], MetContext(game), false)) : new JsonArray(),
+            ["egg_locations"] = game.Generation >= 4 ? Combo(GameInfo.Sources.Met.GetLocationList(game.Versions[0], MetContext(game), true)) : new JsonArray(),
             ["growth"] = new JsonArray(Enumerable.Range(0, sav.MaxSpeciesID + 1)
                 .Select(i => (JsonNode)sav.Personal[(ushort)i].EXPGrowth).ToArray()),
         };

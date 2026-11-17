@@ -8,7 +8,7 @@ through the radio's raw transmit (firmware 2.0-uds's TX_FRAME, at 1 Mbps), so no
 Ported from Shinygati's PokeLDN-Bluetooth fork of pokeldn (AGPL-3.0; https://github.com/Shinygati/PokeLDN-Bluetooth):
 the encoders from ``Gen4.java`` and ``Gen5.java``, the beacon from ``firmware/esp32/main/ds_compat.c``. Those
 credit an unpublished DS sender (``gen4_crypto.py``, ``gen5_crypto.py``). Its author reports receiving gifts on DS
-games with it; PokeUDS's port has worked on a retail DS for Gen 4, Gen 5 is not yet tried (docs/mystery_gift.md).
+games with it, Gen 5 included; PokeUDS's port works on a retail DS for Gen 4 (docs/mystery_gift.md).
 
 **The gift.** Both generations carry exactly the Wi-Fi gift file PokeUDS already makes from PKHeX (docs/mystery_gift.md,
 "DS Wi-Fi gift files"):
