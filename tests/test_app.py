@@ -379,7 +379,7 @@ def test_the_trade_page_trades_online(data, monkeypatch):
     trade.control()
 
 
-def test_the_card_editor_builds_ds_cards(tmp_path):
+def test_the_card_editor_builds_ds_cards(tmp_path, monkeypatch):
     """Build your own under Nintendo DS: Gen 4 and Gen 5 Pokemon, egg (Gen 5) and item cards, each with the fields its
     card holds; moving between a DS and a 3DS game starts the card again."""
     pytest.importorskip("flet")
@@ -432,6 +432,9 @@ def test_the_card_editor_builds_ds_cards(tmp_path):
     editor.set_game("xy")                                        # back to a 3DS card: Gen 6's fields again
     assert editor.gen == 6 and editor.f["kind"] == "item" and "text" in editor.f and "halo" in editor.f
 
+    import gui.views.gifts as gifts_page
+
+    monkeypatch.setattr(gifts_page, "_helper_ready", lambda: True)      # a CI runner has no helper while testing
     view = GiftsView(app)
     view.game, view.ds_game, view.mode = "ds", "hgss", "custom"
     view.editor.lists["hgss"], view.editor.texts["hgss"] = lists, []
