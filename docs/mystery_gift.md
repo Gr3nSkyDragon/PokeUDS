@@ -14,7 +14,7 @@ OPSSR signature are decoded and reproduced).
 | Gold / Silver / Crystal (VC) | the 3DS's **infrared** port, between two consoles | items and decorations | no: infrared, not wireless |
 | X / Y, Omega Ruby / Alpha Sapphire | **local wireless** from a distributor (store and event distributions), and the internet | Pokemon, items | possibly: the radio side is the same UDS PokeUDS speaks; the gift protocol is unknown |
 | Sun / Moon, Ultra Sun / Ultra Moon | **local wireless** from a distributor (event distributions), and the internet | Pokemon, items, Festival Coins, Poke Beans, BP | yes: the beacon and the OPSSR signature are decoded; PokeUDS signs its Gen 7 cards (see below) |
-| Diamond / Pearl / Platinum, HeartGold / SoulSilver, Black / White, Black 2 / White 2 (DS) | **Nintendo WFC** (Wi-Fi, through a DNS change), and **DS local wireless** from a distributor | Pokemon, items, Gen 4 seals, accessories and Pokétch apps | yes, both: DS local wireless beacons (below), and the gift files and a DNS/NAS/DLS1 stand-in (docs/ds_wifi.md). Local wireless received on a retail DS (Gen 4, 2026-11-17); Wi-Fi not yet tried |
+| Diamond / Pearl / Platinum, HeartGold / SoulSilver, Black / White, Black 2 / White 2 (DS) | **DS local wireless** from a distributor, and Nintendo WFC (Wi-Fi, closed in 2014) | Pokemon, items, Gen 4 seals, accessories and Pokétch apps | yes, over DS local wireless (below): received on a retail DS (Gen 4, 2026-11-17) |
 
 The Switch games' local gifts run over LDN, which is pokeldn's territory; the 3DS games use UDS.
 
@@ -233,14 +233,12 @@ same 314 bytes, signature included.
 
 PokeUDS will not use or point to leaked copies of Nintendo's distribution software.
 
-## Gen 4 and 5 (DS): Nintendo WFC
+## Gen 4 and 5 (DS): the gift files
 
-The DS games' Wi-Fi Mystery Gift ("Receive via Wi-Fi", "Receive via Nintendo WFC") logs in to
-`nas.nintendowifi.net`, then lists and downloads gift files from `dls1.nintendowifi.net`. Nintendo WFC closed in
-2014. Wiimmfi, Kaeru WFC and the dwc_network_server_emulator project stand in for it, and a retail DS reaches them
-through a DNS change and the "nds-constrain't" certificate bug. PokeUDS has that stand-in too
-([docs/ds_wifi.md](ds_wifi.md)): DNS, the connection test, the NAS login and DLS1 over the DS's SSL 3.0, with a
-certificate made from the player's own Wii certificate, and the gift files below. It has not yet been tried on a DS.
+The DS games' Wi-Fi Mystery Gift ("Receive via Wi-Fi", "Receive via Nintendo WFC") downloaded a gift file from
+Nintendo's `dls1.nintendowifi.net`, which closed in 2014. PokeUDS does not stand in for that server (an earlier
+version did; it needed a Wii certificate dump and an open access point, and was never tried on a DS). The files
+matter anyway: DS local wireless (below) carries exactly the same bytes.
 
 ### DS Wi-Fi gift files
 

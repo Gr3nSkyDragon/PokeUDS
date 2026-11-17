@@ -18,7 +18,7 @@ pip install -r requirements.txt
 ```
 
 On macOS or Linux, activate with `. .venv/bin/activate`. `requirements.txt` is enough for the command line;
-`requirements-gui.txt` adds the app, the board flasher (`esptool`) and the DS Wi-Fi server's SSL (`tlslite-ng`).
+`requirements-gui.txt` adds the app and the board flasher (`esptool`).
 
 ```bash
 python -m pokeuds --help
@@ -178,19 +178,6 @@ The source is an official card's key, a `.pcd`/`.pgf`, or a Wi-Fi gift file (`.m
 own, else `ENG`). It sends on channel 7 from `02:00:00:00:00:01`; `--mac` does not apply. On the DS: Mystery Gift,
 Receive Gift, the wireless option.
 
-Gen 4 and Gen 5, over the DS's Wi-Fi (pre-alpha; [ds_wifi.md](ds_wifi.md)):
-
-```bash
-python -m pokeuds wfc check
-```
-
-```bash
-python -m pokeuds wfc serve
-```
-
-`wfc check` reads your Wii certificate pair and makes the server certificate; `wfc serve` answers the DS's DNS,
-connection test, login and gift download until Ctrl+C; `wfc gifts` writes the official Gen 4/5 cards as the files
-it serves.
 
 ## Captures and analysis
 

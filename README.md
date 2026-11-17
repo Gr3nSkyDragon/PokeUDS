@@ -48,10 +48,10 @@ Poke Transporter and Pokemon Bank do.
     the distributor app's private key. That key is not shipped: the **Gen 7 Mystery Gift Key** card in Settings
     reads it from your own dump of the Gen 7 Local Distributor (00040000001A8900) and keeps it in `rsa_d_key.txt`
     beside `aes_keys.txt`. Retail game dumps hold only the public key.
-- **DS Wi-Fi Mystery Gifts (Gen 4/5), pre-alpha**: Diamond, Pearl, Platinum, HeartGold, SoulSilver, Black, White,
-  Black 2 and White 2 receive PKHeX's official cards over Wi-Fi from PokeUDS standing in for Nintendo WFC. Needs a
-  Wii certificate dump and an open (or WEP) access point, or the board's own; **not yet tried on a DS**, and for
-  now run from the [command line](docs/cli.md#mystery-gift) only ([docs/ds_wifi.md](docs/ds_wifi.md)).
+- **DS Mystery Gifts (Gen 4/5)**: Diamond, Pearl, Platinum, HeartGold, SoulSilver, Black, White, Black 2 and
+  White 2 receive PKHeX's official cards over DS local wireless, as a store distribution sent them: the Gifts page's
+  Nintendo DS game, on the same board and firmware. Gen 4 received on a retail DS; Gen 5 not yet tried
+  ([docs/mystery_gift.md](docs/mystery_gift.md)).
 - **GTS**: list a banked Pokemon against what you want, or offer on someone else's listing, bank to bank over
   public Nostr relays; a trade settles when the lister's app next opens ([docs/online.md](docs/online.md)).
 - **Online trades, pre-alpha**: X/Y, ORAS, Sun/Moon, USUM and the Virtual Console games trade live with a player
@@ -146,7 +146,6 @@ What the 3DS sends lands in the bank. [docs/gui.md](docs/gui.md) describes every
 | Boards, firmware and USB Wi-Fi adapters | [Hardware](docs/hardware.md) |
 | Building Pokemon, legality, Showdown sets | [PKHeX](docs/pkhex.md) |
 | Mystery Gift cards and distributions | [Mystery Gift](docs/mystery_gift.md), [Wonder Cards](docs/wonder_cards.md) |
-| DS Wi-Fi Mystery Gifts (Gen 4/5) | [DS Wi-Fi](docs/ds_wifi.md), [the board's access point](docs/ds_wifi_ap.md) |
 | The GTS | [Online and the GTS](docs/online.md) |
 | Installing or writing plugins and language packs | [Plugins](docs/plugins.md) |
 | Using PokeUDS from a terminal | [Command-line instructions](docs/cli.md) |
@@ -172,9 +171,11 @@ Contributors:
 
 - [Gr3nSkyDragon](https://github.com/Gr3nSkyDragon): PokeUDS, and its testing on retail hardware
 - **Claude Opus 5.5** (Anthropic): the rest of the repository, from the Gen 6/7 and Virtual Console trades and the
-  app to the GTS and the DS Wi-Fi stand-in, as `Co-authored-by` on its commits
+  app to the GTS and the DS Mystery Gift port, as `Co-authored-by` on its commits
 - **DeepSeek Harness** (DeepSeek): the Gen 7 Mystery Gift support: the distributor's beacon and OPSSR signing,
   the key extraction and the Settings flow ([CONTRIBUTORS.md](CONTRIBUTORS.md))
+- [Shinygati](https://github.com/Shinygati): the Gen 4/5 Mystery Gift over DS local wireless, ported from their
+  [PokeLDN-Bluetooth](https://github.com/Shinygati/PokeLDN-Bluetooth)
 
 Local wireless and the radio:
 
@@ -184,16 +185,11 @@ Local wireless and the radio:
   [esp32-uds-bridge](https://github.com/Gr3nSkyDragon/VC-Adapter/tree/main/firmware/esp32-uds-bridge) firmware the
   Board page installs
 - [unlimitedcoder2](https://github.com/unlimitedcoder2): ldnd, the Windows USB Wi-Fi adapter daemon
-- [martin-ger/esp32_nat_router](https://github.com/martin-ger/esp32_nat_router): the AP+STA+NAPT pattern behind
-  the board's DS Wi-Fi access point, and a stand-in for it
 - [GB-Link/GB-Link-Switch-LDN](https://github.com/GB-Link/GB-Link-Switch-LDN): the Switch LDN side of the board's
   firmware and the `ldn/` it vendors (AGPL-3.0); its ESP32 LDN code comes from
   [easyworld/frlg-ldn-trade-esp32](https://github.com/easyworld/frlg-ldn-trade-esp32), a port of Tornadus's project
 - [kinnay/NintendoClients](https://github.com/kinnay/NintendoClients): the NEX PRUDP V1 packet layout the Gen 6/7
   transport is ported from, and the Pia pages on its wiki (MIT)
-- [Shinygati/PokeLDN-Bluetooth](https://github.com/Shinygati/PokeLDN-Bluetooth) by
-  [Shinygati](https://github.com/Shinygati): the Gen 4/5 Mystery Gift over DS local wireless, its encoders and beacon,
-  which `pokeuds/games/ds/delivery.py` is ported from (AGPL-3.0)
 
 Pokemon and the games:
 
@@ -206,17 +202,14 @@ Pokemon and the games:
   Korean Game Boy games' text tables and layouts (MIT)
 - [PokeAPI/sprites](https://github.com/PokeAPI/sprites): the sprites the app downloads
 
-DS Wi-Fi Mystery Gifts:
+DS Mystery Gifts:
 
+- [Shinygati](https://github.com/Shinygati) and their pokeldn fork
+  [PokeLDN-Bluetooth](https://github.com/Shinygati/PokeLDN-Bluetooth): the Gen 4/5 Mystery Gift over DS local
+  wireless. PokeUDS's DS gift support (`pokeuds/games/ds/delivery.py`) is ported from its Gen 4 and Gen 5
+  encoders and its DS beacon (AGPL-3.0)
 - [barronwaffles/dwc_network_server_emulator](https://github.com/barronwaffles/dwc_network_server_emulator): the
-  Nintendo WFC connection test, NAS login and DLS1 protocols (AGPL-3.0)
-- [KaeruTeam/nds-constraint](https://github.com/KaeruTeam/nds-constraint): the DS's certificate check and the
-  "nds-constrain't" flaw
-- [kuroppoi/entralinked](https://github.com/kuroppoi/entralinked): protocol facts for the Gen 5 games' services
-- [ScarlettHaze/PokeGateway](https://github.com/ScarlettHaze/PokeGateway): protocol facts for the Gen 4/5 games'
-  services (no license; read for facts, no code copied)
-- [InternalLoss/DLS1-Files](https://github.com/InternalLoss/DLS1-Files): the collection of official DLS1 files
-- [Dolphin](https://github.com/dolphin-emu/dolphin): the certificate hash check follows its `IOS/Network/SSL.cpp`
+  official Gen 4/5 Wi-Fi gift files the `.myg`/`.bin` layouts were worked out from (AGPL-3.0)
 
 Online:
 
@@ -231,8 +224,7 @@ Reference documentation:
 
 Libraries: [Flet](https://github.com/flet-dev/flet) (the app), [esptool](https://github.com/espressif/esptool)
 (flashing the board), [PyCryptodome](https://github.com/Legrandin/pycryptodome),
-[pySerial](https://github.com/pyserial/pyserial) and [tlslite-ng](https://github.com/tlsfuzzer/tlslite-ng)
-(the DS's SSL 3.0, LGPL-2.1).
+and [pySerial](https://github.com/pyserial/pyserial).
 
 ## Code signing
 
