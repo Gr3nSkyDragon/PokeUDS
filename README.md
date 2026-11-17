@@ -191,6 +191,9 @@ Local wireless and the radio:
   [easyworld/frlg-ldn-trade-esp32](https://github.com/easyworld/frlg-ldn-trade-esp32), a port of Tornadus's project
 - [kinnay/NintendoClients](https://github.com/kinnay/NintendoClients): the NEX PRUDP V1 packet layout the Gen 6/7
   transport is ported from, and the Pia pages on its wiki (MIT)
+- [Shinygati/PokeLDN-Bluetooth](https://github.com/Shinygati/PokeLDN-Bluetooth) by
+  [Shinygati](https://github.com/Shinygati): the Gen 4/5 Mystery Gift over DS local wireless, its encoders and beacon,
+  which `pokeuds/games/ds/delivery.py` is ported from (AGPL-3.0)
 
 Pokemon and the games:
 

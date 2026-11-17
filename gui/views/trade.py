@@ -506,7 +506,10 @@ class TradeView(View):
                                     tooltip="ldnd.exe 0.0.5 (not ldnrs), Windows only; start it before the trade"))
         else:
             attached = [] if busy else esp32_ports()          # not listed on every log line of a running trade
-            if not busy and board.stale(s, attached):
+            if not busy and (moved := board.fallback(s, attached)):
+                # The board moved to another port: the next run uses it and saves it (App.follow_board).
+                row.append(t.label(f"port {s.port}: no board on it now, so PokeUDS uses the one on {moved}", size=12))
+            elif not busy and board.stale(s, attached):
                 row.append(t.label(f"port {s.port}: no board on it now", size=12, color=t.WARN))
                 if attached:
                     row.append(t.secondary(f"Use {attached[0]}", lambda e, d=attached[0]: self._use_port(d),

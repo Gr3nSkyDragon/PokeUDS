@@ -872,13 +872,85 @@ def _full_file(game: str, source: str) -> bytes:
     return gift.full_data
 
 
+def _ds_gift_file(game: str, source: str) -> bytes:
+    """A DS game's gift as its Wi-Fi file (Gen 4 .myg, 936 bytes; Gen 5 .bin, 720): the file as given when it is
+    one, else the PKHeX helper's of a card (key, .pcd, .pgf)."""
+    from .games.ds import delivery
+
+    size = delivery.GEN4_FILE_SIZE if delivery.generation(game) == 4 else delivery.GEN5_FILE_SIZE
+    path = Path(source)
+    if path.is_file() and path.stat().st_size == size:
+        return path.read_bytes()
+    from . import pkhex
+
+    helper = pkhex.shared()
+    try:
+        gift = helper.gift(game, data=path.read_bytes()) if path.is_file() else helper.gift(game, key=source)
+    except ValueError as exc:                       # no such card or file: PKHeX says which
+        raise SystemExit(f"error: {exc}") from None
+    print(_gift_line(gift.card))
+    if len(gift.wifi_data) != size:
+        raise SystemExit(f"PKHeX made no {size}-byte gift file of this card for {game}")
+    return gift.wifi_data
+
+
+def _open_gift_radio(spec: str):
+    """The radio a gift goes out on. A board that is not there ends the run with its reason (which board to choose
+    instead), not a traceback, as `probe` does."""
+    from .radio import open_radio
+
+    try:
+        return open_radio(spec)
+    except (RuntimeError, OSError) as exc:
+        raise SystemExit(f"error: {exc}") from None
+
+
+def cmd_gift_distribute_ds(args) -> int:
+    """Send a Gen 4 or Gen 5 gift over DS local wireless: beacons carrying it in fragments, sent one by one."""
+    from .games.ds import delivery
+
+    if args.radio.startswith("demo"):
+        print("error: the demo radio has no DS to send to; use --radio esp32 (or ldnd)")
+        return 1
+    gen = delivery.generation(args.game)
+    data = _ds_gift_file(args.game, args.source)
+    language = args.language
+    if language is None:
+        # Gen 5: the language the file was made for (the card's own, where it has one); Gen 4: English.
+        language = data[0x2CB] if gen == 5 and data[0x2CB] in delivery.LANGUAGES.values() else "ENG"
+    dist = delivery.prepare(gen, data, language)
+    channel = args.channel or delivery.CHANNEL
+    radio = _open_gift_radio(args.radio)
+    try:
+        radio.start(channel, delivery.MAC)
+        status.emit("radio", description=radio.describe())
+        print(f"distributing a Gen {gen} gift for {delivery.LANGUAGE_NAMES[dist.language]} "
+              f"{delivery.GAME_NAMES[args.game]} in {len(dist.fragments)} beacon fragments (GGID {dist.ggid:08X}) "
+              f"on channel {channel}, one every {dist.interval * 1000:.0f} ms, for {args.seconds:.0f} s: on the DS, "
+              "Mystery Gift > Receive Gift > the wireless option (not Wi-Fi)")
+        status.emit("distributing", generation=gen, fragments=len(dist.fragments), channel=channel,
+                    language=dist.language)
+        sent = 0
+        try:
+            sent = delivery.send(radio, dist, args.seconds, channel=channel)
+        except KeyboardInterrupt:
+            pass
+    finally:
+        radio.close()
+    print(f"stopped distributing ({sent} beacons sent)" if sent else "stopped distributing")
+    return 0
+
+
 def cmd_gift_distribute(args) -> int:
     """Send a Gen 6 or Gen 7 gift as an official distribution does: beacons on the game's comm id, the gift in
-    fragments."""
+    fragments. A DS game's (Gen 4/5) goes over DS local wireless instead (cmd_gift_distribute_ds)."""
     from .games import get, profile
-    from .radio import open_radio
+    from .games.ds import delivery as ds_delivery
     from .uds import Station
 
+    if args.game in ds_delivery.GAMES:
+        return cmd_gift_distribute_ds(args)
+    args.channel = args.channel or 11
     game = get(args.game)
     if game.generation == 6:
         from .games.gen6 import delivery
@@ -898,7 +970,8 @@ def cmd_gift_distribute(args) -> int:
                     break
     parts = delivery.fragments(full)
     prof = profile.load(args.game, None)
-    station = Station(open_radio(args.radio), args.mac or random_mac(), _uds_key(args.keys, args.radio), name=args.name)
+    station = Station(_open_gift_radio(args.radio), args.mac or random_mac(), _uds_key(args.keys, args.radio),
+                      name=args.name)
     station.start(args.channel)
     status.emit("radio", description=station.radio.describe())
     station.host(wlan_comm_id=prof.wlan_comm_id, passphrase=prof.passphrase, channel=args.channel,
@@ -1079,6 +1152,7 @@ def cmd_plugin_run(args) -> int:
 
 
 GAME_KEYS = ["xy", "oras", "sm", "usum"]
+DS_GAME_KEYS = ["dp", "pt", "hgss", "bw", "b2w2"]
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -1221,13 +1295,17 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("source", help="a key from `gift list`, or a card file")
     p.add_argument("--save", required=True, help="the .udsgift to write")
     p.set_defaults(func=cmd_gift)
-    p = gsub.add_parser("distribute", help="send a Gen 6/7 gift over local wireless, as an official distribution does "
-                        "(the 3DS: Mystery Gift > Get via Local Wireless)")
-    p.add_argument("game", choices=GAME_KEYS,
-                   help="the receiving game (X/Y and ORAS share X/Y's comm id; Sun/Moon and USUM share Sun/Moon's)")
+    p = gsub.add_parser("distribute", help="send a Gen 4-7 gift over local wireless, as an official distribution does "
+                        "(the 3DS: Mystery Gift > Get via Local Wireless; the DS: Receive Gift, the wireless option)")
+    p.add_argument("game", choices=GAME_KEYS + DS_GAME_KEYS,
+                   help="the receiving game (X/Y and ORAS share X/Y's comm id; Sun/Moon and USUM share Sun/Moon's; "
+                        "dp, pt, hgss, bw and b2w2 go over DS local wireless)")
     p.add_argument("source", help="a .wc6full/.wc7full (784 bytes, or several back to back), a card, or a key from "
-                                  "`gift list`")
+                                  "`gift list`; for a DS game a .myg (936 bytes) or .bin (720), a .pcd/.pgf, or a key")
     _add_radio(p)
+    p.set_defaults(channel=None)        # 11 for the 3DS games, 7 for the DS's
+    p.add_argument("--language", help="DS games: the receiving cartridge's language, ENG, JPN, FRE, ITA, GER, SPA or "
+                                      "KOR (default: a Gen 5 card's own, else ENG)")
     _add_keys(p)
     p.add_argument("--name", default="PokeUDS", help="the name in the beacon's node list")
     p.add_argument("--seconds", type=float, default=600.0)
@@ -1356,7 +1434,8 @@ def main(argv: list[str] | None = None) -> int:
     _safe_output()
     if hasattr(args, "keys_required") and not args.keys and not getattr(args, "radio", "").startswith("demo"):
         args.keys = _settings_keys()           # the app's keys file, when --keys is left out
-        if not args.keys and args.keys_required:
+        # A DS game's gift goes in plain beacons: no console key is involved.
+        if not args.keys and args.keys_required and getattr(args, "game", None) not in DS_GAME_KEYS:
             parser.error("--keys aes_keys.txt is needed (or set the keys file in the app's Settings)")
     logging.basicConfig(level=logging.WARNING - 10 * min(args.verbose, 2),
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")

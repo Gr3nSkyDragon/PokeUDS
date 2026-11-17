@@ -173,6 +173,43 @@ def test_probe_answers_with_the_reason_instead_of_a_traceback(c3_on_com3, capsys
     assert out[-1].startswith("No board on COM9") and "COM3" in out[-1]
 
 
+def test_a_board_on_another_port_is_used_when_it_is_the_only_one():
+    """pokeldn's rule: the saved board if it is plugged in, else the only board present; never a guess among several."""
+    from pokeuds.app.settings import Settings
+
+    s = Settings(radio="esp32", port="COM5")
+    assert board.fallback(s, ["COM5", "COM9"]) == "" and board.fallback(s, ["COM5"]) == ""   # it is there
+    assert board.fallback(s, []) == ""                                       # nothing to use
+    assert board.fallback(s, ["COM3", "COM9"]) == ""                         # several: which is unknown
+    assert board.fallback(s, ["COM9"]) == "COM9" and s.port == "COM5"        # fallback only says
+    assert board.follow(s, ["COM9"]) == "COM9" and s.port == "COM9"
+    assert board.follow(s, ["COM9"]) == ""                                   # already: nothing to save
+    for radio, port in (("ldnd", r"\.\pipe\ldnd"), ("demo", "red"), ("esp32", "")):
+        other = Settings(radio=radio, port=port)                             # another connection, or "found by USB id"
+        assert board.follow(other, ["COM9"]) == "" and other.port == port
+
+
+def test_the_app_moves_a_run_to_the_board_that_moved(tmp_path, monkeypatch):
+    pytest.importorskip("flet")
+    from gui.app import App
+    from pokeuds.app.settings import Settings
+    from pokeuds.radio import esp32
+
+    monkeypatch.setenv("POKEUDS_DATA", str(tmp_path))
+    app = App(None, Settings(radio="esp32", port="COM5", output=str(tmp_path / "received")))
+    monkeypatch.setattr(esp32, "board_ports", lambda: ["COM9"])
+    args, note = app.follow_board(["gift", "distribute", "pt", "x.myg", "--radio", "esp32:COM5", "--seconds", "9"])
+    assert args == ["gift", "distribute", "pt", "x.myg", "--radio", "esp32:COM9", "--seconds", "9"]
+    assert "COM5" in note and "COM9" in note and app.settings.port == "COM9"
+    assert Settings.load().port == "COM9"                                    # saved for next time
+    explicit = ["probe", "--radio", "esp32:COM7"]                            # not the saved board: left alone
+    assert app.follow_board(explicit) == (explicit, "")
+    monkeypatch.setattr(esp32, "board_ports", lambda: ["COM3", "COM4"])
+    app.settings.port = "COM5"
+    stay = ["probe", "--radio", "esp32:COM5"]
+    assert app.follow_board(stay) == (stay, "") and app.settings.port == "COM5"
+
+
 def test_checking_or_installing_a_board_points_trades_at_it():
     from pokeuds.app.settings import Settings
 
@@ -216,8 +253,11 @@ def test_the_board_page_hands_its_board_to_the_trade_page(tmp_path, monkeypatch)
     monkeypatch.setattr(trade_page, "esp32_ports", lambda: ["COM3"])
     app.settings.port = "COM9"                                           # plugged in, Board page not visited
     trade = TradeView(app)
-    shown = repr(trade.connection())
-    assert "no board on it now" in shown and "Use COM3" in shown
+    shown = repr(trade.connection())                                     # the only board: the next run uses it
+    assert "so PokeUDS uses the one on COM3" in shown and "Use COM3" not in shown
+    monkeypatch.setattr(trade_page, "esp32_ports", lambda: ["COM3", "COM4"])
+    shown = repr(trade.connection())                                     # several: the player chooses
+    assert "no board on it now" in shown and "Use COM3" in shown and "uses the one" not in shown
     trade._use_port("COM3")
     assert app.settings.port == "COM3" and "no board on it now" not in repr(trade.connection())
 

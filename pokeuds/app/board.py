@@ -92,6 +92,21 @@ def stale(settings, attached: list[str]) -> bool:
     return settings.radio == "esp32" and bool(settings.port) and settings.port not in attached
 
 
+def fallback(settings, attached: list[str]) -> str:
+    """The board to use when the saved one is not plugged in: the only ESP32 attached, as pokeldn does
+    (gui/app.py ``radio_port``). "" when the saved board is there, when none is, or when several are: opening a port
+    resets its board, so PokeUDS does not try them in turn."""
+    return attached[0] if stale(settings, attached) and len(attached) == 1 else ""
+
+
+def follow(settings, attached: list[str]) -> str:
+    """Point the ESP32 connection at ``fallback``'s board -> its port, or "" when nothing changed (the caller saves)."""
+    port = fallback(settings, attached)
+    if port:
+        settings.port = port
+    return port
+
+
 @dataclass
 class Identity:
     port: str

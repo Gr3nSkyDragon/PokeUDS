@@ -14,7 +14,7 @@ OPSSR signature are decoded and reproduced).
 | Gold / Silver / Crystal (VC) | the 3DS's **infrared** port, between two consoles | items and decorations | no: infrared, not wireless |
 | X / Y, Omega Ruby / Alpha Sapphire | **local wireless** from a distributor (store and event distributions), and the internet | Pokemon, items | possibly: the radio side is the same UDS PokeUDS speaks; the gift protocol is unknown |
 | Sun / Moon, Ultra Sun / Ultra Moon | **local wireless** from a distributor (event distributions), and the internet | Pokemon, items, Festival Coins, Poke Beans, BP | yes: the beacon and the OPSSR signature are decoded; PokeUDS signs its Gen 7 cards (see below) |
-| Diamond / Pearl / Platinum, HeartGold / SoulSilver, Black / White, Black 2 / White 2 (DS) | **Nintendo WFC** (Wi-Fi, through a DNS change), and DS local wireless | Pokemon, items, Gen 4 seals, accessories and Pokétch apps | the gift files and a DNS/NAS/DLS1 stand-in, yes (docs/ds_wifi.md); not yet tried on a DS |
+| Diamond / Pearl / Platinum, HeartGold / SoulSilver, Black / White, Black 2 / White 2 (DS) | **Nintendo WFC** (Wi-Fi, through a DNS change), and **DS local wireless** from a distributor | Pokemon, items, Gen 4 seals, accessories and Pokétch apps | yes, both: DS local wireless beacons (below), and the gift files and a DNS/NAS/DLS1 stand-in (docs/ds_wifi.md). Local wireless received on a retail DS (Gen 4, 2026-11-17); Wi-Fi not yet tried |
 
 The Switch games' local gifts run over LDN, which is pokeldn's territory; the 3DS games use UDS.
 
@@ -282,6 +282,45 @@ PKHeX. A Gen 5 card opened from a `.bin` is undated, as the file holds it.
 
 Unmeasured: whether the games check anything these files don't show (the three zero bytes), and the gender signs
 and other characters the game draws from its own code points, which the text writer doesn't map.
+
+## Gen 4 and 5 (DS): local wireless
+
+The DS games also took gifts from a nearby distributor, as stores and events sent them (Mystery Gift, Receive Gift,
+the wireless option rather than Wi-Fi). The distributor broadcasts 802.11 beacons with Nintendo's DS vendor element
+(OUI `00:09:BF`); each carries one 112-byte fragment of the gift and the game collects them. Nobody joins.
+
+PokeUDS's sender (`pokeuds/games/ds/delivery.py`, `pokeuds gift distribute dp|pt|hgss|bw|b2w2`, and the Gifts page's
+fifth game, **Nintendo DS**) is ported from Shinygati's
+[PokeLDN-Bluetooth](https://github.com/Shinygati/PokeLDN-Bluetooth) fork of pokeldn (AGPL-3.0): `Gen4.java` and
+`Gen5.java` for the encoders, `firmware/esp32/main/ds_compat.c` for the beacon. Those credit an unpublished DS sender.
+Their author reports gifts received on DS games. **PokeUDS's port works on a retail DS for Gen 4**
+(2026-11-17, an ESP32 on firmware 2.0-uds, sent from the Gifts page as is); Gen 5 is not yet tried.
+
+**The gift is the Wi-Fi gift file above**, byte for byte: Gen 4's 936-byte `.myg`, Gen 5's 720-byte `.bin`. So every
+card the helper makes for Wi-Fi can go over local wireless too.
+
+- **Gen 4:** the `.myg`'s 16-bit add-and-rotate checksum and the sender's MAC (`02:00:00:00:00:01`, fixed) make an
+  8-byte RC4 key; the encrypted file goes in nine fragments of 104 bytes, and a tenth (index `0xFFFF`) carries its
+  first 0x50 bytes in the clear. Each fragment starts with the checksum, its index and `0x3A8`. The beacon's GGID
+  depends on the cartridge's language: English `0x00400318`, Japanese `0x00000345`, Korean `0x00C00018`; French,
+  German, Italian and Spanish `0x008000CD` to `0x008000D0`, which the source marks as provisional.
+- **Gen 5:** the `.bin` with its received date and used flag cleared, the cartridge's language at 0x2CB and its CRC
+  renewed; nine fragments of 84 bytes, each XORed with the LCG stream (0x41C64E6D, 0x6073) under its own key (from
+  0x13579BDF by 0x6C078965, +1). Each carries a CRC-16 of the whole fragment and of its data, its index, the
+  language and the game mask. GGID `0x1380`. The fork numbers German 4 and Italian 5; PokeUDS uses PKHeX's numbers
+  (Italian 4, German 5), as its `.bin` does.
+- **The beacon:** 164 bytes of body, broadcast from and with BSSID the sender's MAC, on channel 7: rates 1 and 2 Mbps,
+  the DS parameter set, a TIM, and the vendor element (`DD 88 00 09 BF 00`, then the GGID, payload size 112, type 0
+  for Gen 4 and 1 for Gen 5). The layout is in the module's docstring.
+- **The pace:** one beacon, one fragment, every 10 ms (Gen 4) or 21 ms (Gen 5), as the fork's firmware sends them.
+
+**No firmware change.** PokeUDS builds each beacon and sends it through firmware 2.0-uds's raw transmit
+(`TX_FRAME`, at 1 Mbps), paced from the PC. The board's own beacon timer (`SET_BEACON`) is a fixed 102.4 ms and
+holds one frame, so it is not used. The PC's pace was good enough for the Gen 4 test, so no firmware that cycles
+the fragments itself is planned.
+
+Still to measure on a DS: Gen 5 (Black/White, Black 2/White 2); the other Gen 4 games; and the European Gen 4
+GGIDs.
 
 ## What works today
 

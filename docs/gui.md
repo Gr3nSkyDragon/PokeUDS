@@ -53,7 +53,11 @@ On the Trade page:
   Build one, reads a Showdown set first and opens the builder filled from it (docs/pkhex.md).
 - **The connection**, as pokeldn's Connection choice: the ESP32 board (found by its USB id, or the
   port the Board page set with Use for trades) or a USB Wi-Fi adapter through ldnd.exe 0.0.5 (Windows,
-  with its pipe). Check runs `probe` and shows what answered. With the Debug demo radio on, the row says
+  with its pipe). A board plugged into another port is followed, as pokeldn does: when no board is on the saved
+  port and exactly one ESP32 is plugged in, every run (a trade, Check, a gift) uses that one and saves its port, and
+  the run's log says so. With several boards plugged in PokeUDS does not guess, since opening a port resets its
+  board: the row offers Use for the first one. A port given on the command line (`--radio esp32:PORT`) is always
+  used as given. Check runs `probe` and shows what answered. With the Debug demo radio on, the row says
   so instead.
 
 The role choice sits under a "PokeUDS" heading and reads **Joins** (the default) or **Hosts**. The labels speak

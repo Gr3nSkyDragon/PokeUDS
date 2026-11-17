@@ -1,4 +1,4 @@
-"""The Gifts page: Gen 6/7 Mystery Gift cards (docs/mystery_gift.md).
+"""The Gifts page: Gen 6/7 Mystery Gift cards, and the DS games' Gen 4/5 cards (docs/mystery_gift.md).
 
 Three ways in, one result panel:
 
@@ -9,6 +9,10 @@ Three ways in, one result panel:
 A card's Pokemon is made as the Builder's trainer would receive it, checked by PKHeX, and can be kept in the
 bank and offered in a trade: the gift Pokemon by trade, until local distribution is understood. A custom
 card's Pokemon matches no real event, so PKHeX flags it; the page says so.
+
+The fifth game, "Nintendo DS", holds Diamond/Pearl, Platinum, HeartGold/SoulSilver, Black/White and Black 2/White 2: their
+official cards and card files, sent over DS local wireless (pokeuds.games.ds.delivery). Custom cards, the bank and
+trades are for the 3DS games only.
 """
 
 from __future__ import annotations
@@ -24,6 +28,7 @@ from pokeuds import pkx
 from pokeuds.app import i18n, bank, catalog, giftfile
 from pokeuds.app.settings import data_dir
 from pokeuds.app.builder import Trainer
+from pokeuds.games.ds import delivery as ds
 
 from .. import theme as t
 from .common import View, awaiting, log_box
@@ -31,7 +36,9 @@ from .gift_editor import GiftEditor
 from .sprite import progress as sprite_progress
 from .sprite import sprite
 
-GAMES = {"xy": "X / Y", "oras": "Omega Ruby / Alpha Sapphire", "sm": "Sun / Moon", "usum": "Ultra Sun / Ultra Moon"}
+GAMES = {"xy": "X / Y", "oras": "Omega Ruby / Alpha Sapphire", "sm": "Sun / Moon", "usum": "Ultra Sun / Ultra Moon",
+         "ds": "Nintendo DS (Gen 4 / Gen 5)"}
+DS_EXTENSIONS = {4: ("pcd", "myg"), 5: ("pgf", "bin")}   # the card, and the Wi-Fi file the beacons carry
 MODES = (("official", "Official events"), ("file", "Open a card"), ("custom", "Build your own"))
 SHOWN = 150
 
@@ -48,6 +55,8 @@ class GiftsView(View):
     def __init__(self, app) -> None:
         super().__init__(app)
         self.game = "oras"
+        self.ds_game = "bw"                 # with game "ds": which DS game (pokeuds.games.ds.delivery.GAMES)
+        self.ds_language = ""               # the receiving cartridge's language; "" the card's own (Gen 5) or English
         self.mode = "official"
         self.search = ""
         self.cards: dict[str, list[dict]] = {}
@@ -62,7 +71,18 @@ class GiftsView(View):
         self._watching = False
 
     @property
+    def is_ds(self) -> bool:
+        return self.game == "ds"
+
+    @property
+    def helper_game(self) -> str:
+        """The game the PKHeX helper is asked about: a DS game's own key under "ds"."""
+        return self.ds_game if self.is_ds else self.game
+
+    @property
     def generation(self) -> int:
+        if self.is_ds:
+            return ds.generation(self.ds_game)
         return 6 if self.game in ("xy", "oras") else 7
 
     def trainer(self) -> dict:
@@ -75,17 +95,24 @@ class GiftsView(View):
         controls: list[ft.Control] = [
             t.title("Gifts"),
             t.label("Mystery Gift cards for X/Y, ORAS, Sun/Moon and Ultra Sun/Ultra Moon: send a card over local wireless "
-                    "as an event distribution did, or send its Pokemon by trade."),
+                    "as an event distribution did, or send its Pokemon by trade. Under Nintendo DS, the Gen 4 and 5 "
+                    "games' cards, sent over DS local wireless as a store distribution did."),
         ]
         if not _helper_ready():
             from . import pkhex_setup
 
             controls.append(pkhex_setup.card(self.app, [t.heading("Gifts need PKHeX")]))
             return ft.Column(controls, spacing=t.GAP, scroll=ft.ScrollMode.AUTO)
+        if self.is_ds and self.mode == "custom":
+            self.mode = "official"
+        modes = [(k, v) for k, v in MODES if not (self.is_ds and k == "custom")]
         controls.append(ft.Row([
             ft.Dropdown(label="Game", value=self.game, width=280, dense=True, on_select=self._game,
                         options=[ft.DropdownOption(key=k, text=v) for k, v in GAMES.items()]),
-            ft.SegmentedButton(segments=[ft.Segment(k, label=ft.Text(v)) for k, v in MODES], selected=[self.mode],
+            *([ft.Dropdown(label="DS game", value=self.ds_game, width=240, dense=True, on_select=self._ds_game,
+                           options=[ft.DropdownOption(key=k, text=v) for k, v in ds.GAME_NAMES.items()])]
+              if self.is_ds else []),
+            ft.SegmentedButton(segments=[ft.Segment(k, label=ft.Text(v)) for k, v in modes], selected=[self.mode],
                                on_change=self._mode),
         ], spacing=12, wrap=True))
         if self.message:
@@ -96,9 +123,9 @@ class GiftsView(View):
         return ft.Column(controls, spacing=t.GAP, scroll=ft.ScrollMode.AUTO)
 
     def _official(self) -> ft.Control:
-        cards = self.cards.get(self.game)
+        cards = self.cards.get(self.helper_game)
         if cards is None:
-            self._load(self.game)
+            self._load(self.helper_game)
             return t.card(ft.Row([ft.ProgressRing(width=18, height=18),
                                   t.label("Reading PKHeX's event cards...")], spacing=12))
         needle = self.search.lower()
@@ -169,6 +196,17 @@ class GiftsView(View):
             pass
 
     def _file(self) -> ft.Control:
+        if self.is_ds:
+            card_ext, wifi_ext = DS_EXTENSIONS[self.generation]
+            size = "856" if self.generation == 4 else "204"
+            wifi = ds.GEN4_FILE_SIZE if self.generation == 4 else ds.GEN5_FILE_SIZE
+            return t.card(
+                t.heading("Open a card"),
+                t.label(f"A .{card_ext} ({size} bytes, as PKHeX and the event galleries keep them) or a .{wifi_ext} "
+                        f"({wifi} bytes: the file the game's Wi-Fi Mystery Gift downloaded, which the DS beacons carry "
+                        "too). The DS game above decides how it is read."),
+                t.primary("Choose a card file...", self._open, ft.Icons.FILE_OPEN, disabled=self.working),
+                spacing=12)
         return t.card(
             t.heading("Open a card"),
             t.label(f"A .wc{self.generation} (264 bytes, as PKHeX and the event galleries keep them) or a "
@@ -257,17 +295,24 @@ class GiftsView(View):
             rows.append(ft.Divider(color=t.LINE))
             rows += self._wireless()
             rows.append(ft.Divider(color=t.LINE))
-            if self.saved:
+            if self.is_ds:
+                rows.append(t.label("Its Pokemon cannot go by trade: PokeUDS trades with the 3DS games only.", size=12))
+            elif self.saved:
                 rows.append(t.label("In the bank.", color=t.GOOD))
                 rows += [t.primary(f"Offer in {catalog.BY_KEY[k].name}", lambda e, k=k: self._offer(k), ft.Icons.SWAP_HORIZ,
                                    disabled=self.app.busy()) for k in bank.games_for(self.saved)]
             else:
                 rows.append(t.primary("Keep its Pokemon in the bank", self._keep, ft.Icons.INVENTORY_2_OUTLINED))
         rows.append(ft.Divider(color=t.LINE))
-        rows.append(ft.Row([t.secondary(f"Save .{g.extension}", awaiting(self._save, False), ft.Icons.SAVE_ALT),
-                            t.secondary(f"Save .{g.extension}full", awaiting(self._save, True), ft.Icons.SAVE_ALT),
-                            *([t.secondary("Customize", self._customize, ft.Icons.EDIT)] if self.mode != "custom" else [])],
-                           wrap=True, spacing=8))
+        if self.is_ds:
+            saves = [t.secondary(f"Save .{g.extension}", awaiting(self._save, "card"), ft.Icons.SAVE_ALT),
+                     *([t.secondary(f"Save .{DS_EXTENSIONS[self.generation][1]}", awaiting(self._save, "wifi"),
+                                    ft.Icons.SAVE_ALT)] if g.wifi_data else [])]
+        else:
+            saves = [t.secondary(f"Save .{g.extension}", awaiting(self._save, "card"), ft.Icons.SAVE_ALT),
+                     t.secondary(f"Save .{g.extension}full", awaiting(self._save, "full"), ft.Icons.SAVE_ALT),
+                     *([t.secondary("Customize", self._customize, ft.Icons.EDIT)] if self.mode != "custom" else [])]
+        rows.append(ft.Row(saves, wrap=True, spacing=8))
         return t.card(*rows, spacing=8)
 
     # -- local wireless distribution ------------------------------------------------------------
@@ -278,7 +323,9 @@ class GiftsView(View):
         s = self.app.settings
         sending = self.app.busy() and self.app.run_kind == "gift"
         problem = ("Choose an ESP32 board or a USB Wi-Fi adapter on the Trade page (the demo radio cannot send gifts)."
-                   if s.radio_spec().startswith("demo") else s.keys_problem())
+                   if s.radio_spec().startswith("demo") else "" if self.is_ds else s.keys_problem())
+        if self.is_ds and self.gift is not None and not self.gift.wifi_data:
+            problem = problem or "PKHeX made no DS gift file of this card, so it cannot be sent."
         if self.generation == 7 and s.gen7_key_problem():
             problem = problem or "No Gen 7 signing key installed: add one in Settings, Gen 7 Mystery Gift Key."
         if sending:
@@ -292,6 +339,22 @@ class GiftsView(View):
         ]
         if problem and not sending:
             rows.append(t.notice(problem, t.WARN))
+        if self.is_ds:
+            rows.insert(1, ft.Dropdown(
+                label="The DS game's language", value=self.ds_language or "auto", width=260, dense=True,
+                disabled=sending, on_select=self._ds_language,
+                options=[ft.DropdownOption(key="auto", text="The card's own" if self.generation == 5 else "English"),
+                         *[ft.DropdownOption(key=k, text=v) for k, v in ds.LANGUAGE_NAMES.items()]]))
+            rows.append(t.label("PokeUDS sends this card the way a store distribution did, in DS beacons on channel 7. "
+                                "On the DS: Mystery Gift, Receive Gift, then the wireless option (not Wi-Fi). Choose the "
+                                "cartridge's language: the game ignores a gift for another. Any number of DS consoles "
+                                "can take it while it runs.", size=12))
+            if self.generation == 4:
+                rows.append(t.label("Gen 4's French, German, Italian and Spanish game ids are not yet confirmed "
+                                    "(docs/mystery_gift.md).", size=12))
+            if self.app.run_kind == "gift":
+                rows.append(log_box(self.app.log, height=140, app=self.app))
+            return rows
         rows.append(t.label("PokeUDS sends this card the way a store or event distribution did. On the 3DS: Mystery "
                             "Gift, Receive Gift, Get via Local Wireless. Any number of consoles can take it while it runs.",
                             size=12))
@@ -309,6 +372,15 @@ class GiftsView(View):
             return
         folder = data_dir() / "gifts"
         folder.mkdir(parents=True, exist_ok=True)
+        if self.is_ds:
+            path = folder / f"sending.{DS_EXTENSIONS[self.generation][1]}"
+            path.write_bytes(g.wifi_data)
+            args = ["gift", "distribute", self.ds_game, str(path), "--radio", s.radio_spec(), "--seconds", "3600"]
+            if self.ds_language:
+                args += ["--language", self.ds_language]
+            self.app.start("gift", args, on_exit=lambda code: self.app.ui(self.refresh))
+            self.refresh()
+            return
         path = folder / f"sending.wc{self.generation}full"
         path.write_bytes(g.full_data)
         args = ["gift", "distribute", self.game, str(path), "--radio", s.radio_spec(), "--seconds", "3600"]
@@ -360,15 +432,16 @@ class GiftsView(View):
 
     def _pick(self, key: str) -> None:
         self.selected = key
-        game, trainer = self.game, self.trainer()
+        game, trainer = self.helper_game, self.trainer()
         from pokeuds import pkhex
 
         self._show(lambda: pkhex.shared().gift(game, key=key, trainer=trainer))
 
     async def _open(self, e) -> None:
         ext = f"wc{self.generation}"
+        allowed = list(DS_EXTENSIONS[self.generation]) if self.is_ds else [ext, ext + "full"]
         files = await self.app.picker.pick_files(dialog_title="Open a Mystery Gift card", file_type=ft.FilePickerFileType.CUSTOM,
-                                                 allowed_extensions=[ext, ext + "full"])
+                                                 allowed_extensions=allowed)
         if not (files and files[0].path):
             return
         try:
@@ -377,7 +450,7 @@ class GiftsView(View):
             self._say(str(exc), t.BAD)
             self.refresh()
             return
-        game, trainer = self.game, self.trainer()
+        game, trainer = self.helper_game, self.trainer()
         from pokeuds import pkhex
 
         self._show(lambda: pkhex.shared().gift(game, data=data, trainer=trainer))
@@ -388,6 +461,15 @@ class GiftsView(View):
         self.game = e.control.value
         self.selected, self.gift, self.saved, self.message = "", None, None, ""
         self.refresh()
+
+    def _ds_game(self, e) -> None:
+        self.ds_game = e.control.value
+        self.selected, self.gift, self.saved, self.message = "", None, None, ""
+        self.refresh()
+
+    def _ds_language(self, e) -> None:
+        value = e.control.value
+        self.ds_language = "" if value == "auto" else value
 
     def _mode(self, e) -> None:
         self.mode = next(iter(e.control.selected), "official")
@@ -420,12 +502,17 @@ class GiftsView(View):
             trade.save()
             self.app.navigate("trade")
 
-    async def _save(self, full: bool) -> None:
+    async def _save(self, which: str) -> None:
+        """Save the card ("card"), the 3DS full file ("full") or a DS game's Wi-Fi gift file ("wifi")."""
         g = self.gift
         if g is None:
             return
-        ext = g.extension + ("full" if full else "")
-        data = g.full_data if full else g.card_data
+        if which == "wifi":
+            ext, data = DS_EXTENSIONS[self.generation][1], g.wifi_data
+        elif which == "full":
+            ext, data = g.extension + "full", g.full_data
+        else:
+            ext, data = g.extension, g.card_data
         name = "".join(ch for ch in (g.card["title"] or "gift") if ch.isalnum() or ch in " -_").strip()[:40] or "gift"
         path = await self.app.picker.save_file(dialog_title="Save the card", file_name=f"{g.card['card_id']:04d} {name}.{ext}",
                                                file_type=ft.FilePickerFileType.CUSTOM, allowed_extensions=[ext],

@@ -163,6 +163,21 @@ python scripts/extract_gen7_key.py DISTRIBUTOR.cxi --keys aes_keys.txt
 
 (a `.cci`/`.3ds` or the distributor's `code.bin` work too; [mystery_gift.md](mystery_gift.md)).
 
+Gen 4 and Gen 5, over DS local wireless (no console keys; the game is `dp`, `pt`, `hgss`, `bw` or `b2w2`):
+
+```bash
+python -m pokeuds gift list bw --search Darkrai
+```
+
+```bash
+python -m pokeuds gift distribute bw KEY --radio esp32 --language ENG
+```
+
+The source is an official card's key, a `.pcd`/`.pgf`, or a Wi-Fi gift file (`.myg`, 936 bytes; `.bin`, 720).
+`--language` is the receiving cartridge's: `ENG`, `JPN`, `FRE`, `ITA`, `GER`, `SPA` or `KOR` (default: a Gen 5 card's
+own, else `ENG`). It sends on channel 7 from `02:00:00:00:00:01`; `--mac` does not apply. On the DS: Mystery Gift,
+Receive Gift, the wireless option.
+
 Gen 4 and Gen 5, over the DS's Wi-Fi (pre-alpha; [ds_wifi.md](ds_wifi.md)):
 
 ```bash

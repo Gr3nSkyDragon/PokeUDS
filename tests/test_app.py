@@ -206,6 +206,40 @@ def test_gifts_page_sends_gen6_and_gen7_cards_over_local_wireless(data, tmp_path
     assert sm_args[sm_args.index("--gen7-key") + 1] == str(gen7_key)
 
 
+def test_gifts_page_sends_ds_cards_over_ds_local_wireless(data, tmp_path, monkeypatch):
+    """The fifth game, DS: a Gen 4/5 card gets Start sending (`gift distribute <ds game>`, its .myg/.bin), with no
+    console keys, no bank and no custom cards."""
+    pytest.importorskip("flet")
+    from pathlib import Path
+    from types import SimpleNamespace
+
+    from gui.app import App
+    from gui.views.gifts import GAMES, GiftsView
+
+    assert list(GAMES)[4] == "ds"
+    app = App(None, Settings(radio="esp32", port="COM9", output=str(tmp_path / "received")))   # no keys file
+    started = []
+    monkeypatch.setattr(app, "start", lambda kind, args, **kw: started.append((kind, args)))
+    view = GiftsView(app)
+    view.game, view.ds_game, view.mode = "ds", "bw", "custom"
+    wifi = bytes(range(256)) * 2 + bytes(208)
+    view.gift = SimpleNamespace(card={"title": "Darkrai", "card_id": 28, "games": ["Black", "White"], "kind": "item",
+                                      "item": "Liberty Pass", "quantity": 1}, pokemon=None, extension="pgf",
+                                custom=False, full_data=b"", card_data=bytes(204), wifi_data=wifi)
+    view.control()
+    assert view.mode == "official" and view.generation == 5 and view.helper_game == "bw"
+    rows = view._wireless()
+    assert not any(getattr(c, "value", None) == app.settings.keys_problem() for c in rows if app.settings.keys_problem())
+    view.ds_language = "FRE"
+    view._distribute()
+    kind, args = started[0]
+    assert kind == "gift" and args[:3] == ["gift", "distribute", "bw"]
+    assert args[args.index("--language") + 1] == "FRE" and "--keys" not in args
+    assert args[3].endswith("sending.bin") and Path(args[3]).read_bytes() == wifi
+    view.ds_game = "hgss"
+    assert view.generation == 4 and view.helper_game == "hgss"
+
+
 def test_send_over_local_wireless_sits_between_legal_and_the_bank(data, tmp_path):
     pytest.importorskip("flet")
     from types import SimpleNamespace

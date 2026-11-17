@@ -150,6 +150,27 @@ class App:
     def busy(self) -> bool:
         return self.run is not None and self.run.running()
 
+    def follow_board(self, args: list[str]) -> tuple[list[str], str]:
+        """A run on the saved ESP32 (``--radio esp32:PORT``) whose board is no longer on that port goes to the only
+        board plugged in, and that port is saved for next time (pokeuds.app.board.follow). -> the run's arguments,
+        and a line for its log saying so ("" when nothing moved)."""
+        s = self.settings
+        if s.radio != "esp32" or not s.port or "--radio" not in args:
+            return args, ""
+        at = args.index("--radio") + 1
+        if at >= len(args) or args[at] != s.radio_spec():
+            return args, ""                         # a radio named for this run only
+        from pokeuds.app import board
+        from pokeuds.radio.esp32 import board_ports
+
+        old = s.port
+        new = board.follow(s, board_ports())
+        if not new:
+            return args, ""
+        self.save()
+        args = [*args[:at], s.radio_spec(), *args[at + 1:]]
+        return args, f"No board on {old}: using the one on {new}, the only ESP32 plugged in (saved for next time)."
+
     def start(self, kind: str, args: list[str], on_line: Callable[[str], None] | None = None,
               on_event: Callable[[dict], None] | None = None, on_exit: Callable[[int], None] | None = None,
               timeout: float | None = None, timeout_note: str = "") -> None:
@@ -159,10 +180,12 @@ class App:
 
         if self.busy():
             raise RuntimeError("a run is already going")
+        args, moved = self.follow_board(args)
         self.run_kind = kind
-        self.log = [f"$ pokeuds {' '.join(args)}"]
+        self.log = [f"$ pokeuds {' '.join(args)}", *([moved] if moved else [])]
         file = RunLog(kind, args)
-        file.write(self.log[0])
+        for text in self.log:
+            file.write(text)
         self.saved_log = file.path
         if kind == "trade":
             self.progress.start()
