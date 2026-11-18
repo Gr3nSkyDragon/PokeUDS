@@ -267,6 +267,10 @@ class Station:
             packet = data.SecureData(channel, self._next_secure_seq(), dest_node, self.node_id, payload)
             self._send_securedata(packet, broadcast=broadcast)
 
+    def has_node(self, node_id: int) -> bool:
+        """As host: whether node ``node_id`` (a player, not a spectator) is still in the network."""
+        return any(p.connected and not p.spectator and p.node_id == node_id for p in list(self.peers.values()))
+
     def stats_text(self) -> str:
         return ", ".join(f"{k} {v}" for k, v in sorted(self.stats.items())) or "nothing"
 

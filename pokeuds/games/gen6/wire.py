@@ -212,6 +212,29 @@ def _name(text: str) -> bytes:
     return text[:12].encode("utf-16-le").ljust(NAME_BYTES, b"\0")
 
 
+# The trainer's look. The profile's head is the save's MyStatus6 (PKHeX: Gender 0x05, MultiplayerSpriteID 0x06-0x07,
+# MyStatus6XY's Fashion 0x30, 16 bytes, and EyeColor 0x148), and the player record carries the sprite ids at 0x50 and
+# the fashion at 0x60, which is what the PSS draws. Read off the captured profiles of three saves (2026-11-18): the
+# fashion of each matches its avatar when decoded with PKHeX's TrainerFashion6.
+P_GENDER, P_SPRITE, P_FASHION, P_EYES = 0x05, 0x06, 0x30, 0x148
+R_SPRITE, R_FASHION = 0x50, 0x60
+FASHION_BYTES = 16
+
+
+@dataclass(frozen=True)
+class Appearance:
+    gender: int                   # 0 male, 1 female; the fashion's bit layout depends on it
+    sprite: bytes                 # 2 bytes, PKHeX's MultiplayerSpriteID_1 and _2
+    fashion: bytes                # 16 bytes, PKHeX's TrainerFashion6
+    eyes: int                     # PKHeX's EyeColor; the saves seen hold their contact lens colour here
+
+
+# GSD's (retail X): male, tan skin, black hair, no coloured contacts.
+GSD_APPEARANCE = Appearance(0, bytes.fromhex("0101"), bytes.fromhex("8860090501cb08032100000000000000"), 2)
+# Dummy's (the Azahar X save the templates were captured from): male, light skin, blond hair, blue contacts.
+DUMMY_APPEARANCE = Appearance(0, bytes.fromhex("0101"), bytes.fromhex("4864090101cb08034100000000000000"), 4)
+
+
 @dataclass
 class Trainer:
     """Who PokeUDS appears as in the PSS and on the trade screen."""
@@ -223,6 +246,7 @@ class Trainer:
     key: bytes                    # 4 bytes the PSS pairs with the id
     version: int = VERSION_CODES["X"]
     user_name: str = "PokeUDS"    # The console name (the UDS node name)
+    appearance: Appearance = GSD_APPEARANCE
 
     @classmethod
     def new(cls, name: str, tid: int, sid: int, version: int = VERSION_CODES["X"], user_name: str = "PokeUDS") -> "Trainer":
@@ -233,6 +257,11 @@ def profile(trainer: Trainer, partner_id: bytes = bytes(8), node: int = 1) -> by
     p = bytearray(template(templates.PROFILE, templates.PROFILE_SIZE))
     struct.pack_into("<HH", p, P_TID, trainer.tid & 0xFFFF, trainer.sid & 0xFFFF)
     p[P_VERSION] = trainer.version
+    look = trainer.appearance
+    p[P_GENDER] = look.gender
+    p[P_SPRITE:P_SPRITE + 2] = look.sprite
+    p[P_FASHION:P_FASHION + FASHION_BYTES] = look.fashion
+    struct.pack_into("<H", p, P_EYES, look.eyes)
     p[P_ID:P_ID + 8] = trainer.pss_id
     p[P_KEY:P_KEY + 4] = trainer.key
     p[P_NAME:P_NAME + NAME_BYTES] = _name(trainer.name)
@@ -252,11 +281,23 @@ def player_record(trainer: Trainer) -> bytes:
     r[R_KEY:R_KEY + 4] = trainer.key
     r[R_ID:R_ID + 8] = trainer.pss_id
     r[R_VERSION] = trainer.version
+    r[R_SPRITE:R_SPRITE + 2] = trainer.appearance.sprite
+    r[R_FASHION:R_FASHION + FASHION_BYTES] = trainer.appearance.fashion
     return bytes(r)
 
 
-def leave_data(trainer: Trainer) -> bytes:
-    return trainer.pss_id.ljust(templates.LEAVE_SIZE, b"\0")
+# The leave block (module 1 command 00, 552 bytes), from a retail X and Azahar's X leaving a trade (2026-11-18): the
+# sender's PSS id, the partner's PSS id, and from 0x28 the 0x200-byte approach context of a player who chose to register
+# the partner as a friend (01 00 01 00, the console's principal ID, then encrypted bytes; the receiving console gives it
+# to the friend service's AddFriendWithApproach). PokeUDS cannot make one, so it leaves zeros there.
+L_ID, L_PARTNER_ID, L_APPROACH, APPROACH_SIZE = 0x00, 0x08, 0x28, 0x200
+
+
+def leave_data(trainer: Trainer, partner_id: bytes = bytes(8)) -> bytes:
+    block = bytearray(templates.LEAVE_SIZE)
+    block[L_ID:L_ID + 8] = trainer.pss_id
+    block[L_PARTNER_ID:L_PARTNER_ID + 8] = partner_id
+    return bytes(block)
 
 
 def screen_block() -> bytes:

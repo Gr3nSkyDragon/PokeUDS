@@ -1,5 +1,6 @@
 """Generation 6: PRUDP as Pokemon X signs it, gflnet, PSS beacons, and whole trades over the simulated air."""
 
+import dataclasses
 import os
 import struct
 import threading
@@ -108,11 +109,57 @@ def test_profile_carries_the_trainer():
     assert p[wire.PLAYER_RECORD + wire.R_ID:wire.PLAYER_RECORD + wire.R_ID + 8] == me.pss_id
 
 
+def test_the_trainer_looks_like_gsd_in_the_profile_and_the_pss():
+    # GSD's captured profile (retail X): this fashion at 0x30 and again in the player record at 0x200, sprite ids
+    # 01 01, eye colour 2. The templates are Dummy's (blond), so every one of these bytes must be written.
+    gsd = bytes.fromhex("8860090501cb08032100000000000000")
+    assert wire.template(wire.templates.PROFILE, wire.templates.PROFILE_SIZE)[0x30:0x40] != gsd
+    me = trainer("POKEUDS")
+    p = wire.profile(me)
+    assert p[0x05] == 0 and p[0x06:0x08] == b"\x01\x01" and p[0x30:0x40] == gsd and p[0x148:0x14A] == b"\x02\x00"
+    assert p[0x1F0:0x1F2] == b"\x01\x01" and p[0x200:0x210] == gsd
+    beacon = wire.pss_beacon(me)
+    assert beacon[0x14 + 0x60:0x14 + 0x70] == gsd and beacon[0x14 + 0x50:0x14 + 0x52] == b"\x01\x01"
+    dummy = wire.profile(dataclasses.replace(me, appearance=wire.DUMMY_APPEARANCE))
+    assert dummy[0x30:0x40] == wire.DUMMY_APPEARANCE.fashion and dummy[0x148] == 4
+
+
 @pytest.fixture
 def air():
     a = Air()
     yield a
     a.close()
+
+
+def test_leave_block_names_both_trainers_as_consoles_do():
+    # A retail X and Azahar's X (2026-11-18): own PSS id, partner's PSS id, then zeros unless registering a friend.
+    me = trainer("POKEUDS")
+    block = wire.leave_data(me, b"partner!")
+    assert len(block) == 552 and block[:8] == me.pss_id and block[8:16] == b"partner!" and not any(block[16:])
+
+
+def test_hosting_ends_when_the_console_leaves_before_connecting(air):
+    # A retail X once joined PokeUDS's trade network and left 120 ms later (deauthentication, reason 3), before any
+    # PRUDP traffic; PokeUDS waited on for Net-Z until stopped by hand. It must end the run instead.
+    key = os.urandom(16)
+    host = Station(SimRadio(air), bytes.fromhex("020000000001"), key, name="PokeUDS")
+    console = Station(SimRadio(air), bytes.fromhex("020000000002"), key, name="3DS")
+    host.start(1)
+    console.start(1)
+    try:
+        host.host(wlan_comm_id=0x00055D10, passphrase=b"pass\0", channel=1, max_nodes=4, application_data=b"\x01")
+        console.connect(console.scan(2.0, channels=(1,), until=lambda b: True)[0], b"pass\0", timeout=5.0)
+        deadline = time.monotonic() + 5
+        while not host.has_node(2) and time.monotonic() < deadline:
+            time.sleep(0.01)
+        trade = session.Gen6Session(host, trainer("POKEUDS"), make_record(7))
+        console.close()
+        started = time.monotonic()
+        with pytest.raises(session.TradeEnded, match="the 3DS left the trade network"):
+            trade.run()
+        assert time.monotonic() - started < 5
+    finally:
+        host.close()
 
 
 def gen6_trade(air, key, tmp, mac, record, name, channels):
@@ -217,11 +264,13 @@ def test_analyze_decodes_captured_packets():
 
 
 def test_pss_beacon_keeps_the_template_apart_from_who_we_are():
-    """Only identity changes: name, PSS key and id, version. Byte 0x70 (04 in every console's beacon) once got the
-    version written over it, and the PSS greyed out Trade for us."""
+    """Only identity changes: name, PSS key and id, version, appearance (sprite ids, fashion). Byte 0x70 (04 in every
+    console's beacon) once got the version written over it, and the PSS greyed out Trade for us."""
     me = trainer("POKEUDS", wire.VERSION_CODES["Y"])
     ours, template = wire.pss_beacon(me), bytes.fromhex(wire.templates.IDLE_BEACON)
-    identity = {4, *range(8, 16), *range(0x1C, 0x1C + wire.NAME_BYTES), *range(0x58, 0x64), 0x6E}
+    look = {*range(0x14 + wire.R_SPRITE, 0x14 + wire.R_SPRITE + 2),
+            *range(0x14 + wire.R_FASHION, 0x14 + wire.R_FASHION + wire.FASHION_BYTES)}
+    identity = {4, *range(8, 16), *range(0x1C, 0x1C + wire.NAME_BYTES), *range(0x58, 0x64), 0x6E, *look}
     assert [i for i in range(2, len(ours)) if ours[i] != template[i] and i not in identity] == []
     assert ours[0x70] == 0x04 and ours[0x6E] == wire.VERSION_CODES["Y"]
     assert wire.parse_pss_beacon(ours).version == wire.VERSION_CODES["Y"]

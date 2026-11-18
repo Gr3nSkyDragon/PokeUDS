@@ -95,7 +95,8 @@ BLOCK09 = (
     "0700000004010000000002"
 )
 
-# Leaving the trade (command 00), 552 bytes: the sender's PSS id, then zeros.
+# Leaving the trade (command 00), 552 bytes: the sender's PSS id, the partner's, then zeros or a friend approach
+# context (wire.leave_data).
 LEAVE_SIZE = 552
 
 # An idle PSS beacon (184 bytes of UDS application data).

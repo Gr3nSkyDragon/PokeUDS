@@ -34,7 +34,8 @@ python -m pokeuds trade xy --radio demo:x --keys none --offer my.pk6
 - `--trades N`: trades before PokeUDS leaves the trade screen (default: one per `--offer`; more go round the
   queue again, for testing).
 - The trainer shown is `--trainer/--tid/--sid`, else the app's trainer (Settings, also the Builder's),
-  else the offered Pokemon's original trainer. A PSS id is made once and kept in the app settings.
+  else the offered Pokemon's original trainer. A PSS id is made once and kept in the app settings. The avatar is
+  a fixed one, GSD's (a retail X: male, tan skin, black hair; `wire.GSD_APPEARANCE`).
 - A box `.pk6` (232 bytes) is sent in party form with its battle stats filled in by the PKHeX helper
   when it is built (`dotnet build -c Release services/pkhex`); without it they stay zero.
 - `--radio demo:x` (y, or, as) trades with a simulated console in the PSS, PokeUDS's own engine
@@ -74,13 +75,13 @@ Pings every few seconds. PRUDP flag 0x80 marks gflnet's stream.
 |---|---|
 | host's first message | the two stations' object handles |
 | start | sync 0x11 |
-| profiles | module 0 command 06: 1616 bytes: TID/SID, version, PSS id and key, names, greetings, the partner's PSS id, the PSS player record |
+| profiles | module 0 command 06: 1616 bytes: TID/SID, version, PSS id and key, names, greetings, the partner's PSS id, the PSS player record. The head is the save's MyStatus6 (PKHeX): gender 0x05, sprite ids 0x06-0x07, fashion 0x30 (16 bytes), eye colour 0x148; the record carries the sprite ids at +0x50 and the fashion at +0x60 |
 | | sync 0x13, then sync 0x81 (the hub: 0x82, 0x83 ... after each trade) |
 | trade screen | command 08 (state), command 09 (964 bytes) |
 | offer | command 08 `00 00 01 00 ...` from the side offering first, command 01 (the 260-byte party record, encrypted), command 06 |
 | confirm | command 07 `01` (another value: declined) |
 | swap | command 0a; then the next hub sync, command 08, the host's command 0b, syncs 0xCB 0xCC 0xCD (module 1), and the screen opens again |
-| leave | command 05, the next hub sync, command 00 (552 bytes: the PSS id, zeros), sync 0x0A (module 1), sync 0x16 |
+| leave | command 05, the next hub sync, command 00 (552 bytes: the PSS id, the partner's PSS id, then zeros, or at 0x28 a 0x200-byte friend approach context when the player chose to register the partner as a friend), sync 0x0A (module 1), sync 0x16 |
 
 Sync points: each side sends `02`, the host answers `03` once it has both. gflnet messages with a body
 are followed, on both sides, by an empty one reporting the counts.

@@ -161,6 +161,10 @@ class Gen6Session:
                              "the console stopped acknowledging")
         if self.station.role not in (Role.HOST, Role.CLIENT):
             raise TradeEnded("the UDS network is gone")
+        # Hosting, a console that leaves before its PRUDP connection is up closes nothing: only the node list shows
+        # it (a retail X once left 120 ms after joining, and PokeUDS waited on for Net-Z until stopped by hand).
+        if self.station.role is Role.HOST and not self.station.has_node(self.peer):
+            raise TradeEnded("the 3DS left the trade network")
 
     def _dispatch(self, message: prudp.Message) -> None:
         self._last_progress = self.clock()
@@ -539,13 +543,14 @@ class Gen6Session:
             self.take(wire.TRADE, wire.CMD_QUIT, "the console to leave the trade screen")
         self._hub += 1
         self.sync_point(self._hub)
-        self._command(wire.TRADE, wire.CMD_LEAVE_DATA, wire.leave_data(self.trainer))
+        self._command(wire.TRADE, wire.CMD_LEAVE_DATA, wire.leave_data(self.trainer, self.partner_id))
         self.take(wire.TRADE, wire.CMD_LEAVE_DATA, "the console's leave block")
         self.sync_point(wire.SYNC_LEAVE, wire.TRADE)
         self.sync_point(wire.SYNC_END)
         self._emit("phase", phase="left")
-        # End as a console does: the host says goodbye, the client waits for it, nobody disconnects PRUDP. The
-        # consoles then ask their players about registering friends on their own, with no traffic.
+        # End as a console does: the host says goodbye, the client waits for it, nobody disconnects PRUDP. A player
+        # who chose to register the partner as a friend has already sent the approach context in the leave block;
+        # PokeUDS has none to send, so a console that registers PokeUDS is told it failed.
         if self.host:
             self.ep.send_reliable(wire.host_keepalive(self._hb_counter, goodbye=True))
             done = lambda: self.ep.idle
