@@ -43,6 +43,7 @@ class BankView(View):
         self.checking = False
         self.check_progress = ""         # "12 of 80" while the whole bank is checked
         self.stop_check = False
+        self.auto_checked: set[str] = set()   # received Pokemon already put to PKHeX on its own this visit
         self.migrating = False
 
     @property
@@ -59,6 +60,7 @@ class BankView(View):
                 f"{added[0].describe()} is new from the received folder."
             self.message_color = t.GOOD
         entries = b.entries()
+        self._check_arrivals(entries)
         shown = [e for e in entries if self._keep(e)]
         selected = next((e for e in entries if e.id == self.selected), None)
         duplicates = len(b.duplicates())
@@ -356,13 +358,26 @@ class BankView(View):
         return [t.secondary("Check all", lambda e: self._check_all(), ft.Icons.FACT_CHECK_OUTLINED,
                             disabled=self.checking or not _pkhex_ready())]
 
+    def _check_arrivals(self, entries: list[bank.Entry]) -> None:
+        """Received Pokemon are checked on their own: any from the received folder not yet checked (just arrived, or
+        arrived while PKHeX was missing) goes to PKHeX in the background, once a visit. Check and Check all stay for
+        files added by hand."""
+        todo = [e for e in entries if e.source == "received" and e.legal is None and e.id not in self.auto_checked]
+        if not todo or self.checking or not _pkhex_ready():
+            return
+        self.auto_checked.update(e.id for e in todo)
+        self._check_all(todo, arrived=True)
+
     def _stop_checking(self) -> None:
         self.stop_check = True
 
-    def _check_all(self) -> None:
+    def _check_all(self, entries: list[bank.Entry] | None = None, arrived: bool = False) -> None:
+        """Check every record (or ``entries``) in the background; ``arrived``: the received Pokemon checked on their own,
+        started while the page is being built (so no redraw of its own to begin with)."""
         self.checking, self.stop_check = True, False
         self.check_progress = "..."
-        self.refresh()
+        if not arrived:
+            self.refresh()
         last = [0.0]
 
         def progress(done: int, total: int, entry) -> None:
@@ -374,16 +389,17 @@ class BankView(View):
 
         def work() -> None:
             try:
-                result = bank.check_all(self.bank, progress=progress, stop=lambda: self.stop_check)
+                result = bank.check_all(self.bank, entries, progress=progress, stop=lambda: self.stop_check)
                 done = len(result.legal) + len(result.illegal)
-                parts = [f"PKHeX checked {done}: {len(result.legal)} legal, {len(result.illegal)} not legal."]
+                what = " received Pokemon" if arrived else ""
+                parts = [f"PKHeX checked {done}{what}: {len(result.legal)} legal, {len(result.illegal)} not legal."]
                 if result.failed:
                     entry, why = result.failed[0]
                     parts.append(f"{len(result.failed)} could not be checked ({entry.describe()}: {why}).")
                 if self.stop_check:
                     parts.append("Stopped before the end.")
                 self._say(" ".join(parts), t.BAD if result.illegal or result.failed else t.GOOD)
-                if result.illegal and not self.app.bank_for:
+                if result.illegal and not self.app.bank_for and not arrived:
                     self.filter = "illegal"
             except Exception as exc:        # the helper missing or refusing to start
                 self._say(f"PKHeX could not check the bank: {exc}", t.BAD)

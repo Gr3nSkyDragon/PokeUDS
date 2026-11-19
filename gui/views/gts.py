@@ -55,6 +55,7 @@ class GtsView(View):
         self.gts_root = None                    # the bank's .gts; the tests hand in their own
         self.message, self.message_color = "", t.INFO
         self.working = ""                       # what runs in the background: "round", "browse", "list", "offer"
+        self.show_history = False               # Yours: finished listings and offers shown under History
         self.listing_entry = ""                 # the bank entry chosen to list
         self.wants: list[dict] = [{"species": 0, "min_level": 1, "max_level": 100, "shiny": False}]
         self.browse_format = ALL                 # every format: a listing of any generation shows
@@ -156,25 +157,40 @@ class GtsView(View):
         self.refresh()
 
     def _mine(self) -> ft.Control:
+        """Yours: the listings and offers still going. Finished ones (traded, taken down, ended, returned, lost) are
+        under History, shown on request."""
         items = self.gts.items()
-        if not items:
-            return t.card(t.heading("Yours"), t.label("No listings or offers yet.", size=12))
+        live = [i for i in items if i.live]
+        done = [i for i in items if not i.live]
         rows: list[ft.Control] = [t.heading("Yours")]
-        for item in items[:50]:
-            s = item.state
-            pokemon = s.get("pokemon") or {}
-            color = {"open": t.INFO, "waiting": t.INFO, "traded": t.GOOD, "failed": t.BAD}.get(item.status, t.MUTED)
-            actions = ([t.secondary("Take down", lambda e, i=item: self._withdraw(i), ft.Icons.REMOVE_CIRCLE_OUTLINE,
-                                    disabled=bool(self.working))]
-                       if item.kind == "listing" and item.status == "open" else [])
-            rows.append(ft.Row([
-                sprite(self.app, int(pokemon.get("species") or 0), shiny=bool(pokemon.get("shiny")), size=40,
-                       on_ready=self.refresh) if pokemon else ft.Icon(ft.Icons.SWAP_HORIZ, color=t.MUTED),
-                t.pill("Listing" if item.kind == "listing" else "Offer", color),
-                ft.Column([ft.Text(item.title(), color=t.TEXT, size=14), t.label(item.detail(), size=12)],
-                          spacing=1, expand=True),
-                *actions], spacing=12))
+        rows += [self._item_row(i) for i in live[:50]] or [t.label("No listings or offers going.", size=12)]
+        if done:
+            rows.append(ft.Row([t.label(f"History: {len(done)} finished", color=t.TEXT, size=13), ft.Container(expand=True),
+                                ft.TextButton("Hide" if self.show_history else "Show",
+                                              on_click=lambda e: self._toggle_history())]))
+            if self.show_history:
+                rows += [self._item_row(i) for i in done[:50]]
         return t.card(*rows, spacing=8)
+
+    def _toggle_history(self) -> None:
+        self.show_history = not self.show_history
+        self.refresh()
+
+    def _item_row(self, item) -> ft.Control:
+        """One listing or offer of ours: its Pokemon, what it is, where it stands, and Take down while it is open."""
+        s = item.state
+        pokemon = s.get("pokemon") or {}
+        color = {"open": t.INFO, "waiting": t.INFO, "traded": t.GOOD, "failed": t.BAD}.get(item.status, t.MUTED)
+        actions = ([t.secondary("Take down", lambda e, i=item: self._withdraw(i), ft.Icons.REMOVE_CIRCLE_OUTLINE,
+                                disabled=bool(self.working))]
+                   if item.kind == "listing" and item.status == "open" else [])
+        return ft.Row([
+            sprite(self.app, int(pokemon.get("species") or 0), shiny=bool(pokemon.get("shiny")), size=40,
+                   on_ready=self.refresh) if pokemon else ft.Icon(ft.Icons.SWAP_HORIZ, color=t.MUTED),
+            t.pill("Listing" if item.kind == "listing" else "Offer", color),
+            ft.Column([ft.Text(item.title(), color=t.TEXT, size=14), t.label(item.detail(), size=12)],
+                      spacing=1, expand=True),
+            *actions], spacing=12)
 
     # listing
 

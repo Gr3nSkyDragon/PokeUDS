@@ -278,6 +278,12 @@ both, and a bare `.pgf` takes them from PKHeX's copy of the same card. A made `.
 ("Darkrai\nwill be given to you as a gift!") unless `distribution_text` is given. The official texts are not in
 PKHeX. A Gen 5 card opened from a `.bin` is undated, as the file holds it.
 
+The event galleries keep the same files under other names: a **`.wc4`** is a `.pcd` (856 bytes), sometimes with its
+Pokemon stored unencrypted, which PokeUDS reads either way (all 247 of PKHeX's Gen 4 Pokemon cards read alike both
+ways); a **`.wc5full`** is a `.bin` (720 bytes). Of 100 `.wc5full` files from Shinygati's collection, 63 are exactly
+what PokeUDS makes; the other 37 were kept after receiving, with a received date and a checksum not renewed, both of
+which PokeUDS puts right before sending.
+
 Unmeasured: whether the games check anything these files don't show (the three zero bytes), and the gender signs
 and other characters the game draws from its own code points, which the text writer doesn't map.
 
@@ -343,12 +349,40 @@ traded from that trainer; one that leaves it open makes the receiver the OT (in 
 with OT gender 3; in Gen 6 only eggs do it). The card reaches the versions in `RestrictVersion`, a bit
 mask: 1 X / Sun, 2 Y / Moon, 4 Alpha Sapphire / Ultra Sun, 8 Omega Ruby / Ultra Moon, 0 all.
 
+### Official events
+
+The Gifts page lists every card PKHeX.Core carries for the game: Pokemon and eggs, items (the Eon Ticket, the Liberty
+Pass, the Enigma Stone), Battle Points, and Gen 4's other gifts (the Secret Key, Member Card and Oak's Letter,
+Pokéwalker courses, a Pokétch app). Each copy of an event in another language is its own entry. The Azure Flute is not
+in PKHeX's database, so it is not listed; a card file of it opens with **Open a card**.
+
+- **Keys:** a Pokemon card keeps the key every PokeUDS has used (card id, species, form: `0547-384-0`); another
+  language's copy of it is `-2`, `-3`..., and other cards are named by what they give (`0017-secretkey0`,
+  `2046-item574-3`). A copy with a title already listed is a revision and is left out (`gift list --all` shows them).
+- **Filters**, on one row with the search box: languages (tick several; **Universal** for cards meant for every
+  language), what it gives (**Pokemon/Eggs** or **Items/Key Items**), and for Pokemon, shininess (always, never, may
+  be; a fixed PID counts as shiny or not for the card's own OT) and **Non-legendary** or **Legendary/Mythical** (PKHeX's
+  lists; sub-legendaries count as legendary). The Pokemon filters go away with Items/Key Items chosen.
+- **Language** (`pokeuds/app/giftlang.py`), the first that knows:
+  1. **The event archive.** Project Pokemon's [EventsGallery](https://github.com/projectpokemon/EventsGallery) keeps
+     every Wonder Card in a folder per language. `scripts/event_languages.py` matches its files to PKHeX's cards by
+     fingerprint (the card's bytes less what receiving it changes) and writes only the languages to
+     `pokeuds/app/data/event_languages.json`: 3,035 of the 3,043 cards PKHeX lists (2026-11-19, EventsGallery
+     f1f3095). Every real event went out in one language; the few filed under several are PKHeX's placeholders.
+  2. **The card**: every Gen 5 card states it, a Gen 4 card through its Pokemon.
+  3. **The title**: Japanese, Korean and Chinese by their writing, the European languages by their words (910 right
+     of the 956 cards whose language is known, 29 not placed).
+  A card none of them places, or one filed under every language, is **Universal**, and is listed only when Universal
+  is ticked.
+
+The list (or the editor) scrolls on its own; the gift panel beside it, with Start sending, stays in view.
+
 ### The gift Pokemon by trade (simulated gifts)
 
 As pokeldn does for the Switch games without local gifts: the card's Pokemon, made as the builder's
 trainer (Trade page, Build one) would receive it, goes into the bank and from there into a trade. The Gifts page has three ways
-in: **Official events** (searchable), **Open a card** (`.wc6`/`.wc7`/`.wc6full`/`.wc7full`) and **Build your
-own**; each shows what the card gives, PKHeX's verdict, Keep its Pokemon in the bank, Offer in a trade,
+in: **Official events** (searchable and filtered, below), **Open a card** (`.wc6`/`.wc7`/`.wc6full`/`.wc7full`; for the
+DS games `.pcd`/`.wc4`/`.myg` and `.pgf`/`.wc5full`/`.bin`) and **Build your own**; each shows what the card gives, PKHeX's verdict, Keep its Pokemon in the bank, Offer in a trade,
 and Save the card (264 bytes) or the full file (784 bytes). From the command line:
 
 ```bash

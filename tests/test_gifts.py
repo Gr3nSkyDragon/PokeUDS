@@ -45,7 +45,7 @@ def test_card_142_eggs_are_legal(helper):
 
 
 def test_shiny_locked_event_and_bank(helper, tmp_path):
-    ray = next(c for c in helper.gifts("oras") if c["species_name"] == "Rayquaza" and c["shiny"] == "always")
+    ray = next(c for c in helper.gifts("oras") if c.get("species_name") == "Rayquaza" and c.get("shiny") == "always")
     gift = helper.gift("oras", key=ray["key"], trainer=TRAINER)
     p = gift.pokemon
     assert p.legal and p.summary["shiny"] and p.summary["ot_name"] == ray["ot"]          # the event's OT
@@ -54,7 +54,7 @@ def test_shiny_locked_event_and_bank(helper, tmp_path):
 
 
 def test_your_ot_card_takes_the_trainer(helper):
-    yours = next(c for c in helper.gifts("sm") if not c["ot"] and c["kind"] == "pokemon" and c["card_id"] > 0)
+    yours = next(c for c in helper.gifts("sm") if c["kind"] == "pokemon" and not c["ot"] and c["card_id"] > 0)
     p = helper.gift("sm", key=yours["key"], trainer=TRAINER).pokemon
     assert p.legal and p.summary["ot_name"] == "DANA" and p.summary["tid"] == 2468
 
@@ -395,3 +395,32 @@ def test_official_gen5_cards_open_into_the_editor_and_rebuild(helper):
         if fields["kind"] == "pokemon" and not any(fields["moves"]):
             continue                         # a card with no moves gets its level-up moves written in
         assert helper.card("bw", trainer=TRAINER, **fields).card_data == data, card["key"]
+
+
+# -- every official card, items and key items too --------------------------------------------------------------------
+
+def test_official_lists_hold_items_and_key_items(helper):
+    pt, hgss, bw = helper.gifts("pt"), helper.gifts("hgss"), helper.gifts("bw")
+    for cards in (pt, hgss, bw):
+        keys = [c["key"] for c in cards]
+        assert len(keys) == len(set(keys))
+    gives = {c["gives"] for c in pt}
+    assert {"Secret Key", "Member Card", "Oak's Letter"} <= gives
+    assert any(c["gives"] == "Pokéwalker course" for c in hgss)
+    passes = {c["card_language"] for c in bw if c["gives"] == "Liberty Pass"}
+    assert passes == {1, 2, 3, 4, 5, 7, 8}                         # one Liberty Pass per language
+    key = next(c["key"] for c in pt if c["gives"] == "Secret Key" and "Secret" in c["title"])
+    gift = helper.gift("pt", key=key)
+    assert gift.pokemon is None and len(gift.wifi_data) == 936 and gift.card["gives"] == "Secret Key"
+    assert helper.gift("pt", key="0184-492-0").card["kind"] == "pokemon"   # a Pokemon card keeps its old key
+    assert {c["category"] for c in helper.gifts("usum")} >= {"legendary", "mythical", ""}
+
+
+def test_a_wc5full_opens_as_the_gift_file_it_is(helper):
+    """A .wc5full is a .bin: one kept after receiving has a received date and a stale checksum, put right here."""
+    card = next(c for c in helper.gifts("bw") if c["kind"] == "pokemon")
+    clean = helper.gift("bw", key=card["key"]).wifi_data
+    received = bytearray(clean)
+    received[0xAC:0xB0] = b"\x11\x0b\x13\x00"                     # a received date
+    gift = helper.gift("bw", data=bytes(received))
+    assert gift.wifi_data == clean

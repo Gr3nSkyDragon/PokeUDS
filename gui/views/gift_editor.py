@@ -38,6 +38,7 @@ SHINY = (("random", "May be shiny"), ("always", "Always shiny"), ("never", "Neve
 SHINY_DS = {4: (("never", "Never shiny"), ("always", "Always shiny"), ("fixed", "Fixed PID")),
             5: (("random", "May be shiny"), ("always", "Always shiny"), ("never", "Never shiny"))}
 DS_FILES = {4: ("pcd", "myg"), 5: ("pgf", "bin")}        # the card, and the gift file the DS beacons carry
+DS_OPEN = {4: ("pcd", "wc4", "myg"), 5: ("pgf", "wc5full", "bin")}   # what opens: .wc4 = .pcd, .wc5full = .bin
 ABILITY = (("random12", "First or second"), ("random12h", "Any, hidden too"), ("1", "First"), ("2", "Second"),
            ("hidden", "Hidden"))
 GENDER = ((-1, "Random"), (0, "Male"), (1, "Female"), (2, "Genderless"))
@@ -642,7 +643,7 @@ class GiftEditor(View):
 
     async def _open(self, e) -> None:
         ext = f"wc{self.gen}"
-        cards = list(DS_FILES[self.gen]) if self.ds else [ext, ext + "full"]
+        cards = list(DS_OPEN[self.gen]) if self.ds else [ext, ext + "full"]
         files = await self.app.picker.pick_files(dialog_title="Open a gift", file_type=ft.FilePickerFileType.CUSTOM,
                                                  allowed_extensions=[giftfile.EXTENSION.lstrip("."), *cards])
         if not (files and files[0].path):

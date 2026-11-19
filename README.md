@@ -219,6 +219,8 @@ Online:
 
 Reference documentation:
 
+- [Project Pokemon's EventsGallery](https://github.com/projectpokemon/EventsGallery): the language each Mystery Gift
+  event went out in, matched to PKHeX's cards for the Gifts page's language filter (only the languages are kept)
 - [Project Pokemon's technical documents](https://projectpokemon.org/home/docs/gen-6/6th-and-7th-generation-wonder-card-map-r4/):
   theSLAYER's map of the local wireless event header, which the full-card layout follows
 - [3dbrew](https://www.3dbrew.org): the UDS, Download Play and CRO notes used to read the captures, and to rule out

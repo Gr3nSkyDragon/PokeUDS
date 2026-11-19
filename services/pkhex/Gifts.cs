@@ -73,18 +73,63 @@ static partial class Program
 
     static string GiftKey(MysteryGift g) => $"{g.CardID:0000}-{g.Species}-{g.Form}";
 
+    // A card's key before its copies are told apart: a Pokemon card's card id, species and form (the key every
+    // PokeUDS so far has used), anything else's card id and what it gives.
+    static string BaseKey(MysteryGift g) => g.IsEntity ? GiftKey(g) : $"{g.CardID:0000}-{NonEntityTag(g)}";
+
+    static string NonEntityTag(MysteryGift g) => g switch
+    {
+        PCD p when (int)p.Gift.GiftType != 3 => $"{p.Gift.GiftType.ToString().ToLowerInvariant()}{p.ItemID}",
+        WC7 { IsBP: true } => "bp",
+        WC7 { IsBean: true } => "beans",
+        _ when g.IsItem => $"item{g.ItemID}",
+        _ => "card",
+    };
+
     // -- listing ------------------------------------------------------------------------------
 
-    // Pokemon cards, one per key; with "all", every card for the game (items, revisions), each with its bytes.
+    // Every card the game can receive, newest card id first, each under one key: the first card with a base key
+    // keeps it, and its other copies with another title (the same event in another language) get "-2", "-3"... A
+    // copy with a title already listed under that key is a revision and is left out. Built once per game, so the
+    // keys are stable for a PKHeX.Core version.
+    static readonly Dictionary<string, List<(string Key, MysteryGift Gift)>> Keyed = [];
+
+    static List<(string Key, MysteryGift Gift)> KeyedGifts(Game game)
+    {
+        lock (Keyed)
+        {
+            if (Keyed.TryGetValue(game.Key, out var list))
+                return list;
+            list = [];
+            var titles = new Dictionary<string, List<string>>();
+            foreach (var gift in Table(game).Where(g => ForGame(game, g)).OrderByDescending(g => g.CardID))
+            {
+                var key = BaseKey(gift);
+                var title = gift.CardTitle.Trim();
+                if (!titles.TryGetValue(key, out var seen))
+                    titles[key] = seen = [];
+                if (seen.Contains(title))
+                    continue;
+                seen.Add(title);
+                list.Add((seen.Count == 1 ? key : $"{key}-{seen.Count}", gift));
+            }
+            return Keyed[game.Key] = list;
+        }
+    }
+
+    static MysteryGift KeyedGift(Game game, string key) =>
+        KeyedGifts(game).FirstOrDefault(x => x.Key == key).Gift ?? throw new ArgumentException($"no card {key} for this game");
+
+    // The cards, one per key (above); with "all", every card for the game, revisions too, each with its bytes.
     static JsonObject GiftList(Game game, bool all)
     {
         var list = new JsonArray();
-        var seen = new HashSet<string>();
-        foreach (var gift in Table(game).Where(g => (all || g.IsEntity) && ForGame(game, g)).OrderByDescending(g => g.CardID))
+        var keyed = KeyedGifts(game);
+        var keys = keyed.ToDictionary(x => x.Gift, x => x.Key, ReferenceEqualityComparer.Instance);
+        var cards = all ? Table(game).Where(g => ForGame(game, g)).OrderByDescending(g => g.CardID) : keyed.Select(x => x.Gift);
+        foreach (var gift in cards)
         {
-            var key = GiftKey(gift);
-            if (!seen.Add(key) && !all)
-                continue;
+            var key = keys.TryGetValue(gift, out var k) ? (string)k : BaseKey(gift);
             var info = CardInfo(game, gift, key);
             Undated(info);
             if (all && gift is DataMysteryGift)
@@ -97,6 +142,68 @@ static partial class Program
     static string ShinyName(Shiny s) => s switch
     {
         Shiny.Never => "never", Shiny.Random => "may be", Shiny.FixedValue => "fixed", _ => "always",
+    };
+
+    // The language a card states: its Pokemon's (a Gen 4 card's only one), else the one it is limited to; 0 when it
+    // states none (most Gen 6/7 cards, Gen 4 item cards), which the app reads from the title instead.
+    static int StatedLanguage(MysteryGift gift) => gift switch
+    {
+        PCD p => p.IsEntity ? p.Gift.PK.Language : 0,
+        PGF p => p.IsEntity && p.Language != 0 ? p.Language : p.RestrictLanguage,
+        WC6 w => w.RestrictLanguage != 0 ? w.RestrictLanguage : w.IsEntity ? w.Language : 0,
+        WC7 w => w.RestrictLanguage != 0 ? w.RestrictLanguage : w.IsEntity ? w.Language : 0,
+        _ => 0,
+    };
+
+    static string Category(MysteryGift gift) =>
+        !gift.IsEntity ? "" : SpeciesCategory.IsMythical(gift.Species) ? "mythical"
+        : SpeciesCategory.IsLegendary(gift.Species) || SpeciesCategory.IsSubLegendary(gift.Species) ? "legendary" : "";
+
+    // What a card gives, in words: a Pokemon, an item, or one of Gen 4's other gifts (a key item such as the Secret
+    // Key, a Pokewalker course, a Pokétch app).
+    static string Gives(MysteryGift gift) => gift switch
+    {
+        _ when gift.IsEntity => Name(Strings.Species, gift.Species) + (gift.IsEgg ? " egg" : ""),
+        PCD p => (int)p.Gift.GiftType switch
+        {
+            3 => Name(Strings.Item, p.ItemID),
+            8 => "Member Card", 9 => "Oak's Letter", 10 => "Azure Flute", 12 => "Secret Key",
+            11 => "Pokétch app", 14 => "Pokéwalker course", 15 => "Memorial Photo", 13 => "Pokémon movie",
+            4 => "Battle rule", 5 => "Goods",
+            _ => p.Gift.GiftType.ToString(),
+        },
+        WC7 { IsBP: true } w => $"{w.BP} BP",
+        WC7 { IsBean: true } => "Poké Beans",
+        _ when gift.IsItem => Name(Strings.Item, gift.ItemID),
+        _ => gift.CardTitle.Trim(),
+    };
+
+    // A card as a fingerprint: SHA-1 (16 hex digits) of its bytes with what receiving it changes cleared (the date and
+    // used flag; a Gen 4 card's Pokemon unencrypted and its received metadata at 0x348), so a card the event galleries
+    // kept after receiving it matches PKHeX's copy. The language table (pokeuds/app/data/event_languages.json, made by
+    // scripts/event_languages.py from Project Pokemon's EventsGallery) is keyed by it.
+    static string Fingerprint(MysteryGift gift)
+    {
+        byte[] b;
+        switch (gift)
+        {
+            case PCD p:
+                b = p.Data.ToArray();
+                PokeCrypto.DecryptIfEncrypted45(b.AsSpan(PgtPokemonAt, Pk4PartySize));
+                b.AsSpan(0x348, 0x10).Clear();
+                break;
+            case PGF p: b = p.Data.ToArray(); b.AsSpan(PgfDateAt, 4).Clear(); b[0xB4] = 0; break;
+            case WC6 w: b = w.Data.ToArray(); b.AsSpan(CardDateAt, 4).Clear(); b[0x52] &= 0xFD; break;
+            case WC7 w: b = w.Data.ToArray(); b.AsSpan(CardDateAt, 4).Clear(); b[0x52] &= 0xFD; break;
+            default: return "";
+        }
+        return Convert.ToHexString(System.Security.Cryptography.SHA1.HashData(b))[..16];
+    }
+
+    static JsonObject FingerprintReply(Game game, JsonObject request) => new()
+    {
+        ["ok"] = true,
+        ["fingerprint"] = Fingerprint(CardFromBytes(game, Convert.FromBase64String((string)request["data"]!))),
     };
 
     static JsonObject CardInfo(Game game, MysteryGift gift, string key = "")
@@ -113,6 +220,10 @@ static partial class Program
             },
             ["games"] = new JsonArray(game.Versions.Where(v => Reaches(gift, v))
                 .Select(v => (JsonNode)GameInfo.GetVersionName(v)).ToArray()),
+            ["card_language"] = StatedLanguage(gift),
+            ["fingerprint"] = Fingerprint(gift),
+            ["category"] = Category(gift),
+            ["gives"] = Gives(gift),
         };
         if (gift is WC6 or WC7 or PGF)
         {
@@ -134,7 +245,8 @@ static partial class Program
             info["species_name"] = Name(Strings.Species, gift.Species);
             info["form"] = gift.Form;
             info["level"] = gift.Level;
-            info["shiny"] = ShinyName(gift.Shiny);
+            // A fixed PID is shiny or not for the card's own OT, which PKHeX can tell.
+            info["shiny"] = gift.Shiny == Shiny.FixedValue ? (gift.IsShiny ? "always" : "never") : ShinyName(gift.Shiny);
             info["held_item"] = gift.HeldItem > 0 ? Name(Strings.Item, gift.HeldItem) : "";
             // A card with its own OT gives a Pokemon traded from that trainer; without one, the receiver is its OT.
             info["ot"] = gift.OriginalTrainerName;
@@ -188,8 +300,7 @@ static partial class Program
         MysteryGift gift;
         byte[]? header = null;
         if ((string?)request["key"] is { } key)
-            gift = Table(game).FirstOrDefault(g => g.IsEntity && GiftKey(g) == key && ForGame(game, g))
-                   ?? throw new ArgumentException($"no card {key} for this game");
+            gift = KeyedGift(game, key);
         else
             gift = CardFromBytes(game, Convert.FromBase64String((string)request["data"]!), out header);
         var reply = GiftReply(game, gift, request, custom: false, header);

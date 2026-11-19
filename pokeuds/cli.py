@@ -780,10 +780,11 @@ def cmd_build(args) -> int:
 
 
 def _gift_line(card: dict) -> str:
+    quantity = int(card.get("quantity") or 1)
     what = (f"{card.get('species_name', '?')} Lv {card.get('level', '?')}, shiny {card.get('shiny', '?')}"
             + (f", OT {card['ot']}" if card.get("ot") else ", your OT") if card["kind"] in ("pokemon", "egg") else
-            f"{card.get('item') or card['kind']} x{card.get('quantity', 1)}")
-    return f"{card['key']:<14} {card.get('date') or '----------':<10} {card['kind']:<7} {card['title'][:36]:<36} {what}"
+            f"{card.get('gives') or card.get('item') or card['kind']}" + (f" x{quantity}" if quantity > 1 else ""))
+    return f"{card['key']:<18} {card.get('date') or '----------':<10} {card['kind']:<7} {card['title'][:36]:<36} {what}"
 
 
 def cmd_gift(args) -> int:
@@ -1194,9 +1195,9 @@ def main(argv: list[str] | None = None) -> int:
         p.add_argument("--tid", type=int, default=12345)
         p.add_argument("--sid", type=int, default=54321)
 
-    p = gsub.add_parser("list", help="the official cards PKHeX knows for a game")
-    p.add_argument("game", choices=GAME_KEYS)
-    p.add_argument("--search", help="only cards mentioning this (title, species, OT)")
+    p = gsub.add_parser("list", help="the official cards PKHeX knows for a game: Pokemon, items and Gen 4's key items")
+    p.add_argument("game", choices=GAME_KEYS + DS_GAME_KEYS)
+    p.add_argument("--search", help="only cards mentioning this (title, species, item, OT)")
     p.set_defaults(func=cmd_gift)
     for name, text in (("show", "show a card (official key, .wc6/.wc7 or full file) and what it gives"),
                        ("make", "make a card's Pokemon for the trainer, for a trade (default: into the bank)")):

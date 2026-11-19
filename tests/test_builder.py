@@ -135,7 +135,7 @@ def test_gifts_page_builds_headless(tmp_path, monkeypatch):
     view = GiftsView(app)
     view.cards["oras"] = pkhex.shared().gifts("oras")
     view.control()
-    ray = next(c for c in view.cards["oras"] if c["species_name"] == "Rayquaza" and c["shiny"] == "always")
+    ray = next(c for c in view.cards["oras"] if c.get("species_name") == "Rayquaza" and c.get("shiny") == "always")
     view.gift = pkhex.shared().gift("oras", key=ray["key"], trainer=view.trainer())
     view.control()                                   # with the result panel
     view._keep(None)

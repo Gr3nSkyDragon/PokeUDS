@@ -284,8 +284,7 @@ static partial class Program
         MysteryGift gift;
         byte[]? header = null;
         if ((string?)request["key"] is { } key)
-            gift = Table(game).FirstOrDefault(g => GiftKey(g) == key && ForGame(game, g))
-                   ?? throw new ArgumentException($"no card {key} for this game");
+            gift = KeyedGift(game, key);
         else
             gift = CardFromBytes(game, Convert.FromBase64String((string)request["data"]!), out header);
         var card = (DataMysteryGift)gift;

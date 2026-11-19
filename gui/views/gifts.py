@@ -2,13 +2,17 @@
 
 Three ways in, one result panel:
 
-- Official events: the cards PKHeX.Core carries for the game, searchable.
-- Open a card: a .wc6/.wc7, or a 784-byte .wc6full/.wc7full distribution file.
+- Official events: the cards PKHeX.Core carries for the game, Pokemon, items and Gen 4's key items alike: searchable,
+  and filtered by what they give, language, shininess and legendary or mythical.
+- Open a card: a .wc6/.wc7, or a 784-byte .wc6full/.wc7full distribution file; for the DS games a .pcd/.wc4/.myg or
+  a .pgf/.wc5full/.bin.
 - Build your own: a custom card from a form, saved as a card file.
 
 A card's Pokemon is made as the Builder's trainer would receive it, checked by PKHeX, and can be kept in the
 bank and offered in a trade: the gift Pokemon by trade, until local distribution is understood. A custom
 card's Pokemon matches no real event, so PKHeX flags it; the page says so.
+
+The list (or the editor) scrolls on its own, and the gift panel beside it stays in view with its Start sending.
 
 The fifth game, "Nintendo DS", holds Diamond/Pearl, Platinum, HeartGold/SoulSilver, Black/White and Black 2/White 2: their
 official cards, card files and custom cards (a Pokemon or an item), sent over DS local wireless
@@ -25,7 +29,7 @@ from pathlib import Path
 import flet as ft
 
 from pokeuds import pkx
-from pokeuds.app import i18n, bank, catalog, giftfile
+from pokeuds.app import i18n, bank, catalog, giftfile, giftlang
 from pokeuds.app.settings import data_dir
 from pokeuds.app.builder import Trainer
 from pokeuds.games.ds import delivery as ds
@@ -39,8 +43,19 @@ from .sprite import sprite
 GAMES = {"xy": "X / Y", "oras": "Omega Ruby / Alpha Sapphire", "sm": "Sun / Moon", "usum": "Ultra Sun / Ultra Moon",
          "ds": "Nintendo DS (Gen 4 / Gen 5)"}
 DS_EXTENSIONS = {4: ("pcd", "myg"), 5: ("pgf", "bin")}   # the card, and the Wi-Fi file the beacons carry
+# Every file a DS game's card is found as: a .wc4 is a .pcd (its Pokemon maybe unencrypted), a .wc5full is a .bin.
+DS_OPEN = {4: ("pcd", "wc4", "myg"), 5: ("pgf", "wc5full", "bin")}
+KINDS = (("all", "Everything"), ("pokemon", "Pokemon/Eggs"), ("other", "Items/Key Items"))
+SHINIES = (("any", "Shiny or not"), ("always", "Always shiny"), ("never", "Never shiny"), ("may be", "May be shiny"))
+CATEGORIES = (("any", "Any Pokemon"), ("regular", "Non-legendary"), ("special", "Legendary/Mythical"))
 MODES = (("official", "Official events"), ("file", "Open a card"), ("custom", "Build your own"))
 SHOWN = 150
+# The filter row's boxes, all as tall as a dense dropdown (48 px; it will not go shorter): the search box padded to
+# that (its text line and 16 above and below, measured), the language box a container of that height. Each takes a share
+# of the row (expand), so the row stays one row and the boxes narrow together in a narrow window.
+FILTER_HEIGHT = 48
+SEARCH_PADDING = ft.Padding(12, 16, 12, 16)
+FILTER_SHARES = {"search": 4, "languages": 4, "kind": 3, "shiny": 4, "category": 4}
 
 
 def _helper_ready() -> bool:
@@ -59,6 +74,8 @@ class GiftsView(View):
         self.ds_language = ""               # the receiving cartridge's language; "" the card's own (Gen 5) or English
         self.mode = "official"
         self.search = ""
+        # The list's filters, for this visit: languages chosen (none: all; giftlang.UNIVERSAL for the Universal ones).
+        self.filters: dict = {"kind": "all", "languages": set(), "shiny": "any", "category": "any"}
         self.cards: dict[str, list[dict]] = {}
         self.loading = False
         self.selected = ""
@@ -69,6 +86,8 @@ class GiftsView(View):
         self.editor = GiftEditor(app, self.game, self.trainer, self._editor_result)
         self.sprite_status = ft.Container(visible=False)   # the cards' sprites downloading (the first time)
         self._watching = False
+        self.list_box = ft.Column(spacing=4)          # the official cards shown, redrawn in place as languages are ticked
+        self.list_count = t.label("", size=12)
 
     @property
     def is_ds(self) -> bool:
@@ -116,9 +135,13 @@ class GiftsView(View):
         if self.message:
             controls.append(t.notice(self.message, self.message_color))
         left = {"official": self._official, "file": self._file, "custom": self._custom}[self.mode]()
-        controls.append(ft.Row([ft.Container(left, expand=True), ft.Container(self._result(), width=400)],
-                               vertical_alignment=ft.CrossAxisAlignment.START, spacing=t.GAP))
-        return ft.Column(controls, spacing=t.GAP, scroll=ft.ScrollMode.AUTO)
+        # The page itself does not scroll: the list (or the editor) does, and the gift panel beside it, Start sending
+        # and all, stays where it is; it scrolls only when it is taller than the window.
+        controls.append(ft.Row([
+            ft.Column([left], scroll=ft.ScrollMode.AUTO, expand=True),
+            ft.Column([self._result()], scroll=ft.ScrollMode.AUTO, width=400),
+        ], vertical_alignment=ft.CrossAxisAlignment.START, spacing=t.GAP, expand=True))
+        return ft.Column(controls, spacing=t.GAP, expand=True)
 
     def _official(self) -> ft.Control:
         cards = self.cards.get(self.helper_game)
@@ -126,31 +149,146 @@ class GiftsView(View):
             self._load(self.helper_game)
             return t.card(ft.Row([ft.ProgressRing(width=18, height=18),
                                   t.label("Reading PKHeX's event cards...")], spacing=12))
+        self.list_count = t.label("", size=12)
+        self.list_box = ft.Column(spacing=4)
+        self._fill_list(cards)
+        rows: list[ft.Control] = [self._filter_row(cards), self.list_count, self._sprite_progress(), self.list_box]
+        return t.card(*rows, spacing=4, padding=12)
+
+    def _fill_list(self, cards: list[dict]) -> None:
+        """The cards the search and filters leave, into the list box (and how many, above it)."""
         needle = self.search.lower()
-        shown = [c for c in cards if not needle or needle in " ".join(
-            str(c.get(k, "")) for k in ("title", "species_name", "ot", "card_id", "held_item")).lower()]
-        rows: list[ft.Control] = [
-            ft.TextField(hint_text="Search title, species, OT or card number", value=self.search, dense=True,
-                         prefix_icon=ft.Icons.SEARCH, on_submit=self._search, on_blur=self._search),
-            t.label(f"{len(shown)} of {len(cards)} Pokemon cards" + (f", first {SHOWN} shown" if len(shown) > SHOWN else "")
-                    + ". A card with its own OT gives a Pokemon traded from that trainer; the others make you its OT.",
-                    size=12),
-        ]
+        shown = [c for c in self._filtered(cards) if not needle or needle in " ".join(
+            str(c.get(k, "")) for k in ("title", "species_name", "ot", "card_id", "held_item", "gives")).lower()]
+        self.list_count.value = (
+            f"{len(shown)} of {len(cards)} cards" + (f", first {SHOWN} shown" if len(shown) > SHOWN else "")
+            + ". A card with its own OT gives a Pokemon traded from that trainer; the others make you its OT. "
+            "Languages are the ones each event went out in (Project Pokemon's event archive); Universal "
+            "holds what is for every language, or cannot be told.")
+        rows: list[ft.Control] = []
         for c in shown[:SHOWN]:
             chosen = c["key"] == self.selected
+            pokemon = c["kind"] in ("pokemon", "egg")
+            if pokemon:
+                look = sprite(self.app, c.get("species", 0), form=c.get("form", 0), shiny=c.get("shiny") == "always",
+                              size=44)
+                what = (f"{c['species_name']} Lv {c['level']}" + (" egg" if c["kind"] == "egg" else ""),
+                        {"always": "shiny", "may be": "may be shiny"}.get(c.get("shiny", ""), ""),
+                        f"OT {c['ot']}" if c.get("ot") else "your OT")
+            else:
+                look = ft.Container(ft.Icon(ft.Icons.REDEEM if c["kind"] == "other" else ft.Icons.SHOPPING_BAG_OUTLINED,
+                                            color=t.MUTED, size=26), width=44, height=44, alignment=ft.Alignment.CENTER)
+                quantity = int(c.get("quantity") or 1)
+                what = (f"{c.get('gives') or c['kind']}" + (f" x{quantity}" if quantity > 1 else ""),)
+            language = giftlang.describe(giftlang.of_card(c, self.generation), self.generation)
             rows.append(ft.Container(ft.Row([
-                sprite(self.app, c.get("species", 0), form=c.get("form", 0), shiny=c.get("shiny") == "always", size=44),
+                look,
                 t.pill(f"{c['card_id']:04d}", t.ACCENT),
                 ft.Column([ft.Text(c["title"] or "(untitled)", size=14, color=t.TEXT),
-                           t.label(" · ".join(x for x in (
-                               f"{c['species_name']} Lv {c['level']}" + (" egg" if c["kind"] == "egg" else ""),
-                               {"always": "shiny", "may be": "may be shiny"}.get(c["shiny"], ""),
-                               f"OT {c['ot']}" if c["ot"] else "your OT", c.get("date", "")) if x), size=12)],
+                           t.label(" · ".join(x for x in (*what, language, c.get("date", "")) if x), size=12)],
                           spacing=1, expand=True),
             ], spacing=12), padding=8, border_radius=8, bgcolor=t.RAISED if chosen else None, ink=True,
                 on_click=lambda e, k=c["key"]: self._pick(k)))
-        rows.insert(2, self._sprite_progress())     # the sprite() calls above have started any downloads
-        return t.card(*rows, spacing=4, padding=12)
+        self.list_box.controls = rows
+
+    def _redraw_list(self) -> None:
+        """The list again for the filters as they are now, without rebuilding the page (an open menu stays open)."""
+        cards = self.cards.get(self.helper_game)
+        if cards is None:
+            return
+        self._fill_list(cards)
+        for control in (self.list_count, self.list_box):
+            try:
+                control.update()
+            except (RuntimeError, AssertionError):    # not on a page (a test) or the page was left
+                pass
+
+    # -- filters --------------------------------------------------------------------------------
+
+    def _filtered(self, cards: list[dict]) -> list[dict]:
+        f, gen = self.filters, self.generation
+        pokemon_only = f["kind"] != "other"          # shiny and legendary say nothing about an item
+        out = []
+        for c in cards:
+            pokemon = c["kind"] in ("pokemon", "egg")
+            if f["kind"] == "pokemon" and not pokemon or f["kind"] == "other" and pokemon:
+                continue
+            if not giftlang.matches(giftlang.of_card(c, gen), gen, f["languages"]):
+                continue
+            if pokemon_only and f["shiny"] != "any" and (not pokemon or c.get("shiny") != f["shiny"]):
+                continue
+            special = bool(c.get("category"))
+            if pokemon_only and f["category"] != "any" and (not pokemon or special != (f["category"] == "special")):
+                continue
+            out.append(c)
+        return out
+
+    def _filter_row(self, cards: list[dict]) -> ft.Control:
+        """The search box and the filters on one row: what the card gives, its languages (several may be ticked), and
+        for Pokemon, shiny and legendary/mythical."""
+        f = self.filters
+
+        def pick(name: str, options) -> ft.Dropdown:
+            return ft.Dropdown(value=str(f[name]), dense=True, expand=FILTER_SHARES[name],
+                               options=[ft.DropdownOption(key=str(k), text=v) for k, v in options],
+                               on_select=lambda e: self._filter(name, e.control.value))
+
+        controls: list[ft.Control] = [
+            ft.TextField(hint_text="Search title, species, item, OT, no.", value=self.search, dense=True,
+                         expand=FILTER_SHARES["search"], content_padding=SEARCH_PADDING,
+                         prefix_icon=ft.Icons.SEARCH, on_submit=self._search, on_blur=self._search),
+            self._languages_menu(cards),
+            pick("kind", KINDS),
+        ]
+        if f["kind"] != "other":
+            controls += [pick("shiny", SHINIES), pick("category", CATEGORIES)]
+        return ft.Row(controls, spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER)
+
+    def _languages_menu(self, cards: list[dict]) -> ft.Control:
+        """A drop-down of ticks: Universal, then each language the game's cards went out in. The list follows each tick
+        and the menu stays open, so several can be ticked in one go."""
+        gen, chosen = self.generation, self.filters["languages"]
+        present = sorted({n for c in cards for n in giftlang.of_card(c, gen)}, key=lambda n: giftlang.NAMES.get(n, ""))
+        options = [(giftlang.UNIVERSAL, "Universal")] + [(n, giftlang.NAMES[n]) for n in present if n in giftlang.NAMES]
+        chosen &= {n for n, _ in options}
+        caption = ft.Text(self._languages_caption(options), no_wrap=True, overflow=ft.TextOverflow.ELLIPSIS, expand=True)
+
+        def toggle(e, n: int) -> None:
+            chosen.symmetric_difference_update({n})
+            e.control.leading = ft.Icon(ft.Icons.CHECK_BOX if n in chosen else ft.Icons.CHECK_BOX_OUTLINE_BLANK, size=18)
+            caption.value = self._languages_caption(options)
+            for control in (e.control, caption):
+                control.update()
+            self._redraw_list()
+
+        items = [ft.MenuItemButton(content=ft.Text(name), close_on_click=False, on_click=lambda e, n=n: toggle(e, n),
+                                   leading=ft.Icon(ft.Icons.CHECK_BOX if n in chosen else ft.Icons.CHECK_BOX_OUTLINE_BLANK,
+                                                   size=18))
+                 for n, name in options]
+        if chosen:
+            items.append(ft.MenuItemButton(content=ft.Text("Every language"), on_click=lambda e: self._every_language(),
+                                           leading=ft.Icon(ft.Icons.CLEAR_ALL, size=18)))
+        menu = ft.SubmenuButton(content=ft.Row([ft.Icon(ft.Icons.TRANSLATE, size=18), caption], spacing=8, expand=True),
+                                controls=items, trailing=ft.Icon(ft.Icons.ARROW_DROP_DOWN), expand=True)
+        # The box is the container's (outlined like the dropdowns beside it); the menu bar itself draws nothing.
+        return ft.Container(ft.MenuBar(controls=[menu], expand=True,
+                                       style=ft.MenuStyle(bgcolor=ft.Colors.TRANSPARENT, elevation=0,
+                                                          padding=ft.Padding(0, 0, 0, 0))),
+                            border=ft.Border.all(1, t.MUTED), border_radius=4, height=FILTER_HEIGHT,
+                            expand=FILTER_SHARES["languages"], alignment=ft.Alignment.CENTER_LEFT)
+
+    def _languages_caption(self, options) -> str:
+        names = [name for n, name in options if n in self.filters["languages"]]
+        return "Every language" if not names else names[0] if len(names) == 1 else f"{len(names)} languages"
+
+    def _every_language(self) -> None:
+        self.filters["languages"] = set()
+        self.refresh()
+
+    def _filter(self, name: str, value) -> None:
+        if self.filters.get(name) != value:
+            self.filters[name] = value
+            self.refresh()
 
     # -- the sprites' first download ------------------------------------------------------------
 
@@ -195,14 +333,15 @@ class GiftsView(View):
 
     def _file(self) -> ft.Control:
         if self.is_ds:
-            card_ext, wifi_ext = DS_EXTENSIONS[self.generation]
-            size = "856" if self.generation == 4 else "204"
-            wifi = ds.GEN4_FILE_SIZE if self.generation == 4 else ds.GEN5_FILE_SIZE
+            four = self.generation == 4
             return t.card(
                 t.heading("Open a card"),
-                t.label(f"A .{card_ext} ({size} bytes, as PKHeX and the event galleries keep them) or a .{wifi_ext} "
-                        f"({wifi} bytes: the file the game's Wi-Fi Mystery Gift downloaded, which the DS beacons carry "
-                        "too). The DS game above decides how it is read."),
+                t.label("A .pcd or .wc4 (856 bytes, the Gen 4 card; a .wc4 may keep its Pokemon unencrypted), or a .myg "
+                        "(936 bytes: the gift file the DS beacons carry)." if four else
+                        "A .pgf (204 bytes, the Gen 5 card), or a .bin or .wc5full (720 bytes, the same file under two "
+                        "names: the gift file the DS beacons carry). Its received date and checksum are put right "
+                        "before it is sent."),
+                t.label("The DS game above decides how it is read.", size=12),
                 t.primary("Choose a card file...", self._open, ft.Icons.FILE_OPEN, disabled=self.working),
                 spacing=12)
         return t.card(
@@ -269,9 +408,10 @@ class GiftsView(View):
         ]
         p = g.pokemon
         if p is None:
-            what = c.get("item") or c["kind"]
-            rows.append(t.label(f"Gives {what} x{c.get('quantity', 1)}. Only a Mystery Gift can deliver this, not a trade.",
-                                color=t.TEXT))
+            what = c.get("gives") or c.get("item") or c["kind"]
+            quantity = int(c.get("quantity") or 1)
+            rows.append(t.label(f"Gives {what}" + (f" x{quantity}" if quantity > 1 else "")
+                                + ". Only a Mystery Gift can deliver this, not a trade.", color=t.TEXT))
             rows.append(ft.Divider(color=t.LINE))
             rows += self._wireless()
         else:
@@ -441,7 +581,7 @@ class GiftsView(View):
 
     async def _open(self, e) -> None:
         ext = f"wc{self.generation}"
-        allowed = list(DS_EXTENSIONS[self.generation]) if self.is_ds else [ext, ext + "full"]
+        allowed = list(DS_OPEN[self.generation]) if self.is_ds else [ext, ext + "full"]
         files = await self.app.picker.pick_files(dialog_title="Open a Mystery Gift card", file_type=ft.FilePickerFileType.CUSTOM,
                                                  allowed_extensions=allowed)
         if not (files and files[0].path):
@@ -461,11 +601,13 @@ class GiftsView(View):
 
     def _game(self, e) -> None:
         self.game = e.control.value
+        self.filters["languages"] = set()
         self.selected, self.gift, self.saved, self.message = "", None, None, ""
         self.refresh()
 
     def _ds_game(self, e) -> None:
         self.ds_game = e.control.value
+        self.filters["languages"] = set()
         self.selected, self.gift, self.saved, self.message = "", None, None, ""
         self.refresh()
 

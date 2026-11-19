@@ -90,6 +90,7 @@ static partial class Program
             "gift" => Gift(game, request),
             "card" => BuildCard(game, request),
             "card_fields" => CardFieldsReply(game, request),
+            "fingerprint" => FingerprintReply(game, request),
             "migrate" => Migrate(game, request),
             _ => throw new ArgumentException($"unknown cmd {cmd}"),
         };

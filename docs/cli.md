@@ -173,7 +173,8 @@ python -m pokeuds gift list bw --search Darkrai
 python -m pokeuds gift distribute bw KEY --radio esp32 --language ENG
 ```
 
-The source is an official card's key, a `.pcd`/`.pgf`, or a Wi-Fi gift file (`.myg`, 936 bytes; `.bin`, 720).
+The source is an official card's key (`gift list` shows them, items and Gen 4's key items too), a `.pcd`/`.wc4`/`.pgf`,
+or a gift file (`.myg`, 936 bytes; `.bin` or `.wc5full`, 720).
 `--language` is the receiving cartridge's: `ENG`, `JPN`, `FRE`, `ITA`, `GER`, `SPA` or `KOR` (default: a Gen 5 card's
 own, else `ENG`). It sends on channel 7 from `02:00:00:00:00:01`; `--mac` does not apply. On the DS: Mystery Gift,
 Receive Gift, the wireless option.

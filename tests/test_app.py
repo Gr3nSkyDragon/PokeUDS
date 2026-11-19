@@ -442,3 +442,120 @@ def test_the_card_editor_builds_ds_cards(tmp_path, monkeypatch):
     assert view.editor.game == "hgss" and view.mode == "custom"
     view.follow_editor("b2w2")
     assert (view.game, view.ds_game) == ("ds", "b2w2")
+
+
+def test_gift_list_filters_and_keeps_the_gift_in_view(tmp_path, monkeypatch):
+    """Official events: filtered by what a card gives, its languages (several at once, and Universal for what is for
+    everyone or cannot be told), and for Pokemon shininess and legendary/mythical; the list scrolls, the gift panel
+    does not."""
+    pytest.importorskip("flet")
+    import flet as ft
+
+    import gui.views.gifts as gifts_page
+    from gui.app import App
+    from gui.views.gifts import GiftsView
+    from pokeuds.app import giftlang
+
+    monkeypatch.setattr(gifts_page, "_helper_ready", lambda: True)
+    monkeypatch.setattr(giftlang, "_table", lambda: {})                     # the cards below are not in the archive
+    app = App(None, Settings(radio="esp32", output=str(tmp_path / "received")))
+    view = GiftsView(app)
+    base = {"card_id": 1, "date": "", "ot": "", "level": 50, "form": 0, "species_name": "Mew", "species": 151}
+    cards = [
+        {**base, "key": "a", "kind": "pokemon", "title": "Get Mew!", "card_language": 0, "shiny": "never", "category": "mythical"},
+        {**base, "key": "b", "kind": "pokemon", "title": "Voici Mew!", "card_language": 0, "shiny": "always", "category": "mythical"},
+        {**base, "key": "c", "kind": "pokemon", "title": "Zekrom!", "card_language": 0, "shiny": "never", "category": "legendary"},
+        {**base, "key": "d", "kind": "pokemon", "title": "A Pikachu", "card_language": 2, "shiny": "may be", "category": ""},
+        {**base, "key": "e", "kind": "other", "title": "La Lettre Chen!", "card_language": 0, "gives": "Oak's Letter", "category": ""},
+        {**base, "key": "f", "kind": "item", "title": "Get Oak's Letter!", "card_language": 0, "gives": "Master Ball", "category": ""},
+    ]
+    view.game = "oras"
+    keys = lambda: [c["key"] for c in view._filtered(cards)]
+    assert keys() == ["a", "b", "c", "d", "e", "f"]
+    view.filters["languages"] = {2}                                        # English only: not "Zekrom!" (no language)
+    assert keys() == ["a", "d", "f"]
+    view.filters["languages"] = {2, 3}                                     # English and French
+    assert keys() == ["a", "b", "d", "e", "f"]
+    view.filters["languages"] = {giftlang.UNIVERSAL}
+    assert keys() == ["c"]
+    view.filters.update(languages=set(), kind="other")
+    assert keys() == ["e", "f"]
+    view.filters.update(shiny="always", category="special")                # Items/Key Items: these do not apply
+    assert keys() == ["e", "f"]
+    view.filters.update(kind="pokemon", shiny="always", category="any")
+    assert keys() == ["b"]
+    view.filters.update(shiny="any", category="special")
+    assert keys() == ["a", "b", "c"]
+    view.filters.update(category="regular")
+    assert keys() == ["d"]
+
+    view.cards["oras"] = cards
+    view.filters.update(kind="other", category="any")
+    row = view._filter_row(cards)
+    assert len(row.controls) == 3                                          # search, languages, kind: no Pokemon filters
+    view.filters["kind"] = "all"
+    row = view._filter_row(cards)
+    assert len(row.controls) == 5 and isinstance(row.controls[0], ft.TextField)
+    assert [o.text for o in row.controls[2].options] == ["Everything", "Pokemon/Eggs", "Items/Key Items"]
+    assert [o.text for o in row.controls[4].options] == ["Any Pokemon", "Non-legendary", "Legendary/Mythical"]
+    page = view.build()
+    assert page.expand and page.scroll is None                             # the page does not scroll
+    panels = page.controls[-1]
+    assert isinstance(panels, ft.Row) and panels.expand
+    listing, gift = panels.controls
+    assert listing.scroll == ft.ScrollMode.AUTO and listing.expand and gift.width == 400
+
+
+def test_gts_yours_keeps_finished_trades_under_history(tmp_path):
+    """Yours shows what is still going; a traded, taken-down or ended listing waits under History, shown on request."""
+    pytest.importorskip("flet")
+    import json
+
+    from gui.app import App
+    from gui.views.gts import GtsView
+
+    root = tmp_path / "gts"
+    for n, (status, title) in enumerate((("open", "Pikachu Lv 30"), ("traded", "Mew Lv 5"), ("withdrawn", "Eevee Lv 9"))):
+        (root / f"listing-{n}").mkdir(parents=True)
+        (root / f"listing-{n}" / "state.json").write_text(json.dumps(
+            {"id": str(n), "kind": "listing", "status": status, "title": title, "wants": [], "got": "Eevee",
+             "created": 10 - n}), encoding="utf-8")
+    app = App(None, Settings(bank=str(tmp_path / "bank"), output=str(tmp_path / "received")))
+    view = GtsView(app)
+    view.gts_root = root
+
+    def shown() -> str:
+        return repr(view._mine())
+
+    assert "Pikachu Lv 30" in shown() and "Mew Lv 5" not in shown() and "History: 2 finished" in shown()
+    view._toggle_history()
+    assert "Mew Lv 5" in shown() and "Eevee Lv 9" in shown()
+
+
+def test_the_bank_checks_received_pokemon_by_itself(tmp_path, monkeypatch):
+    """A Pokemon from the received folder goes to PKHeX on its own; one added by hand waits for Check."""
+    pytest.importorskip("flet")
+    import gui.views.bank as bank_page
+    from gui.app import App
+    from gui.views.bank import BankView
+    from pokeuds.app import bank as banking
+
+    monkeypatch.setattr(bank_page, "_pkhex_ready", lambda: True)
+    checked = []
+
+    def check_all(b, entries=None, progress=None, stop=None):
+        checked.extend(e.id for e in entries)
+        return banking.Checked()
+
+    monkeypatch.setattr(banking, "check_all", check_all)
+    monkeypatch.setattr(bank_page.threading, "Thread", lambda target, **kw: type("T", (), {"start": lambda self: target()})())
+    app = App(None, Settings(bank=str(tmp_path / "bank"), output=str(tmp_path / "received")))
+    view = BankView(app)
+    from pokeuds.radio.demo import sample_mon
+
+    received = view.bank.deposit(sample_mon(1, 4, 12, "CHARMY").to_file(), "pk1", source="received")[0]
+    view.bank.deposit(sample_mon(1, 7, 12, "SQUIRT").to_file(), "pk1", source="imported")
+    view.control()
+    assert checked == [received.id]
+    view.control()                                                         # once a visit, not on every redraw
+    assert checked == [received.id]

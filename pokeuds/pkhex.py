@@ -286,6 +286,10 @@ class Helper:
         return self._gift(self.request("card", game=game, trainer=trainer or {},
                                        **{k: v for k, v in fields.items() if v is not None}))
 
+    def fingerprint(self, game: str, data: bytes) -> str:
+        """A card file's fingerprint (services/pkhex/Gifts.cs ``Fingerprint``): what the language table is keyed by."""
+        return self.request("fingerprint", game=game, data=base64.b64encode(data).decode())["fingerprint"]
+
     def card_fields(self, game: str, *, key: str | None = None, data: bytes | None = None) -> dict:
         """Any card (an official key, or a .wc6/.wc7/full file's bytes) as the editor's fields, which ``card`` takes
         back unchanged: the schema is in services/pkhex/CardEditor.cs and docs/wonder_cards.md."""
