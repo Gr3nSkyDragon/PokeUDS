@@ -63,10 +63,28 @@ def test_a_changed_firmware_file_is_refused(tmp_path, monkeypatch):
 def test_what_to_install():
     assert board.advice(board.Identity("COM4", (2, 0), "2.0", "", "uds")) == ""
     assert "newer" in board.advice(board.Identity("COM4", (1, 8), "1.8", "", "gblink"))
+    assert board.advice(board.Identity("COM4", (2, 1), "2.1", "", "uds")) == ""         # 2.1's 3DS-only line
+    assert board.advice(board.Identity("COM4", (2, 1), "2.1", "", "ldn")) == ""         # both sides, as PokeUDS bundles
     assert "newer" in board.advice(board.Identity("COM4", (1, 7), "1.7", "", ""))
     for version, build in (((1, 9), "vcadapter"), ((2, 0), "aio")):    # the standalone board's line
         text = board.advice(board.Identity("COM4", version, f"{version[0]}.{version[1]}", "", build))
         assert "standalone" in text and "2.0-uds" in text
+
+
+def test_the_3ds_only_line_is_offered_as_optional(monkeypatch):
+    """Once PokeUDS bundles 2.1-uds, a board on 2.1-ldn (or 2.0-uds) works but is told it need not restart."""
+    monkeypatch.setattr(board, "FIRMWARE", "2.1-uds")
+    monkeypatch.setattr(board, "FIRMWARE_VERSION", (2, 1))
+    assert board.advice(board.Identity("COM4", (2, 1), "2.1", "", "uds")) == ""
+    assert board.advice(board.Identity("COM4", (2, 1), "2.1", "", "ldn")).startswith("Optional")
+    assert "newer" in board.advice(board.Identity("COM4", (2, 0), "2.0", "", "ldn"))
+
+
+def test_builds_are_described():
+    assert board.describe(board.Identity("COM4", (2, 1), "2.1", "", "uds")) == "uds line, 3DS side only"
+    assert board.describe(board.Identity("COM4", (2, 1), "2.1", "", "ldn")) == "ldn line, 3DS and Switch sides"
+    assert "2.1 calls it ldn" in board.describe(board.Identity("COM4", (2, 0), "2.0", "", "ldn"))
+    assert board.has_switch((2, 0), "uds") and not board.has_switch((2, 1), "uds")
 
 
 def test_image_check(tmp_path):

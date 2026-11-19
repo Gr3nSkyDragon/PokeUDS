@@ -66,6 +66,37 @@ def board_ports() -> list[str]:
     return native + [p.device for p in ports if (p.vid, p.pid) in BRIDGES]
 
 
+def usb_serial(device: str) -> str:
+    """The USB serial number of the port ``device`` ("" when it has none or cannot be listed). The S3, C3 and C6
+    give their MAC address there, so it names the board whatever port name the system gives it."""
+    try:
+        from serial.tools import list_ports
+
+        return next((getattr(p, "serial_number", None) or "" for p in list_ports.comports() if p.device == device), "")
+    except (ImportError, OSError):
+        return ""
+
+
+def find_again(name: str, serial: str) -> str | None:
+    """Where the board that was on ``name`` is now, after it restarted (a board with the Switch side does on the first
+    HELLO): ``name`` while that port is there, else the port with the board's USB ``serial`` number, since macOS (and
+    sometimes Linux) can bring it back under another name (/dev/cu.usbmodem1101, then ...1103). None while it is not
+    back yet. Never another board: with no serial number to match, a missing port stays missing."""
+    try:
+        from serial.tools import list_ports
+
+        ports = list(list_ports.comports())
+    except (ImportError, OSError):
+        return None
+    if any(p.device == name for p in ports):
+        return name
+    if serial:
+        for p in ports:
+            if getattr(p, "serial_number", None) == serial:
+                return p.device
+    return None
+
+
 def unopened(name: str) -> str:
     """Why ``name`` could not be opened, naming the boards that are attached when it is not one of them."""
     attached = board_ports()
@@ -130,10 +161,11 @@ class Esp32Radio(Radio):
     def open(self) -> None:
         """Connect and say HELLO until the firmware answers.
 
-        Opening the native USB port can reset the chip, and firmware 1.8 boots in Switch mode until
-        a HELLO restarts it in 3DS mode: the port then drops and comes back (on Linux and macOS
-        sometimes under another name). So a lost port is closed, found again and reopened, and
-        HELLO is repeated, until OPEN_TIMEOUT.
+        Opening the native USB port can reset the chip, and firmware with the Switch side (2.1-ldn,
+        2.0-uds, 1.8) boots in Switch mode until a HELLO restarts it in 3DS mode: the port then drops
+        and comes back, on macOS (and sometimes Linux) under another name. So a lost port is closed,
+        found again by the board's USB serial number (``find_again``) and reopened, and HELLO is
+        repeated, until OPEN_TIMEOUT. 2.1-uds has no Switch side and never restarts.
         """
         import serial
 
@@ -143,6 +175,7 @@ class Esp32Radio(Radio):
             raise RuntimeError(
                 "No ESP32 found. Connect an S3, C3 or C6 board's native USB port (Espressif USB Serial/JTAG, "
                 "303A:1001), or a classic ESP32 board's USB port (its CP210x or CH340), or pass --port.")
+        serial_number = usb_serial(name)     # read while the port is there: after a restart its name may change
         began = time.monotonic()
         deadline = began + OPEN_TIMEOUT
         restarted = opened = False
@@ -165,14 +198,17 @@ class Esp32Radio(Radio):
             if time.monotonic() >= deadline:
                 raise RuntimeError(
                     f"Something is on {name} but it did not answer. Is the esp32-uds-bridge "
-                    "firmware (1.7 or later) flashed? Firmware 1.8 restarts once into its 3DS mode; "
+                    "firmware (1.7 or later) flashed? Firmware with the Switch side restarts once into its 3DS mode; "
                     "if the board is stuck, unplug it and plug it back in.")
             if lost and not restarted:
                 restarted = True
-                log.info("ESP32 on %s restarted (firmware 1.8 switching to its 3DS mode); waiting for it", name)
+                log.info("ESP32 on %s restarted (switching from its Switch mode to its 3DS mode); waiting for it", name)
             time.sleep(REOPEN_DELAY)
-            if auto:
-                name = find_port() or name
+            found = find_again(name, serial_number) or (find_port() if auto else None)
+            if found and found != name:
+                log.info("ESP32 came back on %s (was %s)", found, name)
+                name = found
+                serial_number = serial_number or usb_serial(name)
         self.port_name = name
         ack = self.hello or b""
         if len(ack) >= 3:
@@ -183,6 +219,8 @@ class Esp32Radio(Radio):
         self.features = ack[9] if len(ack) >= 10 else 0
         if self.features & wire.FEATURE_LINK_PORT:
             self.firmware += ", VC-Adapter board build"
+        elif self.features & wire.FEATURE_NO_SWITCH:
+            self.firmware += ", 3DS side only"
         log.info("ESP32 on %s, firmware %s", name, self.firmware)
         if self.version < MIN_FIRMWARE:
             log.warning("firmware %d.%d is older than %d.%d, which PokeUDS is tested with; update it on the Board page",

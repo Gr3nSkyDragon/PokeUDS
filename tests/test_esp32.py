@@ -142,3 +142,70 @@ def test_vcadapter_build_is_named(board, monkeypatch):
     assert radio.firmware == "2.0 (protocol 1), VC-Adapter board build"
     radio._hello_event.clear()       # no STOP round trip on close
     radio.close()
+
+
+@pytest.mark.parametrize("version, features, build", [
+    ((2, 1), wire.FEATURE_NO_SWITCH, "uds"),                       # 2.1-uds: the 3DS side alone
+    ((2, 1), 0, "ldn"),                                            # 2.1-ldn: both sides
+    ((2, 0), 0, "ldn"),                                            # 2.0-uds had both sides: the ldn line
+    ((2, 1), wire.FEATURE_LINK_PORT | wire.FEATURE_NO_SWITCH, "aio"),
+])
+def test_lines_are_named(board, monkeypatch, version, features, build):
+    from pokeuds.app import board as boards
+
+    def hello(self, data):
+        for frame in self.decoder.feed(data):
+            if frame.type == wire.Type.HELLO:
+                self._reply(wire.Type.HELLO_ACK, frame.seq, bytes([1, *version]) + bytes(6) + bytes([features]))
+            else:
+                self._reply(wire.Type.STATUS, frame.seq, bytes([frame.type]) + struct.pack("<i", 0))
+    monkeypatch.setattr(FakeBoard, "write", hello)
+    assert boards.identify("FAKE").build == build
+
+
+def _port(device, serial_number, vid=0x303A, pid=0x1001):
+    from types import SimpleNamespace
+
+    return SimpleNamespace(device=device, serial_number=serial_number, vid=vid, pid=pid)
+
+
+def test_a_board_back_under_another_name_is_found_by_its_serial(monkeypatch):
+    """macOS: the board restarts into its 3DS mode and its port comes back as another /dev/cu.usbmodem..."""
+    import serial
+    from serial.tools import list_ports
+
+    from pokeuds.radio import esp32
+
+    fake = FakeBoard()
+    attached = [_port("/dev/cu.usbmodem1101", "F4:12:FA:00:00:01")]
+    opened = []
+
+    def open_port(name=None, *args, **kwargs):
+        opened.append(name)
+        if name != "/dev/cu.usbmodem1103":
+            # The board is restarting: its old port is gone, and it comes back under the new name, beside another board.
+            attached[:] = [_port("/dev/cu.usbmodem2201", "F4:12:FA:00:00:02"), _port("/dev/cu.usbmodem1103", "F4:12:FA:00:00:01")]
+            raise serial.SerialException("[Errno 6] Device not configured")
+        return fake
+
+    monkeypatch.setattr(list_ports, "comports", lambda: list(attached))
+    monkeypatch.setattr(serial, "Serial", open_port)
+    monkeypatch.setattr(esp32, "REOPEN_DELAY", 0.01)
+    radio = Esp32Radio("/dev/cu.usbmodem1101")
+    radio.open()
+    assert radio.port_name == "/dev/cu.usbmodem1103" and opened == ["/dev/cu.usbmodem1101", "/dev/cu.usbmodem1103"]
+    radio._hello_event.clear()
+    radio.close()
+
+
+def test_find_again(monkeypatch):
+    from serial.tools import list_ports
+
+    from pokeuds.radio.esp32 import find_again
+
+    attached = [_port("COM5", "AA"), _port("COM6", "BB")]
+    monkeypatch.setattr(list_ports, "comports", lambda: list(attached))
+    assert find_again("COM5", "AA") == "COM5"            # still there
+    assert find_again("COM4", "BB") == "COM6"            # back under another name
+    assert find_again("COM4", "") is None                # nothing to match it by: never another board
+    assert find_again("COM4", "CC") is None              # not back yet

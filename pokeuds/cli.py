@@ -698,20 +698,20 @@ def cmd_board(args) -> int:
             print("No ESP32 found. Plug an S3, C3 or C6 board in by its native USB port, or a classic ESP32 by its "
                   "USB port, or pass --port.")
             return 1
-        print(f"Asking the board on {port} for its firmware (it restarts into its 3DS mode first)")
+        print(f"Asking the board on {port} for its firmware (a board with the Switch side restarts into its 3DS mode first)")
         try:
             found = board.identify(port)
         except RuntimeError as exc:
             print(exc)
             return 1
         advice = board.advice(found)
-        build = {"uds": "uds line", "aio": "aio line, VC-Adapter standalone board", "gblink": "GB-Link build",
-                 "vcadapter": "VC-Adapter standalone build", "": "3DS only"}[found.build]
+        build = board.describe(found)
         print(f"esp32-uds-bridge {found.firmware} ({build}) on {found.port}, MAC {found.mac}")
         if advice:
             print(f"{advice} Install it with `pokeuds board flash`.")
         status.emit("board", port=found.port, firmware=found.firmware, build=found.build, mac=found.mac,
-                    update=board.FIRMWARE if advice else "", advice=advice)
+                    update=board.FIRMWARE if advice else "", advice=advice, described=build,
+                    optional=advice.startswith("Optional"))
         return 0
     if args.board_command == "flash":
         image = Path(args.firmware) if args.firmware else None      # None: the bundled image for the chip found

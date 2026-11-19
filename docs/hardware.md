@@ -44,6 +44,11 @@ a new PokeUDS (which updates itself) brings new images.
 | 2.0-uds (was 1.8, the GB-Link build) | the line for a board on a computer (mGBA, Azahar, PokeUDS): the 3DS raw radio every generation trades over, the optional screen, and a Switch side PokeUDS does not use | **included**: the one to install |
 | 1.8, 1.7 and older | the earlier S3 builds | work; the Board page offers 2.0-uds |
 | 2.0-aio (was 1.9, the standalone build) | VC-Adapter's standalone firmware, for that board on a console's link port | not for a board on a computer; the Board page offers 2.0-uds in its place |
+| 2.1-uds (coming, not yet built) | the 3DS side alone, for Azahar and PokeUDS: it boots in 3DS mode, so connecting never restarts it | works; it will be the included line once built |
+| 2.1-ldn (coming) | 2.0-uds under its new name: the 3DS side and the Switch side, for mGBA-LDN | works, as 2.0-uds does |
+
+**The names changed in 2.1**: 2.0's uds line had both sides and is called ldn from 2.1, and 2.1-uds is the 3DS side
+alone. The Board page names a 2.0-uds board "uds line, 3DS and Switch sides (2.1 calls it ldn)".
 
 Nothing in the firmware needs changing for PokeUDS: it only uses the raw radio (START with a twin
 address, TX_FRAME, SET_BEACON, SET_WATCH, PING), never the board-side Game Boy wrapper (`GB_*`) or the
@@ -54,10 +59,13 @@ Two things PokeUDS handles since 1.8:
 
 - **Two modes.** The firmware boots in Switch mode (GB-Link Switch LDN's bridge) until a HELLO from this protocol
   restarts it in 3DS mode, and remembers the mode in flash. The first connection after a Switch session
-  therefore drops while the board restarts; PokeUDS closes the port, finds the board again (its port can
-  come back under another name) and repeats HELLO for up to 25 s.
+  therefore drops while the board restarts; PokeUDS closes the port, finds the board again by its USB serial
+  number (the chip's MAC: macOS can bring the port back under another `/dev/cu.usbmodem...` name, even when the
+  port was chosen by hand) and repeats HELLO for up to 25 s. It never moves to another board this way.
+  2.1-uds has no Switch side and never restarts.
 - **The features byte.** HELLO_ACK has a tenth byte from 1.8 on; bit 0 marks the standalone board's line
-  (aio, 1.9 before it). `probe` and the Board page name the line.
+  (aio, 1.9 before it), and bit 2 (2.1 on) an image with no Switch side (uds and aio). `probe` and the Board
+  page name the line.
 
 **The screen.** A 128x64 SSD1306 I2C OLED (on the S3: SDA GPIO8, SCL GPIO9, 3V3, GND; connect it before powering
 the board; the other chips' pins are in VC-Adapter's `FIRMWARE.md`) shows the firmware, whether a host has said

@@ -16,8 +16,6 @@ from pokeuds.app import board
 from .. import theme as t
 from .common import View, log_box
 
-BUILDS = {"uds": "uds line", "aio": "aio line, VC-Adapter standalone board", "gblink": "GB-Link build",
-          "vcadapter": "VC-Adapter standalone build", "": "3DS only"}
 
 
 class BoardView(View):
@@ -65,13 +63,18 @@ class BoardView(View):
         busy = self.app.busy()
         in_use = self.app.settings.radio == "esp32" and self.app.settings.port == port.device
         if self.checking == port.device and busy:
-            state, color, detail = "Checking...", t.INFO, "Asking the board for its firmware. It restarts into its 3DS mode first."
+            state, color, detail = ("Checking...", t.INFO, "Asking the board for its firmware. A board with the Switch "
+                                    "side restarts into its 3DS mode first.")
         elif self.installing == port.device and busy:
             state, color, detail = "Installing...", t.INFO, "Keep the board plugged in. About a minute."
         elif info:
-            running = f"esp32-uds-bridge {info['firmware']} ({BUILDS.get(info['build'], info['build'])}), MAC {info['mac']}."
-            if info.get("update"):
-                state, color = ("Other firmware" if info["build"] == "vcadapter" else "Update available"), t.WARN
+            described = info.get("described") or board.BUILDS.get(info["build"], info["build"])
+            running = f"esp32-uds-bridge {info['firmware']} ({described}), MAC {info['mac']}."
+            if info.get("update") and info.get("optional"):
+                state, color = "Optional update", t.INFO
+                detail = f"{running} {info.get('advice', '')}".strip()
+            elif info.get("update"):
+                state, color = ("Other firmware" if info["build"] in board.STANDALONE else "Update available"), t.WARN
                 detail = f"{running} {info.get('advice', '')}".strip()
             else:
                 state, color, detail = "Ready", t.GOOD, running

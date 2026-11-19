@@ -46,6 +46,7 @@ class Type(enum.IntEnum):
 TX_NO_ACK = 1 << 0       # Group addressed: do not wait for an ACK.
 RX_TRUNCATED = 1 << 0    # The radio delivered fewer bytes than the frame's length.
 FEATURE_LINK_PORT = 1 << 0   # HELLO_ACK features: the VC-Adapter board build (console link port on its GPIOs)
+FEATURE_NO_SWITCH = 1 << 2   # 2.1 on: no Switch side (the uds and aio lines), so HELLO never restarts the board
 
 
 @dataclass

@@ -1,11 +1,15 @@
-"""ESP32 boards: find them, read their firmware, install esp32-uds-bridge 2.0-uds for their chip.
+"""ESP32 boards: find them, read their firmware, install esp32-uds-bridge (``FIRMWARE``) for their chip.
 
 PokeUDS runs VC-Adapter's ``firmware/esp32-uds-bridge`` unchanged and carries the images it uses
 (``data/firmware/``, each pinned by its SHA-256), built from VC-Adapter (github.com/Gr3nSkyDragon/VC-Adapter,
-``firmware/esp32-uds-bridge``, AGPL-3.0), where their source is. Firmware **2.0-uds** is the line for a board on a
+``firmware/esp32-uds-bridge``, AGPL-3.0), where their source is. The bundled **2.0-uds** is the line for a board on a
 computer (mGBA, Azahar, PokeUDS): the 3DS raw radio every generation's trade uses, the optional SSD1306 screen, and
 GB-Link Switch LDN's Switch side (which PokeUDS does not use; the board restarts into its 3DS mode on PokeUDS's first
-HELLO). One image per chip:
+HELLO, and the radio finds its port again by its USB serial number, since macOS may name it anew).
+
+Firmware 2.1 renames the lines: **2.1-uds** is the 3DS side alone (HELLO_ACK's no-Switch bit; it never restarts),
+**2.1-ldn** is 2.0-uds under its new name (both sides, for mGBA-LDN), **2.1-aio** the standalone board. ``identify``
+calls a 2.0-uds board "ldn", for what it carries. One image per chip:
 
 | chip | image | host link | state |
 |---|---|---|---|
@@ -113,7 +117,28 @@ class Identity:
     version: tuple[int, int]
     firmware: str
     mac: str
-    build: str             # "uds", "aio" (2.0); "gblink", "vcadapter" (1.8, 1.9); "" (1.7 and older carry none)
+    build: str             # "uds", "ldn", "aio" (2.0 on; 2.0's uds is "ldn"); "gblink", "vcadapter" (1.8, 1.9); ""
+
+
+STANDALONE = ("aio", "vcadapter")   # the standalone VC-Adapter board's lines (2.0 on, 1.9)
+
+# What each build is, for the Board page and ``board check``.
+BUILDS = {"uds": "uds line, 3DS side only", "ldn": "ldn line, 3DS and Switch sides",
+          "aio": "aio line, VC-Adapter standalone board", "gblink": "GB-Link build, 3DS and Switch sides",
+          "vcadapter": "VC-Adapter standalone build", "": "3DS only"}
+
+
+def describe(identity: Identity) -> str:
+    """The board's build in words: 2.0's both-sides line was called uds then, so it is named that way."""
+    if identity.build == "ldn" and identity.version < (2, 1):
+        return "uds line, 3DS and Switch sides (2.1 calls it ldn)"
+    return BUILDS.get(identity.build, identity.build)
+
+
+def has_switch(version: tuple[int, int], build: str) -> bool:
+    """Whether firmware of this version and build carries the Switch side (and so restarts on PokeUDS's HELLO).
+    ``build`` may also be a line's name as an image carries it: 2.0's "uds" had both sides, 2.1's has one."""
+    return build in ("ldn", "gblink") or (build == "uds" and version < (2, 1))
 
 
 def identify(port: str) -> Identity:
@@ -126,8 +151,8 @@ def identify(port: str) -> Identity:
     try:
         build = ""
         board_line = bool(radio.features & wire.FEATURE_LINK_PORT)       # the standalone board's line
-        if radio.version >= (2, 0):
-            build = "aio" if board_line else "uds"
+        if radio.version >= (2, 0):          # no Switch side: 2.1-uds; 2.0 never set that bit, its uds had both sides
+            build = "aio" if board_line else "uds" if radio.features & wire.FEATURE_NO_SWITCH else "ldn"
         elif radio.version >= (1, 8):
             build = "vcadapter" if board_line else "gblink"
         return Identity(radio.port_name, radio.version, f"{radio.version[0]}.{radio.version[1]}",
@@ -166,12 +191,16 @@ def bundled() -> dict[str, Path | str]:
 
 
 def advice(identity: Identity) -> str:
-    """Why to install PokeUDS's 2.0-uds on this board, or "" when it already runs the line PokeUDS is made for."""
-    if identity.build in ("aio", "vcadapter"):
+    """Why to install PokeUDS's firmware on this board, or "" when it already runs a line PokeUDS works with."""
+    if identity.build in STANDALONE:
         return (f"This is VC-Adapter's standalone board firmware ({identity.firmware}). PokeUDS uses {FIRMWARE}, the "
                 "line for a board on a computer; installing replaces it.")
     if identity.version < FIRMWARE_VERSION:
         return f"PokeUDS includes firmware {FIRMWARE}, newer than this board's {identity.firmware}."
+    if has_switch(identity.version, identity.build) and not has_switch(FIRMWARE_VERSION, FIRMWARE.split("-")[1]):
+        return (f"Optional: this board's firmware ({identity.firmware}, {describe(identity)}) works, but restarts into its "
+                f"3DS mode each time PokeUDS connects. PokeUDS's {FIRMWARE} has the 3DS side only and never restarts. "
+                "Keep this one if the board is also used for mGBA-LDN's Switch side.")
     return ""
 
 
