@@ -125,11 +125,13 @@ static partial class Program
     {
         var list = new JsonArray();
         var keyed = KeyedGifts(game);
-        var keys = keyed.ToDictionary(x => x.Gift, x => x.Key, ReferenceEqualityComparer.Instance);
+        var keys = new Dictionary<MysteryGift, string>(ReferenceEqualityComparer.Instance);     // by the card itself
+        foreach (var (key, gift) in keyed)
+            keys[gift] = key;
         var cards = all ? Table(game).Where(g => ForGame(game, g)).OrderByDescending(g => g.CardID) : keyed.Select(x => x.Gift);
         foreach (var gift in cards)
         {
-            var key = keys.TryGetValue(gift, out var k) ? (string)k : BaseKey(gift);
+            var key = keys.TryGetValue(gift, out var k) ? k : BaseKey(gift);
             var info = CardInfo(game, gift, key);
             Undated(info);
             if (all && gift is DataMysteryGift)

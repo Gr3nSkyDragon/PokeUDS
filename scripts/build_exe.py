@@ -21,6 +21,12 @@ and keeps Flet's own handling of its window, which unpacks into ``~/.flet`` on f
 The zip is made with ``ditto``, which keeps the bundle's links, permissions and signatures. PyInstaller signs the
 app ad hoc; it is not notarized, so the first start needs Open Anyway (README).
 
+The bundle's own process never opens a window (Flet's client draws it, with its own Dock icon), so the bundle is marked
+``LSUIElement``: a background app with no Dock icon or menu bar of its own. Without it the Dock showed two PokeUDS
+icons, and the bundle's bounced for about a minute before macOS called it "Application Not Responding" (a Mac player,
+2026-11-19). The trade runs, second copies of the app, get no Dock icon either. Changing Info.plist breaks the
+bundle's signature, so the app is signed again ad hoc and checked.
+
 The icon is ``--icon``, else ``gui/assets/icon.ico`` (Windows) or ``icon.icns`` (macOS), made from
 ``packaging/icon.jpg`` by scripts/make_icon.py. The PKHeX helper rides inside: this script first publishes the
 self-contained helper for this computer into ``pokeuds/app/data/pkhex`` (needs the .NET 10 SDK on the build machine),
@@ -139,6 +145,25 @@ def zip_folder(folder: Path, out: Path) -> Path:
     return out
 
 
+def background_app(app: Path) -> None:
+    """macOS: mark the bundle LSUIElement (no Dock icon or menu bar of its own; Flet's window has its own icon)."""
+    import plistlib
+
+    info = app / "Contents" / "Info.plist"
+    with info.open("rb") as f:
+        plist = plistlib.load(f)
+    plist["LSUIElement"] = True
+    with info.open("wb") as f:
+        plistlib.dump(plist, f)
+
+
+def resign(app: Path) -> None:
+    """macOS: sign the bundle again ad hoc after its Info.plist changed (its binaries keep PyInstaller's signatures),
+    and check it as the release workflow does, so a broken signature stops the build here."""
+    subprocess.run(["codesign", "--force", "--sign", "-", str(app)], check=True)
+    subprocess.run(["codesign", "--verify", "--deep", "--strict", "--verbose=2", str(app)], check=True)
+
+
 def zip_app(app: Path, out: Path) -> Path:
     """macOS: zip the .app as Finder does (ditto keeps symlinks, permissions and the code signature)."""
     out.unlink(missing_ok=True)
@@ -191,6 +216,9 @@ def main(argv: list[str] | None = None) -> int:
                 aside.rename(a.dist / NAME / name)
     if MAC:
         print(f"built {built}")
+        background_app(built)
+        resign(built)
+        print("marked LSUIElement (one Dock icon: the window's) and signed again ad hoc")
         if not a.no_zip:
             print(f"zipped {zip_app(built, a.dist / zip_name())}")
         return 0

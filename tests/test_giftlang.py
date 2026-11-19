@@ -32,16 +32,16 @@ def test_the_archive_then_the_card_then_the_title():
     assert giftlang.of_card({"card_language": 0, "title": "Zekrom!"}, 6) == frozenset()
 
 
-def test_universal_and_several_languages():
+def test_several_languages():
     every = giftlang.EVERY[6]
-    assert giftlang.universal(frozenset(), 6) and giftlang.universal(every, 6)
-    assert not giftlang.universal(frozenset({2, 5}), 6)
-    assert giftlang.describe(frozenset(), 6) == "Universal" and giftlang.describe(frozenset({5, 2}), 6) == "English, German"
+    assert giftlang.every(every, 6) and not giftlang.every(frozenset(), 6) and not giftlang.every(frozenset({2, 5}), 6)
+    assert giftlang.describe(every, 6) == "Every language" and giftlang.describe(frozenset({5, 2}), 6) == "English, German"
+    assert giftlang.describe(frozenset(), 6) == ""
     english, unknown = frozenset({2}), frozenset()
     assert giftlang.matches(english, 6, set()) and giftlang.matches(unknown, 6, set())          # none chosen: all
     assert giftlang.matches(english, 6, {2, 3}) and not giftlang.matches(english, 6, {3})
     assert not giftlang.matches(unknown, 6, {2})                           # a card nothing places is not English
-    assert giftlang.matches(unknown, 6, {giftlang.UNIVERSAL}) and giftlang.matches(every, 6, {2})
+    assert giftlang.matches(every, 6, {2})                                  # a placeholder filed under all
 
 
 @pytest.mark.skipif(pkhex.helper_path() is None, reason="the PKHeX helper is not built")

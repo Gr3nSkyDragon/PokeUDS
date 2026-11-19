@@ -27,11 +27,11 @@ jobs:
       contents: read
       actions: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
-      - uses: actions/setup-dotnet@v4          # build_exe.py publishes the PKHeX helper to bundle it in the app
+      - uses: actions/setup-dotnet@v6          # build_exe.py publishes the PKHeX helper to bundle it in the app
         with:
           dotnet-version: "10.0.x"
       - run: pip install -r requirements-gui.txt pyinstaller pytest
@@ -48,7 +48,7 @@ jobs:
         if: env.SIGNPATH == 'true'
         env:
           SIGNPATH: ${{ secrets.SIGNPATH_API_TOKEN != '' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: PokeUDS-windows-unsigned
           path: dist/PokeUDS
@@ -75,26 +75,29 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
       - run: python scripts/build_exe.py --zip-only
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: app-windows
           path: dist/PokeUDS-windows.zip
 
   app-macos:
     strategy:
+      # Each Mac on its own: GitHub's Apple Silicon runners are sometimes short (a job "not acquired by Runner"), and one
+      # Mac that cannot start must not cancel the other, so a re-run has only the missing one to build.
+      fail-fast: false
       matrix:
         include:
-          - os: macos-latest            # Apple Silicon: PokeUDS-macos-arm64.zip
+          - os: macos-15                # Apple Silicon, pinned like the Intel build below: PokeUDS-macos-arm64.zip
             arch: arm64
           - os: macos-15-intel          # Intel Macs: PokeUDS-macos-x64.zip
             arch: x64
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
-      - uses: actions/setup-dotnet@v4          # build_exe.py publishes the PKHeX helper to bundle it in the app
+      - uses: actions/setup-dotnet@v6          # build_exe.py publishes the PKHeX helper to bundle it in the app
         with:
           dotnet-version: "10.0.x"
       - run: pip install -r requirements-gui.txt pyinstaller
@@ -104,24 +107,28 @@ jobs:
           APP=dist/PokeUDS.app
           file "$APP/Contents/MacOS/PokeUDS"
           codesign --verify --deep --strict --verbose=2 "$APP"
+          # One Dock icon (the window's): the bundle itself is a background app (build_exe.py background_app).
+          test "$(/usr/libexec/PlistBuddy -c 'Print :LSUIElement' "$APP/Contents/Info.plist")" = "true"
           HELPER=$(find "$APP" -name pokeuds-pkhex -type f | head -1)
           echo "bundled helper: $HELPER"
           echo '{"cmd":"ping"}' | "$HELPER"
           "$APP/Contents/MacOS/PokeUDS" --cli --help >/dev/null && echo "the app's command line starts"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: app-macos-${{ matrix.arch }}
           path: dist/PokeUDS-macos-${{ matrix.arch }}.zip
 
   release:
+    # Only with every app built: no partial releases. A Mac that never got a runner fails on its own (fail-fast off,
+    # above); "Re-run failed jobs" builds just that one, then this job.
     if: github.event_name == 'push' || inputs.tag != ''
     needs: [app, app-macos]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           path: src
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: assets
           merge-multiple: true

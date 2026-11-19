@@ -389,6 +389,9 @@ class GtsView(View):
             said = self.gts.round(pool)
             if said:
                 self._say(" ".join(said), t.GOOD)
+            elif not getattr(pool, "tried", lambda: True)():
+                # Nothing of ours is waiting, so no relay was asked anything: not a relay problem.
+                self._say("Nothing to check: none of your listings or offers is waiting on the relays.", t.INFO)
             elif not pool.reached():
                 self._say(no_relay(pool), t.BAD)
 

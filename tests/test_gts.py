@@ -510,3 +510,22 @@ def test_two_copies_of_the_app_on_one_computer_never_trade_with_each_other(world
     friend.round(world.pool)
     exe.round(world.pool)
     assert next(i for i in exe.items() if i.kind == "listing").status == "traded"
+
+
+def test_check_now_with_nothing_waiting_does_not_blame_the_relays(tmp_path):
+    """A round with no listing or offer of ours asks the relays nothing: it says so, not "No relay answered"."""
+    pytest.importorskip("flet")
+    from gui.app import App
+    from gui.views.gts import GtsView
+    from pokeuds.app.settings import Settings
+    from tests.fake_relay import FakePool
+
+    app = App(None, Settings(bank=str(tmp_path / "bank"), output=str(tmp_path / "received")))
+    view = GtsView(app)
+    view.gts_root = tmp_path / "gts"
+    pool = FakePool()
+    view.pool_factory = lambda: pool
+    view._round_work()
+    assert view.message.startswith("Nothing to check") and pool.asked == 0
+    from pokeuds.online import relays
+    assert not relays.Pool(["wss://relay.example"]).tried()                 # a fresh pool has asked nothing

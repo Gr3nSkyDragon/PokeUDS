@@ -29,8 +29,10 @@ RADIUS = 12
 STATE_COLORS = {"idle": MUTED, "running": INFO, "done": GOOD, "stopped": WARN, "error": BAD}
 
 
-def app_theme() -> ft.Theme:
-    return ft.Theme(color_scheme_seed=ACCENT, use_material3=True)
+def app_theme(scrollbars: bool = True) -> ft.Theme:
+    """The app's theme; without scrollbars, for a control that may scroll but should not show it (it still scrolls)."""
+    hidden = None if scrollbars else ft.ScrollbarTheme(thickness=0, thumb_visibility=False, track_visibility=False)
+    return ft.Theme(color_scheme_seed=ACCENT, use_material3=True, scrollbar_theme=hidden)
 
 
 def title(text: str) -> ft.Text:

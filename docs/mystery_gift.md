@@ -359,8 +359,7 @@ in PKHeX's database, so it is not listed; a card file of it opens with **Open a 
 - **Keys:** a Pokemon card keeps the key every PokeUDS has used (card id, species, form: `0547-384-0`); another
   language's copy of it is `-2`, `-3`..., and other cards are named by what they give (`0017-secretkey0`,
   `2046-item574-3`). A copy with a title already listed is a revision and is left out (`gift list --all` shows them).
-- **Filters**, on one row with the search box: languages (tick several; **Universal** for cards meant for every
-  language), what it gives (**Pokemon/Eggs** or **Items/Key Items**), and for Pokemon, shininess (always, never, may
+- **Filters**, on one row with the search box: languages (tick several; the list follows each tick), what it gives (**Pokemon/Eggs** or **Items/Key Items**), and for Pokemon, shininess (always, never, may
   be; a fixed PID counts as shiny or not for the card's own OT) and **Non-legendary** or **Legendary/Mythical** (PKHeX's
   lists; sub-legendaries count as legendary). The Pokemon filters go away with Items/Key Items chosen.
 - **Language** (`pokeuds/app/giftlang.py`), the first that knows:
@@ -372,8 +371,7 @@ in PKHeX's database, so it is not listed; a card file of it opens with **Open a 
   2. **The card**: every Gen 5 card states it, a Gen 4 card through its Pokemon.
   3. **The title**: Japanese, Korean and Chinese by their writing, the European languages by their words (910 right
      of the 956 cards whose language is known, 29 not placed).
-  A card none of them places, or one filed under every language, is **Universal**, and is listed only when Universal
-  is ticked.
+  A card none of them places (PKHeX's own "Simulated Pokemon Bank" stand-ins) is listed only with no language ticked.
 
 The list (or the editor) scrolls on its own; the gift panel beside it, with Start sending, stays in view.
 

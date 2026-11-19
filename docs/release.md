@@ -9,9 +9,14 @@ test build, with no release.
 | File | What it is |
 |---|---|
 | `PokeUDS-windows.zip` | The Windows app: unzip, run `PokeUDS/PokeUDS.exe` (`scripts/build_exe.py`) |
-| `PokeUDS-macos-arm64.zip` | The Mac app for Apple Silicon: unzip, move `PokeUDS.app` to Applications (built on `macos-latest`) |
+| `PokeUDS-macos-arm64.zip` | The Mac app for Apple Silicon: unzip, move `PokeUDS.app` to Applications (built on `macos-15`, Apple Silicon) |
 | `PokeUDS-macos-x64.zip` | The Mac app for Intel Macs (built on `macos-15-intel`) |
 | `SHA256SUMS` | Checksums of the zips |
+
+GitHub's Apple Silicon Mac runners are sometimes short: the arm64 job can wait a long time and then fail with "The job
+was not acquired by Runner of type hosted", and the release job does not run (a release has every app or none). The
+other builds carry on regardless; open the run and choose **Re-run failed jobs** to build the missing one, after
+which the release job makes the draft.
 
 The notes are `docs/releases/<tag>.md` when that file exists (else just a title), followed by
 `docs/releases/downloads.md`, which says which file to download. There is no Linux app: Linux runs from source.
@@ -48,8 +53,11 @@ the rail. Both are bundled with the app.
 one-folder bundle with PKHeX inside; its icon is `gui/assets/icon.icns`. Its bank is
 `~/Library/Application Support/PokeUDS/bank`, not inside the bundle, which an update replaces whole. PyInstaller signs
 it ad hoc; without an Apple Developer ID it is not notarized, so players allow it once (System Settings, Privacy &
-Security, Open Anyway). The release workflow checks the signature, that its PKHeX answers, and that the
-app's command line starts, but nothing opens its window there: start it on a Mac before publishing.
+Security, Open Anyway). The bundle's own process never opens a window (Flet's client draws it, with its own Dock icon),
+so the build marks it `LSUIElement`, a background app, and signs it again: without that the Dock showed a second
+PokeUDS icon that bounced for a minute and then "Application Not Responding". The release workflow checks the
+signature, that `LSUIElement` is set, that its PKHeX answers, and that the app's command line starts, but nothing
+opens its window there: start it on a Mac before publishing.
 
 ## Code signing (prepared, not in use)
 

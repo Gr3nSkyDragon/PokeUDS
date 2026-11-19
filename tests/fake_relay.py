@@ -76,6 +76,7 @@ class FakePool:
         self.published: list[dict] = []
         self.filters: list[dict] = []
         self.down = False               # no relay answers
+        self.asked = 0                  # publishes and fetches tried, answered or not
 
     def __enter__(self):
         return self
@@ -84,12 +85,17 @@ class FakePool:
         pass
 
     def publish(self, event: dict) -> int:
+        self.asked += 1
         if self.down:
             return 0
         self.published.append(event)
         return 1 if self.store.add(event) else 0
 
+    def tried(self) -> bool:
+        return self.asked > 0
+
     def fetch(self, flt: dict, timeout: float = 0.0) -> list[dict]:
+        self.asked += 1
         self.filters.append(flt)
         if self.down:
             return []

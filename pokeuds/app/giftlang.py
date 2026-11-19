@@ -10,7 +10,8 @@ In order, the first that knows:
 3. **The title.** Japanese, Korean and Chinese by their writing, the European languages by their words (against the
    956 cards whose language is known: 910 right, 29 not at all).
 
-A card none of them places, or one filed under every language, is **Universal**: shown when Universal is chosen.
+A card none of them places is listed only when no language is chosen; one filed under every language (PKHeX's
+placeholders) is under each.
 """
 
 from __future__ import annotations
@@ -21,8 +22,7 @@ from collections import Counter
 from functools import lru_cache
 from pathlib import Path
 
-# LanguageID, as the games and PKHeX number them; 0 is Universal here.
-UNIVERSAL = 0
+# LanguageID, as the games and PKHeX number them.
 NAMES = {1: "Japanese", 2: "English", 3: "French", 4: "Italian", 5: "German", 7: "Spanish", 8: "Korean",
          9: "Chinese (simplified)", 10: "Chinese (traditional)"}
 _CODES = {"JPN": 1, "ENG": 2, "FRE": 3, "ITA": 4, "GER": 5, "SPA": 7, "KOR": 8, "CHN": 9, "CHS": 9, "CHT": 10}
@@ -112,20 +112,20 @@ def of_card(card: dict, generation: int) -> frozenset[int]:
     return frozenset({read}) if read else frozenset()
 
 
-def universal(languages: frozenset[int], generation: int) -> bool:
-    """For everyone: no language can be told, or the archive files it under all of them."""
-    return not languages or languages >= EVERY.get(generation, frozenset())
+def every(languages: frozenset[int], generation: int) -> bool:
+    """Filed under every language the generation's events went out in (PKHeX's placeholders)."""
+    return bool(languages) and languages >= EVERY.get(generation, frozenset())
 
 
 def describe(languages: frozenset[int], generation: int) -> str:
-    if universal(languages, generation):
-        return "Universal"
+    if every(languages, generation):
+        return "Every language"
     return ", ".join(NAMES[n] for n in sorted(languages, key=lambda n: NAMES.get(n, "")) if n in NAMES)
 
 
 def matches(languages: frozenset[int], generation: int, chosen: set[int]) -> bool:
-    """Whether a card belongs under the chosen languages (UNIVERSAL among them for the Universal ones); none chosen:
-    every card."""
+    """Whether a card belongs under the chosen languages; none chosen: every card. A card whose language cannot be
+    told is under none of them."""
     if not chosen:
         return True
-    return bool(languages & chosen) or (UNIVERSAL in chosen and universal(languages, generation))
+    return bool(languages & chosen)

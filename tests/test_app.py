@@ -445,8 +445,8 @@ def test_the_card_editor_builds_ds_cards(tmp_path, monkeypatch):
 
 
 def test_gift_list_filters_and_keeps_the_gift_in_view(tmp_path, monkeypatch):
-    """Official events: filtered by what a card gives, its languages (several at once, and Universal for what is for
-    everyone or cannot be told), and for Pokemon shininess and legendary/mythical; the list scrolls, the gift panel
+    """Official events: filtered by what a card gives, its languages (several at once; a card whose language cannot be
+    told only with none chosen), and for Pokemon shininess and legendary/mythical; the list scrolls, the gift panel
     does not."""
     pytest.importorskip("flet")
     import flet as ft
@@ -476,8 +476,6 @@ def test_gift_list_filters_and_keeps_the_gift_in_view(tmp_path, monkeypatch):
     assert keys() == ["a", "d", "f"]
     view.filters["languages"] = {2, 3}                                     # English and French
     assert keys() == ["a", "b", "d", "e", "f"]
-    view.filters["languages"] = {giftlang.UNIVERSAL}
-    assert keys() == ["c"]
     view.filters.update(languages=set(), kind="other")
     assert keys() == ["e", "f"]
     view.filters.update(shiny="always", category="special")                # Items/Key Items: these do not apply

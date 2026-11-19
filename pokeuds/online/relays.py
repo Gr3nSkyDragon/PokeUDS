@@ -376,6 +376,11 @@ class Pool:
         """How many relays are connected now (after a publish or fetch)."""
         return sum(relay.ws is not None for relay in self.relays)
 
+    def tried(self) -> bool:
+        """Whether anything was sent or asked: a round with nothing to do contacts no relay, and then "none reached"
+        says nothing about the relays."""
+        return any(relay.ws is not None or relay.failed for relay in self.relays)
+
     def problems(self) -> list[str]:
         return [f"{relay.url}: {relay.failed}" for relay in self.relays if relay.failed and relay.ws is None]
 

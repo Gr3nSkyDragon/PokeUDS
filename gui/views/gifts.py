@@ -54,6 +54,7 @@ SHOWN = 150
 # that (its text line and 16 above and below, measured), the language box a container of that height. Each takes a share
 # of the row (expand), so the row stays one row and the boxes narrow together in a narrow window.
 FILTER_HEIGHT = 48
+REDRAW_PAUSE = 0.4       # seconds after the last language tick before the list is drawn again
 SEARCH_PADDING = ft.Padding(12, 16, 12, 16)
 FILTER_SHARES = {"search": 4, "languages": 4, "kind": 3, "shiny": 4, "category": 4}
 
@@ -74,7 +75,7 @@ class GiftsView(View):
         self.ds_language = ""               # the receiving cartridge's language; "" the card's own (Gen 5) or English
         self.mode = "official"
         self.search = ""
-        # The list's filters, for this visit: languages chosen (none: all; giftlang.UNIVERSAL for the Universal ones).
+        # The list's filters, for this visit: the languages chosen (none: every card).
         self.filters: dict = {"kind": "all", "languages": set(), "shiny": "any", "category": "any"}
         self.cards: dict[str, list[dict]] = {}
         self.loading = False
@@ -163,8 +164,7 @@ class GiftsView(View):
         self.list_count.value = (
             f"{len(shown)} of {len(cards)} cards" + (f", first {SHOWN} shown" if len(shown) > SHOWN else "")
             + ". A card with its own OT gives a Pokemon traded from that trainer; the others make you its OT. "
-            "Languages are the ones each event went out in (Project Pokemon's event archive); Universal "
-            "holds what is for every language, or cannot be told.")
+            "Languages are the ones each event went out in (Project Pokemon's event archive).")
         rows: list[ft.Control] = []
         for c in shown[:SHOWN]:
             chosen = c["key"] == self.selected
@@ -245,25 +245,32 @@ class GiftsView(View):
         return ft.Row(controls, spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER)
 
     def _languages_menu(self, cards: list[dict]) -> ft.Control:
-        """A drop-down of ticks: Universal, then each language the game's cards went out in. The list follows each tick
-        and the menu stays open, so several can be ticked in one go."""
+        """A drop-down of ticks: each language the game's cards went out in. The list follows each tick and the menu
+        stays open, so several can be ticked in one go. The box narrows with the row, its text cut short with "...";
+        a menu bar scrolls sideways when its box is narrower than its text, so its scrollbar is hidden."""
         gen, chosen = self.generation, self.filters["languages"]
         present = sorted({n for c in cards for n in giftlang.of_card(c, gen)}, key=lambda n: giftlang.NAMES.get(n, ""))
-        options = [(giftlang.UNIVERSAL, "Universal")] + [(n, giftlang.NAMES[n]) for n in present if n in giftlang.NAMES]
+        options = [(n, giftlang.NAMES[n]) for n in present if n in giftlang.NAMES]
         chosen &= {n for n, _ in options}
         caption = ft.Text(self._languages_caption(options), no_wrap=True, overflow=ft.TextOverflow.ELLIPSIS, expand=True)
 
+        def tick(n: int) -> ft.Icon:
+            return ft.Icon(ft.Icons.CHECK_BOX if n in chosen else ft.Icons.CHECK_BOX_OUTLINE_BLANK, size=18)
+
         def toggle(e, n: int) -> None:
             chosen.symmetric_difference_update({n})
-            e.control.leading = ft.Icon(ft.Icons.CHECK_BOX if n in chosen else ft.Icons.CHECK_BOX_OUTLINE_BLANK, size=18)
+            e.control.leading = tick(n)
             caption.value = self._languages_caption(options)
-            for control in (e.control, caption):
-                control.update()
-            self._redraw_list()
+            try:
+                for control in (e.control, caption):
+                    control.update()
+            except (RuntimeError, AssertionError):    # not on a page (a test): the list at once
+                self._redraw_list()
+                return
+            self._redraw_soon()
 
-        items = [ft.MenuItemButton(content=ft.Text(name), close_on_click=False, on_click=lambda e, n=n: toggle(e, n),
-                                   leading=ft.Icon(ft.Icons.CHECK_BOX if n in chosen else ft.Icons.CHECK_BOX_OUTLINE_BLANK,
-                                                   size=18))
+        items = [ft.MenuItemButton(content=ft.Text(name), close_on_click=False, leading=tick(n),
+                                   on_click=lambda e, n=n: toggle(e, n))
                  for n, name in options]
         if chosen:
             items.append(ft.MenuItemButton(content=ft.Text("Every language"), on_click=lambda e: self._every_language(),
@@ -275,7 +282,23 @@ class GiftsView(View):
                                        style=ft.MenuStyle(bgcolor=ft.Colors.TRANSPARENT, elevation=0,
                                                           padding=ft.Padding(0, 0, 0, 0))),
                             border=ft.Border.all(1, t.MUTED), border_radius=4, height=FILTER_HEIGHT,
-                            expand=FILTER_SHARES["languages"], alignment=ft.Alignment.CENTER_LEFT)
+                            expand=FILTER_SHARES["languages"], alignment=ft.Alignment.CENTER_LEFT,
+                            theme=t.app_theme(scrollbars=False), dark_theme=t.app_theme(scrollbars=False),
+                            theme_mode=ft.ThemeMode.DARK)
+
+    def _redraw_soon(self) -> None:
+        """The list again once the ticks pause: each tick shows at once, and a run of quick ticks costs one redraw
+        (up to 150 rows with sprites, slow enough that a tick made during it waited)."""
+        self._redraws = getattr(self, "_redraws", 0) + 1
+        mine = self._redraws
+
+        def due() -> None:
+            if mine == self._redraws:
+                self._redraw_list()
+
+        timer = threading.Timer(REDRAW_PAUSE, due)
+        timer.daemon = True
+        timer.start()
 
     def _languages_caption(self, options) -> str:
         names = [name for n, name in options if n in self.filters["languages"]]
