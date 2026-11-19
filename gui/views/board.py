@@ -1,7 +1,7 @@
 """The Board page: ESP32 boards (the S3, C3 and C6; alpha: the classic ESP32), the esp32-uds-bridge firmware they
 run, and installing it.
 
-Modelled on pokeldn's Boards page: the firmware comes with PokeUDS (2.0-uds, one image per chip, built from
+Modelled on pokeldn's Boards page: the firmware comes with PokeUDS (2.1-uds, one image per chip, built from
 VC-Adapter), nothing is downloaded. Installing asks the board's chip and writes that chip's image.
 Checks and installs are ``python -m pokeuds board ...`` children, like every other run, so the page never holds a
 serial port the radio needs.
@@ -117,12 +117,12 @@ class BoardView(View):
                                        (t.WARN if alpha else t.GOOD) if ok else t.BAD)], spacing=8))
         rows.append(t.label(
             f"PokeUDS comes with the firmware it uses: VC-Adapter's esp32-uds-bridge {board.FIRMWARE}, the line for a "
-            "board on a computer (the same one Azahar and mGBA use), one image per chip; installing asks the board "
-            "which chip it is and writes that chip's. It is the 3DS radio every generation trades over, and drives the "
-            "optional SSD1306 screen. Its Switch side is not used here; the board restarts into its 3DS mode the first "
-            "time PokeUDS connects. The classic ESP32 is alpha: it builds and installs, but has not traded on a real board "
-            "yet. The "
-            "source is github.com/Gr3nSkyDragon/VC-Adapter (firmware/esp32-uds-bridge)."))
+            "board on a computer whose program only speaks 3DS (PokeUDS, Azahar), one image per chip; installing asks "
+            "the board which chip it is and writes that chip's. It is the 3DS radio every generation trades over, and "
+            "drives the optional SSD1306 screen. It has no Switch side, so the board never restarts when PokeUDS "
+            "connects. A board on the ldn line (mGBA-LDN's, with the Switch side) works too, restarting into its 3DS "
+            "mode first. The classic ESP32 is alpha: it builds and installs, but has not traded on a real board yet. "
+            "The source is github.com/Gr3nSkyDragon/VC-Adapter (firmware/esp32-uds-bridge)."))
         problems = [v for v in images.values() if isinstance(v, str)]
         if problems:
             rows.append(t.notice("; ".join(problems), t.BAD))

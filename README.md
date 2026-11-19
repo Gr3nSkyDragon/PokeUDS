@@ -113,7 +113,7 @@ On macOS or Linux, activate with `. .venv/bin/activate`. To use PokeUDS from a t
 
 - **A radio** ([docs/hardware.md](docs/hardware.md)):
   - an **ESP32-S3** with [esp32-uds-bridge](https://github.com/Gr3nSkyDragon/VC-Adapter/tree/main/firmware/esp32-uds-bridge)
-    firmware 2.0-uds, on its native USB port (PokeUDS includes it: the Board page installs it), or an ESP32-C3 or
+    firmware 2.1-uds, on its native USB port (PokeUDS includes it: the Board page installs it), or an ESP32-C3 or
     C6 the same way; **alpha**: a classic ESP32 ([docs/hardware.md](docs/hardware.md)); any OS; or
   - a **USB Wi-Fi adapter** through legacy **ldnd.exe 0.0.5** (Windows; not the ldnrs revision).
 - **`aes_keys.txt`** holding the keyslot 0x2D key (`slot0x2DKeyN`, or `slot0x2DKeyX`, `slot0x2DKeyY` and

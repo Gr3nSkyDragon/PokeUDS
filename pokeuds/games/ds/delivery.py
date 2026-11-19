@@ -3,7 +3,7 @@
 The receiving game (Mystery Gift > Receive Gift, the wireless option rather than Wi-Fi) only listens: the distributor
 broadcasts 802.11 beacons carrying Nintendo's DS vendor element (OUI 00:09:BF), each with one 112-byte fragment of
 the gift, and cycles through the fragments. Nobody joins. PokeUDS sends the beacons itself, one frame at a time
-through the radio's raw transmit (firmware 2.0-uds's TX_FRAME, at 1 Mbps), so no firmware change is needed.
+through the radio's raw transmit (esp32-uds-bridge's TX_FRAME, 2.0 on, at 1 Mbps), so no firmware change is needed.
 
 Ported from Shinygati's PokeLDN-Bluetooth fork of pokeldn (AGPL-3.0; https://github.com/Shinygati/PokeLDN-Bluetooth):
 the encoders from ``Gen4.java`` and ``Gen5.java``, the beacon from ``firmware/esp32/main/ds_compat.c``. Those

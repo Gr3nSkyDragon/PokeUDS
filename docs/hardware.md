@@ -3,11 +3,11 @@
 ## ESP32 boards
 
 PokeUDS runs VC-Adapter's [esp32-uds-bridge](https://github.com/Gr3nSkyDragon/VC-Adapter/tree/main/firmware/esp32-uds-bridge)
-unchanged, firmware **2.0-uds**, on four chips:
+unchanged, firmware **2.1-uds**, on four chips:
 
 | chip | connect by | PokeUDS finds it by | state |
 |---|---|---|---|
-| ESP32-S3 | its **native** USB port (often marked USB, not UART) | Espressif USB Serial/JTAG, `303A:1001` | the chip 1.8 traded on; 2.0-uds is not yet tried on a board |
+| ESP32-S3 | its **native** USB port (often marked USB, not UART) | Espressif USB Serial/JTAG, `303A:1001` | traded on with 1.8 and with 2.1-ldn (2.1-uds's twin with the Switch side); 2.1-uds itself not yet tried on a board |
 | ESP32-C3, ESP32-C6 | its native USB port | `303A:1001` (the same id) | traded on (0.1.5): X/Y with the 3DS asking on both, and with PokeUDS asking (PokeUDS hosting) on the C6; other games not yet |
 | ESP32 (classic) | its board's only USB port, a USB-UART bridge (CP210x `10C4:EA60`, CH340 `1A86:7523`...) | the bridge's id, after any native port | **alpha**, the same |
 
@@ -34,18 +34,17 @@ drops the duplicates.
 
 ### Which firmware
 
-PokeUDS comes with the firmware it uses, as pokeldn does: `esp32-uds-bridge-2.0-uds-<chip>.bin` for `esp32s3`,
+PokeUDS comes with the firmware it uses, as pokeldn does: `esp32-uds-bridge-2.1-uds-<chip>.bin` for `esp32s3`,
 `esp32c3`, `esp32c6` and `esp32` (`pokeuds/app/data/firmware/`, each pinned by its SHA-256), built from VC-Adapter's
 `firmware/esp32-uds-bridge`, where the source is for anyone who wants to build or study it. Nothing is downloaded:
 a new PokeUDS (which updates itself) brings new images.
 
 | firmware | what it is | with PokeUDS |
 |---|---|---|
-| 2.0-uds (was 1.8, the GB-Link build) | the line for a board on a computer (mGBA, Azahar, PokeUDS): the 3DS raw radio every generation trades over, the optional screen, and a Switch side PokeUDS does not use | **included**: the one to install |
-| 1.8, 1.7 and older | the earlier S3 builds | work; the Board page offers 2.0-uds |
-| 2.0-aio (was 1.9, the standalone build) | VC-Adapter's standalone firmware, for that board on a console's link port | not for a board on a computer; the Board page offers 2.0-uds in its place |
-| 2.1-uds (coming, not yet built) | the 3DS side alone, for Azahar and PokeUDS: it boots in 3DS mode, so connecting never restarts it | works; it will be the included line once built |
-| 2.1-ldn (coming) | 2.0-uds under its new name: the 3DS side and the Switch side, for mGBA-LDN | works, as 2.0-uds does |
+| 2.1-uds | the 3DS side alone, for PokeUDS and Azahar: the 3DS raw radio every generation trades over and the optional screen. It boots in 3DS mode, so connecting never restarts it | **included**: the one to install |
+| 2.1-ldn, 2.0-uds (was 1.8, the GB-Link build) | the 3DS side and GB-Link Switch LDN's Switch side, for mGBA-LDN | work, restarting into 3DS mode when PokeUDS connects; the Board page offers 2.1-uds as optional (keep it if mGBA-LDN uses the board's Switch side) |
+| 1.8, 1.7 and older | the earlier S3 builds | work; the Board page offers 2.1-uds |
+| 2.1-aio, 2.0-aio (was 1.9, the standalone build) | VC-Adapter's standalone firmware, for that board on a console's link port | not for a board on a computer; the Board page offers 2.1-uds in its place |
 
 **The names changed in 2.1**: 2.0's uds line had both sides and is called ldn from 2.1, and 2.1-uds is the 3DS side
 alone. The Board page names a 2.0-uds board "uds line, 3DS and Switch sides (2.1 calls it ldn)".
@@ -74,7 +73,7 @@ nothing for it. It dims after a minute idle and turns off after ten; BOOT wakes 
 
 ### Installing the firmware
 
-The app's **Board** page lists boards, reads their firmware and installs the included 2.0-uds. The same
+The app's **Board** page lists boards, reads their firmware and installs the included 2.1-uds. The same
 steps from the command line:
 
 ```bash

@@ -36,7 +36,7 @@ def test_each_chip_has_its_2_0_uds_image(chip):
     from esptool.targets import CHIP_DEFS
 
     path = board.firmware(chip)
-    assert path.name == f"esp32-uds-bridge-2.0-uds-{board.IMAGES[chip][0]}.bin" and board.FIRMWARE == "2.0-uds"
+    assert path.name == f"esp32-uds-bridge-2.1-uds-{board.IMAGES[chip][0]}.bin" and board.FIRMWARE == "2.1-uds"
     assert hashlib.sha256(path.read_bytes()).hexdigest() == board.IMAGES[chip][1]
     rom = next(c for c in CHIP_DEFS.values() if c.CHIP_NAME == chip)
     board.check_image(path, rom)                 # a real merged image for that chip (the classic's bootloader at 0x1000)
@@ -61,20 +61,19 @@ def test_a_changed_firmware_file_is_refused(tmp_path, monkeypatch):
 
 
 def test_what_to_install():
-    assert board.advice(board.Identity("COM4", (2, 0), "2.0", "", "uds")) == ""
+    assert "newer" in board.advice(board.Identity("COM4", (2, 0), "2.0", "", "ldn"))     # 2.0-uds
     assert "newer" in board.advice(board.Identity("COM4", (1, 8), "1.8", "", "gblink"))
-    assert board.advice(board.Identity("COM4", (2, 1), "2.1", "", "uds")) == ""         # 2.1's 3DS-only line
-    assert board.advice(board.Identity("COM4", (2, 1), "2.1", "", "ldn")) == ""         # both sides, as PokeUDS bundles
+    assert board.advice(board.Identity("COM4", (2, 1), "2.1", "", "uds")) == ""         # the bundled line
+    assert board.advice(board.Identity("COM4", (2, 1), "2.1", "", "ldn")).startswith("Optional")
     assert "newer" in board.advice(board.Identity("COM4", (1, 7), "1.7", "", ""))
     for version, build in (((1, 9), "vcadapter"), ((2, 0), "aio")):    # the standalone board's line
         text = board.advice(board.Identity("COM4", version, f"{version[0]}.{version[1]}", "", build))
-        assert "standalone" in text and "2.0-uds" in text
+        assert "standalone" in text and "2.1-uds" in text
 
 
-def test_the_3ds_only_line_is_offered_as_optional(monkeypatch):
-    """Once PokeUDS bundles 2.1-uds, a board on 2.1-ldn (or 2.0-uds) works but is told it need not restart."""
-    monkeypatch.setattr(board, "FIRMWARE", "2.1-uds")
-    monkeypatch.setattr(board, "FIRMWARE_VERSION", (2, 1))
+def test_the_3ds_only_line_is_offered_as_optional():
+    """A board on 2.1-ldn works but is told 2.1-uds need not restart; 2.0-uds is older, so it is told so."""
+    assert board.FIRMWARE == "2.1-uds" and board.FIRMWARE_VERSION == (2, 1)
     assert board.advice(board.Identity("COM4", (2, 1), "2.1", "", "uds")) == ""
     assert board.advice(board.Identity("COM4", (2, 1), "2.1", "", "ldn")).startswith("Optional")
     assert "newer" in board.advice(board.Identity("COM4", (2, 0), "2.0", "", "ldn"))

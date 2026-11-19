@@ -57,7 +57,7 @@ python -m pokeuds scan --radio esp32 --seconds 30
 ```
 
 `board` lists attached ESP32 boards, reads their firmware (`board check`) and installs the included
-esp32-uds-bridge 2.0-uds for the chip it finds (`board flash`). `probe` checks that the radio answers; `scan` lists
+esp32-uds-bridge 2.1-uds for the chip it finds (`board flash`). `probe` checks that the radio answers; `scan` lists
 every 3DS network in range.
 
 ## Trading

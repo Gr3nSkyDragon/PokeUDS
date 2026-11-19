@@ -1,6 +1,6 @@
 """ESP32 radio backend (VC-Adapter ``firmware/esp32-uds-bridge``): an S3, C3 or C6 on its native USB port, or a
 classic ESP32 through its board's USB-UART bridge (CP210x, CH340...) at 921600 baud, opened without pulsing DTR and
-RTS, which such boards wire to the chip's reset (firmware 2.0-uds; docs/hardware.md).
+RTS, which such boards wire to the chip's reset (firmware 2.1-uds; docs/hardware.md).
 
 The board captures and injects raw MPDUs and replays a beacon template on its own timer, so a slow
 USB round trip never shows up as a missing beacon. The protocol is in ``esp32_wire``; the
@@ -27,7 +27,7 @@ ESPRESSIF_JTAG_PID = 0x1001
 BRIDGES = {(0x10C4, 0xEA60): "CP210x", (0x1A86, 0x7523): "CH340", (0x1A86, 0x55D3): "CH343",
            (0x0403, 0x6001): "FTDI", (0x0403, 0x6010): "FTDI"}
 NATIVE_BAUD = 3_000_000   # ignored by native USB
-BRIDGE_BAUD = 921_600     # the classic ESP32's UART, from boot (2.0-uds)
+BRIDGE_BAUD = 921_600     # the classic ESP32's UART, from boot (2.0 on)
 
 PING_INTERVAL = 2.0
 PONG_TIMEOUT = 8.0

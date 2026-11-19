@@ -2,24 +2,25 @@
 
 PokeUDS runs VC-Adapter's ``firmware/esp32-uds-bridge`` unchanged and carries the images it uses
 (``data/firmware/``, each pinned by its SHA-256), built from VC-Adapter (github.com/Gr3nSkyDragon/VC-Adapter,
-``firmware/esp32-uds-bridge``, AGPL-3.0), where their source is. The bundled **2.0-uds** is the line for a board on a
-computer (mGBA, Azahar, PokeUDS): the 3DS raw radio every generation's trade uses, the optional SSD1306 screen, and
-GB-Link Switch LDN's Switch side (which PokeUDS does not use; the board restarts into its 3DS mode on PokeUDS's first
-HELLO, and the radio finds its port again by its USB serial number, since macOS may name it anew).
+``firmware/esp32-uds-bridge``, AGPL-3.0), where their source is. The bundled **2.1-uds** is the line for a board on a
+computer whose host only speaks 3DS (Azahar, PokeUDS): the 3DS raw radio every generation's trade uses and the
+optional SSD1306 screen, with no Switch side, so it boots in 3DS mode and a HELLO never restarts it (HELLO_ACK's
+no-Switch bit, 0x04).
 
-Firmware 2.1 renames the lines: **2.1-uds** is the 3DS side alone (HELLO_ACK's no-Switch bit; it never restarts),
-**2.1-ldn** is 2.0-uds under its new name (both sides, for mGBA-LDN), **2.1-aio** the standalone board. ``identify``
-calls a 2.0-uds board "ldn", for what it carries. One image per chip:
+**2.1-ldn** is what 2.0 called uds: both sides, for mGBA-LDN. PokeUDS works with it (and with 2.0-uds and 1.8), but
+such a board restarts into its 3DS mode on PokeUDS's first HELLO; the radio then finds its port again by its USB
+serial number, since macOS may name it anew, and the Board page offers 2.1-uds as optional. ``identify`` calls a
+2.0-uds board "ldn", for what it carries. One image per chip:
 
 | chip | image | host link | state |
 |---|---|---|---|
-| ESP32-S3 | ``esp32-uds-bridge-2.0-uds-esp32s3.bin`` | native USB (``303A:1001``) | the chip 1.8 ran on |
+| ESP32-S3 | ``esp32-uds-bridge-2.1-uds-esp32s3.bin`` | native USB (``303A:1001``) | the chip 1.8 ran on |
 | ESP32-C3, ESP32-C6 | ``...-esp32c3.bin``, ``...-esp32c6.bin`` | native USB (``303A:1001``) | traded on (0.1.5) |
 | ESP32 (classic) | ``...-esp32.bin`` (bootloader at 0x1000 inside it) | its board's USB-UART bridge (CP210x, CH340...), 921600 baud | alpha |
 
 The S3, C3 and C6 share one USB id, so flashing asks the chip (esptool) and writes that chip's image. VC-Adapter's
-standalone-board line, **2.0-aio** (1.9 before it; HELLO marks it with the link-port feature), is not for a board on
-a computer, and PokeUDS offers 2.0-uds in its place.
+standalone-board line, **2.1-aio** (2.0-aio, 1.9 before it; HELLO marks it with the link-port feature), is not for a
+board on a computer, and PokeUDS offers 2.1-uds in its place.
 
 A release image is merged (bootloader, partition table, app) and written at 0x0, so flashing erases the keys the
 board stores. PokeUDS never stores keys on the board (it keeps CCMP on the PC), so that costs nothing here; Azahar
@@ -34,14 +35,14 @@ import hashlib
 from dataclasses import dataclass
 from pathlib import Path
 
-FIRMWARE_VERSION = (2, 0)
-FIRMWARE = "2.0-uds"
+FIRMWARE_VERSION = (2, 1)
+FIRMWARE = "2.1-uds"
 # esptool's chip name -> (the image's chip part, its SHA-256, alpha: not yet seen working on that chip).
 IMAGES = {
-    "ESP32-S3": ("esp32s3", "ac7af250ad2f531e2b987c6752bbd36ff8137a4842a13b79a1be16adc17392bd", False),
-    "ESP32-C3": ("esp32c3", "a50dfe3cf5e91b676917b1a4c36d0fdd4aa83cbe53117ea41037d032c8b2a9f0", False),
-    "ESP32-C6": ("esp32c6", "f7821911cf529b6e4e57a5b755133a913d1228ded81d6892ea4b6b186992f6b6", False),
-    "ESP32": ("esp32", "b5ddfca142e559248089aba6ab1a950c9522d27eaf4dee5510985997094acfef", True),
+    "ESP32-S3": ("esp32s3", "88b1f15ba70bcd464b45be864b821b30560959e413d1a5c4fa3afd94e1ef5f5d", False),
+    "ESP32-C3": ("esp32c3", "3283c5fa7edba9a3b1b03ca08f128cd24b6f89931ccc942efc41b2f64bdb6540", False),
+    "ESP32-C6": ("esp32c6", "996ba07d5cc0ca2aa4ecea9fdbeca82e2c8fef51d568344414cc5b5c88b2223c", False),
+    "ESP32": ("esp32", "4b2c7e4d240ab4f7baebe6cc478313da015e0ac05f3424057dbda5c235906375", True),
 }
 CHIPS = tuple(IMAGES)
 IMAGE_BYTES = 8 << 20          # a merged image is well under the flash of the boards it targets
@@ -168,7 +169,7 @@ def firmware_path(chip: str = "ESP32-S3") -> Path:
 
 
 def firmware(chip: str = "ESP32-S3") -> Path:
-    """The bundled 2.0-uds image for ``chip`` (esptool's name), after checking it is the one PokeUDS shipped with."""
+    """The bundled image (``FIRMWARE``) for ``chip`` (esptool's name), after checking it is the one PokeUDS shipped with."""
     if chip not in IMAGES:
         raise OSError(f"esp32-uds-bridge has no build for the {chip}: it runs on the {', '.join(CHIPS)}")
     path = firmware_path(chip)

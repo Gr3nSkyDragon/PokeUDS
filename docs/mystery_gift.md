@@ -317,7 +317,7 @@ card the helper makes for Wi-Fi can go over local wireless too.
   for Gen 4 and 1 for Gen 5). The layout is in the module's docstring.
 - **The pace:** one beacon, one fragment, every 10 ms (Gen 4) or 21 ms (Gen 5), as the fork's firmware sends them.
 
-**No firmware change.** PokeUDS builds each beacon and sends it through firmware 2.0-uds's raw transmit
+**No firmware change.** PokeUDS builds each beacon and sends it through the firmware's raw transmit (2.0-uds and 2.1-uds alike)
 (`TX_FRAME`, at 1 Mbps), paced from the PC. The board's own beacon timer (`SET_BEACON`) is a fixed 102.4 ms and
 holds one frame, so it is not used. The PC's pace was good enough for the Gen 4 test, so no firmware that cycles
 the fragments itself is planned.
