@@ -29,7 +29,7 @@ from gui.views.plugins import PluginsView  # noqa: E402
 from gui.views.settings import SettingsView  # noqa: E402
 from gui.views.trade import TradeView  # noqa: E402
 
-PAGES = (TradeView, BankView, GtsView, GiftsView)          # the rail's top
+PAGES = (TradeView, GiftsView, GtsView, BankView)          # the rail's top
 BOTTOM = (PluginsView, BoardView, SettingsView)     # pinned to the rail's foot, Settings last; Debug before it when on
 
 
@@ -45,7 +45,9 @@ class Shell:
         self.rail = ft.NavigationRail(on_change=self._rail, bgcolor=t.PANEL, min_width=84, expand=True,
                                       label_type=ft.NavigationRailLabelType.ALL,
                                       leading=ft.Container(t.mark(), padding=ft.Padding(0, 18, 0, 18)))
-        self.foot = ft.NavigationRail(on_change=self._foot, bgcolor=t.PANEL, min_width=84,
+        # The foot's height is a generous 85 per entry (an entry is shorter than that), so its entries are pushed to
+        # its bottom: Settings sits at the foot of the window and any spare room goes above Update / Plugins.
+        self.foot = ft.NavigationRail(on_change=self._foot, bgcolor=t.PANEL, min_width=84, group_alignment=1.0,
                                       label_type=ft.NavigationRailLabelType.ALL)
         app.navigate = self.navigate
         app.rebuild_shell = self.rebuild

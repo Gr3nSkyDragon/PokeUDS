@@ -18,7 +18,7 @@ The window opens where it was last closed, at the same size (and maximized if it
 when that place is no longer on any screen, it opens centered (`gui/window.py`, Settings' `window`).
 
 
-The rail lists Trade, Bank, GTS and Gifts at the top, and Plugins, Board, Debug (when it is on) and Settings at
+The rail lists Trade, Gifts, GTS and Bank at the top, and Plugins, Board, Debug (when it is on) and Settings at
 its foot, Settings last. Plugin tools appear on the Trade page under their game. The app says "ESP32" for the board: esp32-uds-bridge runs on the ESP32-S3, with alpha builds for the classic ESP32, C3 and C6, and
 other chips can join the firmware list later without renaming anything.
 
