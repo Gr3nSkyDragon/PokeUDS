@@ -40,10 +40,10 @@ FIRMWARE_VERSION = (2, 1)
 FIRMWARE = "2.1-uds"
 # esptool's chip name -> (the image's chip part, its SHA-256, alpha: not yet seen working on that chip).
 IMAGES = {
-    "ESP32-S3": ("esp32s3", "88b1f15ba70bcd464b45be864b821b30560959e413d1a5c4fa3afd94e1ef5f5d", False),
-    "ESP32-C3": ("esp32c3", "3283c5fa7edba9a3b1b03ca08f128cd24b6f89931ccc942efc41b2f64bdb6540", False),
-    "ESP32-C6": ("esp32c6", "996ba07d5cc0ca2aa4ecea9fdbeca82e2c8fef51d568344414cc5b5c88b2223c", False),
-    "ESP32": ("esp32", "4b2c7e4d240ab4f7baebe6cc478313da015e0ac05f3424057dbda5c235906375", True),
+    "ESP32-S3": ("esp32s3", "7970f8ac109bf669f870f8bd3f3d31239236a78cc76e6107c48be4da67b75ed3", False),
+    "ESP32-C3": ("esp32c3", "80d0c45a06845d386b45e7c06238b1d01a33213a89e268c9004fdaf29870fa59", False),
+    "ESP32-C6": ("esp32c6", "5eab752c51a0712d8f9f413c3e8558b0f53ade2b86a232b5f0a043eae34f1984", False),
+    "ESP32": ("esp32", "33c9fee387c22b4d073127805e882a035da64c3afb718ab1035c040795cfeb55", True),
     "ESP32-S2": ("esp32s2", "6ca0194a0f07e70a1d3c181a0560553ef2a3e655df6781125268a15b22349640", True),
 }
 CHIPS = tuple(IMAGES)

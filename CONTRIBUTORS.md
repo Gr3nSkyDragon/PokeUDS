@@ -14,3 +14,7 @@ signing-key extraction and Settings flow, the tests and the documentation. The G
 **[Shinygati](https://github.com/Shinygati)** made the Gen 4/5 Mystery Gift over DS local wireless in their
 [PokeLDN-Bluetooth](https://github.com/Shinygati/PokeLDN-Bluetooth) fork of pokeldn: the Gen 4 and Gen 5 encoders
 and the DS beacon that PokeUDS's DS gift support (`pokeuds/games/ds/delivery.py`) is ported from (AGPL-3.0).
+
+**[cerealcommas](https://github.com/cerealcommas)** added the ESP32-S2: its 3DS radio over TinyUSB in VC-Adapter's
+esp32-uds-bridge and its Board page support here (download-mode installs, pokeldn's S2 left alone), tested first on a
+Flipper Wi-Fi Developer Board (PokeUDS pull request #2, VC-Adapter pull request #1).

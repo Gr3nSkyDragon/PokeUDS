@@ -10,7 +10,7 @@ unchanged, firmware **2.1-uds**, on five chips:
 | ESP32-S3 | its **native** USB port (often marked USB, not UART) | Espressif USB Serial/JTAG, `303A:1001` | traded on with 1.8 and with 2.1-ldn (2.1-uds's twin with the Switch side); 2.1-uds itself not yet tried on a board |
 | ESP32-C3, ESP32-C6 | its native USB port | `303A:1001` (the same id) | traded on (0.1.5): X/Y with the 3DS asking on both, and with PokeUDS asking (PokeUDS hosting) on the C6; other games not yet |
 | ESP32 (classic) | its board's only USB port, a USB-UART bridge (CP210x `10C4:EA60`, CH340 `1A86:7523`...) | the bridge's id, after any native port | **alpha**, the same |
-| ESP32-S2 (a Flipper Wi-Fi Developer Board, a Lolin S2 Mini...) | its only USB port, the chip's own | TinyUSB CDC, `303A:4001` (installed from its ROM's download mode, `303A:0002`) | **alpha**: a 2.0 build answered HELLO and scanned on a Flipper board; 2.1-uds not yet run on a board |
+| ESP32-S2 (a Flipper Wi-Fi Developer Board, a Lolin S2 Mini...) | its only USB port, the chip's own | TinyUSB CDC, `303A:4001` (installed from its ROM's download mode, `303A:0002`) | **alpha**: 2.1-uds traded Gen 6 on a Lolin S2 Mini (2026-11-20); a 2.0 build answered HELLO and scanned on a Flipper board; other generations not yet tried |
 
 Or pass `--radio esp32:COM4` / `--radio esp32:/dev/ttyACM0`.
 

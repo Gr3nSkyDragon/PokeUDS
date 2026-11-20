@@ -126,7 +126,8 @@ class BoardView(View):
             "board on a computer whose program only speaks 3DS (PokeUDS, Azahar), one image per chip; installing asks "
             "the board which chip it is and writes that chip's. It is the 3DS radio every generation trades over, and "
             "drives the optional SSD1306 screen. It has no Switch side. "
-            "The classic ESP32 and the S2 are alpha: they build and install, but have not traded on a real board yet. "
+            "The classic ESP32 and the S2 are alpha: the classic ESP32 has not traded on a real board yet, and the S2 "
+            "has traded Gen 6 (an S2 Mini). "
             "To install on an S2, hold BOOT, press and release RESET, release BOOT, then look again. "
             "The source is github.com/Gr3nSkyDragon/VC-Adapter (firmware/esp32-uds-bridge)."))
         problems = [v for chip, v in images.items() if isinstance(v, str) and board.IMAGES[chip][1] is not None]
