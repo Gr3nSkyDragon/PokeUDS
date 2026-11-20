@@ -171,7 +171,7 @@ static partial class Program
             3 => Name(Strings.Item, p.ItemID),
             8 => "Member Card", 9 => "Oak's Letter", 10 => "Azure Flute", 12 => "Secret Key",
             11 => "Pokétch app", 14 => "Pokéwalker course", 15 => "Memorial Photo", 13 => "Pokémon movie",
-            4 => "Battle rule", 5 => "Goods",
+            4 => "Battle rule", 5 => Name(Strings.uggoods, p.ItemID) + " (Underground goods)",
             _ => p.Gift.GiftType.ToString(),
         },
         WC7 { IsBP: true } w => $"{w.BP} BP",
