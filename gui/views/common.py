@@ -12,6 +12,19 @@ from .. import theme as t
 from ..translate import translate
 
 
+def drop_placeholder(chosen: str, written) -> None:
+    """Flet 1.1's save dialog creates the chosen file, empty, before it returns the path. When the app then writes
+    somewhere else (the name with its extension added), remove that empty file so no stray one is left beside it."""
+    from pathlib import Path
+
+    chosen_path = Path(chosen)
+    try:
+        if chosen_path.resolve() != Path(written).resolve() and chosen_path.is_file() and chosen_path.stat().st_size == 0:
+            chosen_path.unlink()
+    except OSError:
+        pass
+
+
 def awaiting(coroutine_function, *args):
     """An event handler that awaits ``coroutine_function(*args)``. Flet awaits a handler only when it is itself async:
     ``lambda e: self._save(x)`` would make the coroutine and drop it, and the button would do nothing."""

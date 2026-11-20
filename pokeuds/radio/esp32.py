@@ -197,12 +197,12 @@ class Esp32Radio(Radio):
                 raise RuntimeError(unopened(name))
             if time.monotonic() >= deadline:
                 raise RuntimeError(
-                    f"Something is on {name} but it did not answer. Is the esp32-uds-bridge "
-                    "firmware (1.7 or later) flashed? Firmware with the Switch side restarts once into its 3DS mode; "
-                    "if the board is stuck, unplug it and plug it back in.")
+                    f"Something is on {name} but it did not answer. Is the esp32-uds-bridge firmware flashed? "
+                    "Install it on the Board page (or with `pokeuds board flash`). If it is, unplug the board and "
+                    "plug it back in.")
             if lost and not restarted:
                 restarted = True
-                log.info("ESP32 on %s restarted (switching from its Switch mode to its 3DS mode); waiting for it", name)
+                log.info("ESP32 on %s dropped its port; waiting for it", name)
             time.sleep(REOPEN_DELAY)
             found = find_again(name, serial_number) or (find_port() if auto else None)
             if found and found != name:

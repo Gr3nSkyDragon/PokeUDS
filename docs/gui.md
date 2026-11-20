@@ -8,7 +8,7 @@ pip install -r requirements-gui.txt
 python -m gui
 ```
 
-A desktop app (Flet 1.0.5, the toolkit pokeldn uses) over the same code as the command line.
+A desktop app (Flet 1.1.2, the toolkit pokeldn uses) over the same code as the command line.
 
 ![The Trade page after a demo trade](assets/gui_trade.png)
 

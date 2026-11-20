@@ -27,6 +27,10 @@ icons, and the bundle's bounced for about a minute before macOS called it "Appli
 2026-11-19). The trade runs, second copies of the app, get no Dock icon either. Changing Info.plist breaks the
 bundle's signature, so the app is signed again ad hoc and checked.
 
+Flet's window is signed again by flet pack without the entitlements Flet's own build gave it, and its file dialogs then
+fail with ENTITLEMENT_NOT_FOUND (a Mac player, 2026-11-20). flet pack therefore runs through scripts/pack_flet.py
+(pokeldn's fix), which seals the window's own entitlements back in, and the build checks the packed window has them.
+
 The icon is ``--icon``, else ``gui/assets/icon.ico`` (Windows) or ``icon.icns`` (macOS), made from
 ``packaging/icon.jpg`` by scripts/make_icon.py. The PKHeX helper rides inside: this script first publishes the
 self-contained helper for this computer into ``pokeuds/app/data/pkhex`` (needs the .NET 10 SDK on the build machine),
@@ -89,19 +93,23 @@ def bundle_helper() -> Path:
 
 def pack(icon: Path | None, dist: Path) -> Path:
     """Run flet pack; -> the built app: dist/PokeUDS (Windows) or dist/PokeUDS.app (macOS)."""
-    flet = Path(sys.executable).with_name("flet.exe" if os.name == "nt" else "flet")
-    args = [str(flet) if flet.exists() else "flet", "pack", str(ENTRY), "--name", NAME,
+    # flet pack through scripts/pack_flet.py, as pokeldn runs it: on macOS it keeps the window's entitlements (file dialogs).
+    args = [sys.executable, str(ROOT / "scripts" / "pack_flet.py"), "pack", str(ENTRY), "--name", NAME,
             "--distpath", str(dist), "--yes",
             "--product-name", NAME, "--file-description", f"{NAME} {__version__}",
             "--product-version", __version__, "--file-version", file_version(__version__),
-            "--copyright", "Gr3nSkyDragon and contributors"]
+            "--copyright", "Gr3nSkyDragon and contributors",
+            "-v"]       # Flet 1.1's pack prints only warnings without it; the build log keeps PyInstaller's progress
     args += ["--bundle-id", BUNDLE_ID] if MAC else ["--onedir"]
     for source, target in DATA:
         args += ["--add-data", f"{ROOT / source}{os.pathsep}{target}"]
     if icon:
         args += ["--icon", str(icon)]
-    # The trade child imports pokeuds.cli from the same exe; esptool reads its flasher stubs from its package data.
-    args += ["--", "--paths", str(ROOT), "--collect-data", "esptool", "--collect-submodules", "pokeuds",
+    # The trade child imports pokeuds.cli from the same exe. esptool and esp_pylib (its logger, serial and reset code
+    # since esptool 5) are bundled whole, modules and data, as pokeldn bundles them: --collect-data alone left their
+    # modules to PyInstaller's import scan, which misses what they import at run time.
+    args += ["--", "--paths", str(ROOT), "--collect-all", "esptool", "--collect-all", "esp_pylib",
+             "--collect-submodules", "pokeuds",
              "--collect-submodules", "gui", "--workpath", str(ROOT / "build" / "pyinstaller"),
              "--specpath", str(ROOT / "build")]
     if MAC:
@@ -155,6 +163,36 @@ def background_app(app: Path) -> None:
     plist["LSUIElement"] = True
     with info.open("wb") as f:
         plistlib.dump(plist, f)
+
+
+FILE_DIALOGS = "com.apple.security.files.user-selected.read-write"
+
+
+def check_window_entitlements(app: Path) -> None:
+    """macOS: Flet's window, as packed in the app, carries the entitlement its file dialogs need and a valid signature
+    (scripts/pack_flet.py; pokeldn's scripts/check_app.py checks the same). Without it every file picker fails with
+    ENTITLEMENT_NOT_FOUND on the players' Macs, so the build stops here."""
+    import plistlib
+    import tarfile
+    import tempfile
+
+    archives = list(app.rglob("flet-macos.tar.gz"))
+    if len(archives) != 1:
+        sys.exit(f"{app} holds {len(archives)} flet-macos.tar.gz, not one: flet pack's layout changed")
+    with tempfile.TemporaryDirectory(prefix="pokeuds-view-check-") as folder:
+        with tarfile.open(archives[0]) as archive:
+            archive.extractall(folder, filter="data")
+        windows = list(Path(folder).glob("*.app"))
+        if len(windows) != 1:
+            sys.exit(f"{archives[0]} holds {len(windows)} .app bundles, not one")
+        result = subprocess.run(["codesign", "--display", "--entitlements", "-", "--xml", str(windows[0])],
+                                capture_output=True, check=True)
+        entitlements = plistlib.loads(result.stdout) if result.stdout else {}
+        if not entitlements.get(FILE_DIALOGS):
+            sys.exit(f"Flet's window ({archives[0].name}) is signed without {FILE_DIALOGS}, so file dialogs would fail "
+                     f"(ENTITLEMENT_NOT_FOUND): scripts/pack_flet.py no longer reaches Flet's signing. "
+                     f"It has: {sorted(entitlements) or 'none'}")
+        subprocess.run(["codesign", "--verify", "--deep", "--strict", str(windows[0])], check=True)
 
 
 def resign(app: Path) -> None:
@@ -216,6 +254,8 @@ def main(argv: list[str] | None = None) -> int:
                 aside.rename(a.dist / NAME / name)
     if MAC:
         print(f"built {built}")
+        check_window_entitlements(built)
+        print(f"Flet's window is signed with {FILE_DIALOGS} (file dialogs)")
         background_app(built)
         resign(built)
         print("marked LSUIElement (one Dock icon: the window's) and signed again ad hoc")

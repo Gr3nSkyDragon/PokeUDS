@@ -113,6 +113,15 @@ jobs:
           echo "bundled helper: $HELPER"
           echo '{"cmd":"ping"}' | "$HELPER"
           "$APP/Contents/MacOS/PokeUDS" --cli --help >/dev/null && echo "the app's command line starts"
+          # Flet's window keeps the entitlement its file dialogs need (build_exe.py checks it too; scripts/pack_flet.py).
+          TMP=$(mktemp -d)
+          tar -xzf "$(find "$APP" -name flet-macos.tar.gz | head -1)" -C "$TMP"
+          codesign -d --entitlements - --xml "$TMP"/*.app | tee /dev/stderr | grep -q files.user-selected.read-write
+          # Installing firmware with no board: esptool must get as far as the port and fail there, not crash before it
+          # (a RecursionError in the Mac app, 2026-11-20). Any traceback fails the build and is printed here.
+          OUT=$("$APP/Contents/MacOS/PokeUDS" --cli board flash --port /dev/cu.no-such-board 2>&1 || true)
+          echo "$OUT"
+          if echo "$OUT" | grep -q "Traceback"; then exit 1; fi
       - uses: actions/upload-artifact@v7
         with:
           name: app-macos-${{ matrix.arch }}

@@ -681,6 +681,19 @@ def _vc_host_titles() -> list[str]:
     return list(titles.HOSTABLE)
 
 
+def _expected_flash_error(exc: BaseException) -> bool:
+    """An error flashing can meet on a working install (esptool's, the serial port's, the image's): its message is the
+    whole story. Anything else (a RecursionError in the packaged Mac app, say) also gets its traceback printed."""
+    try:
+        import esptool
+        import serial
+
+        expected: tuple[type[BaseException], ...] = (esptool.FatalError, serial.SerialException, OSError)
+    except ImportError:
+        expected = (OSError,)
+    return isinstance(exc, expected)
+
+
 def cmd_board(args) -> int:
     from .app import board
 
@@ -698,7 +711,7 @@ def cmd_board(args) -> int:
             print("No ESP32 found. Plug an S3, C3 or C6 board in by its native USB port, or a classic ESP32 by its "
                   "USB port, or pass --port.")
             return 1
-        print(f"Asking the board on {port} for its firmware (a board with the Switch side restarts into its 3DS mode first)")
+        print(f"Asking the board on {port} for its firmware")
         try:
             found = board.identify(port)
         except RuntimeError as exc:
@@ -723,6 +736,10 @@ def cmd_board(args) -> int:
             board.flash(port, image)
         except Exception as exc:           # esptool.FatalError, a serial error, a bad image
             print(f"Flashing failed: {exc}")
+            if not _expected_flash_error(exc):     # anything else is a bug: keep where it came from for the report
+                import traceback
+
+                traceback.print_exc(file=sys.stdout)
             print("If the board is not detected, hold BOOT while plugging it in, then release it, and try again.")
             return 1
         return 0

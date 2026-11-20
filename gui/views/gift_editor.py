@@ -19,7 +19,7 @@ from pokeuds.app import giftfile
 from pokeuds.app.giftfile import CONTEST, RIBBONS, STATS
 
 from .. import theme as t
-from .common import View, awaiting
+from .common import View, awaiting, drop_placeholder
 from .picker import name_field
 
 KINDS = {4: (("pokemon", "Pokemon"), ("item", "Item")),
@@ -635,6 +635,7 @@ class GiftEditor(View):
             card = b""
             self.message = f"Saved, but the card cannot be made yet: {exc}"
         self.path = giftfile.save(path, giftfile.GiftProject(self.game, copy.deepcopy(self.f), self.name, card))
+        drop_placeholder(path, self.path)
         if card:
             self.message, self.message_color = f"Saved {self.path}.", t.GOOD
         else:
@@ -683,6 +684,7 @@ class GiftEditor(View):
         if path:
             target = Path(path if path.lower().endswith("." + ext) else f"{path}.{ext}")
             target.write_bytes(data)
+            drop_placeholder(path, target)
             self.last = gift
             self.on_result(gift)
             self._say(f"Exported {target} ({len(data)} bytes).", t.GOOD)

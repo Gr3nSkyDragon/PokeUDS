@@ -59,6 +59,12 @@ PokeUDS icon that bounced for a minute and then "Application Not Responding". Th
 signature, that `LSUIElement` is set, that its PKHeX answers, and that the app's command line starts, but nothing
 opens its window there: start it on a Mac before publishing.
 
+`flet pack` runs through `scripts/pack_flet.py` (pokeldn's fix): Flet signs its own window again without the
+entitlements its build gave it, and without `com.apple.security.files.user-selected.read-write` every file dialog
+fails with `ENTITLEMENT_NOT_FOUND`. The wrapper seals the window's entitlements back in, and both the build and the
+release workflow stop if the packed window lacks that one. The workflow also tries to install firmware to a board
+that is not there and fails if that crashes instead of reporting the missing port.
+
 ## Code signing (prepared, not in use)
 
 PokeUDS is not code-signed yet: SignPath Foundation did not accept its application, and it is working towards it

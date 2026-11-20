@@ -63,8 +63,7 @@ class BoardView(View):
         busy = self.app.busy()
         in_use = self.app.settings.radio == "esp32" and self.app.settings.port == port.device
         if self.checking == port.device and busy:
-            state, color, detail = ("Checking...", t.INFO, "Asking the board for its firmware. A board with the Switch "
-                                    "side restarts into its 3DS mode first.")
+            state, color, detail = "Checking...", t.INFO, "Asking the board for its firmware."
         elif self.installing == port.device and busy:
             state, color, detail = "Installing...", t.INFO, "Keep the board plugged in. About a minute."
         elif info:
@@ -119,9 +118,8 @@ class BoardView(View):
             f"PokeUDS comes with the firmware it uses: VC-Adapter's esp32-uds-bridge {board.FIRMWARE}, the line for a "
             "board on a computer whose program only speaks 3DS (PokeUDS, Azahar), one image per chip; installing asks "
             "the board which chip it is and writes that chip's. It is the 3DS radio every generation trades over, and "
-            "drives the optional SSD1306 screen. It has no Switch side, so the board never restarts when PokeUDS "
-            "connects. A board on the ldn line (mGBA-LDN's, with the Switch side) works too, restarting into its 3DS "
-            "mode first. The classic ESP32 is alpha: it builds and installs, but has not traded on a real board yet. "
+            "drives the optional SSD1306 screen. It has no Switch side. "
+            "The classic ESP32 is alpha: it builds and installs, but has not traded on a real board yet. "
             "The source is github.com/Gr3nSkyDragon/VC-Adapter (firmware/esp32-uds-bridge)."))
         problems = [v for v in images.values() if isinstance(v, str)]
         if problems:

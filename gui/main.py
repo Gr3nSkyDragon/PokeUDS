@@ -184,6 +184,9 @@ def run() -> None:
         # POKEUDS_GUI_HOST=0.0.0.0 also serves other machines (a preview pane, a phone on the LAN).
         ft.run(main, view=ft.AppView.WEB_BROWSER, no_cdn=True, port=int(port), host=os.environ.get("POKEUDS_GUI_HOST") or None)
     else:
+        # Flet 1.1's window renders with Impeller, slower than Skia on weak GPUs; pokeldn turns it off the same way.
+        # FLET_NO_IMPELLER=false in the environment turns it back on.
+        os.environ.setdefault("FLET_NO_IMPELLER", "true")
         ft.run(main, view=ft.AppView.FLET_APP_HIDDEN)      # gui/window.py shows it once it is in place
 
 

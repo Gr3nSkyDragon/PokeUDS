@@ -9,7 +9,9 @@ follows a click (the download's progress, the restart) and, once, how the last u
 
 from __future__ import annotations
 
+import collections
 import threading
+import time
 import webbrowser
 
 import flet as ft
@@ -18,6 +20,15 @@ from pokeuds.app import i18n
 from pokeuds.app import update as updating
 
 from . import theme as t
+
+SPEED_WINDOW = 3.0       # seconds the download speed is averaged over
+
+
+def rate(per_second: float) -> str:
+    """A download speed: "850 KB/s", "2.4 MB/s"."""
+    if per_second < 1 << 20:
+        return f"{per_second / 1024:.0f} KB/s"
+    return f"{per_second / (1 << 20):.1f} MB/s"
 
 
 class Updates:
@@ -29,6 +40,7 @@ class Updates:
         self.state = ""                  # "", "available", "downloading", "restarting", "error", "done", "current"
         self.detail = ""
         self.progress = (0, 0)
+        self.speed = 0.0                 # bytes a second over the last few seconds of the download; 0: not known yet
         self.cancel = False
         self.on_available = lambda: None    # the shell shows its green Update entry
 
@@ -93,8 +105,12 @@ class Updates:
         if self.state == "downloading" and r is not None:
             done, total = self.progress
             bar = ft.ProgressBar(value=done / total if total else None, width=220, color=t.ACCENT, bgcolor=t.LINE)
-            text = i18n.tr(f"Downloading PokeUDS {r.version}: {done >> 20} of {total >> 20} MB" if total
-                           else f"Downloading PokeUDS {r.version}...")
+            if total and self.speed:
+                text = i18n.tr(f"Downloading PokeUDS {r.version}: {done >> 20} of {total >> 20} MB ({rate(self.speed)})")
+            elif total:
+                text = i18n.tr(f"Downloading PokeUDS {r.version}: {done >> 20} of {total >> 20} MB")
+            else:
+                text = i18n.tr(f"Downloading PokeUDS {r.version}...")
             return self._row(ft.Icons.DOWNLOAD, t.INFO, text,
                              [bar, t.secondary(i18n.tr("Cancel"), lambda e: self._cancel(), ft.Icons.CLOSE)])
         if self.state == "restarting":
@@ -138,14 +154,23 @@ class Updates:
 
     def _install(self) -> None:
         release, root = self.release, self.root
-        self.cancel, self.progress = False, (0, 0)
+        self.cancel, self.progress, self.speed = False, (0, 0), 0.0
         self._show("downloading")
-        last = [0]
+        last = [0, time.monotonic()]
+        samples: collections.deque[tuple[float, int]] = collections.deque()
 
         def progress(done: int, total: int) -> None:
+            now = time.monotonic()
             self.progress = (done, total)
-            if done - last[0] > (1 << 20) or done == total:       # a redraw per megabyte
-                last[0] = done
+            samples.append((now, done))
+            while len(samples) > 2 and now - samples[1][0] >= SPEED_WINDOW:     # keep about SPEED_WINDOW seconds
+                samples.popleft()
+            span = now - samples[0][0]
+            if span >= 1.0:
+                self.speed = (done - samples[0][1]) / span
+            # A redraw per megabyte, and at least once a second so the speed stays current on a slow line.
+            if done - last[0] > (1 << 20) or now - last[1] >= 1.0 or done == total:
+                last[0], last[1] = done, now
                 self.app.ui(lambda: self._show("downloading"))
 
         def work() -> None:
