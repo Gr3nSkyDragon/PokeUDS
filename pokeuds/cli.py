@@ -7,7 +7,7 @@
     pkx      show a .pk6/.pk7 (or .ek6/.ek7) file
     vc       Virtual Console Gen 1/2: trade, show or convert a .pk1/.pk2
     trade    trade with a retail console (xy, oras, sm, usum), joining or hosting
-    board    ESP32 boards (S3; alpha: classic, C3, C6): list, check, or install esp32-uds-bridge 2.1-uds (included)
+    board    ESP32 boards (S3, C3, C6, S2; alpha: classic): list, check, or install esp32-uds-bridge 2.1-uds (included)
     build    build a legal Pokemon with PKHeX (docs/pkhex.md)
     pkhex    PKHeX in a source tree: status, build
     plugins  installed plugins: list, install, remove, enable, disable; plugin run TOOL -- ARGS

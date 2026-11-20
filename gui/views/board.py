@@ -1,4 +1,4 @@
-"""The Board page: ESP32 boards (the S3, C3 and C6; alpha: the classic ESP32), the esp32-uds-bridge firmware they
+"""The Board page: ESP32 boards (the S3, C3, C6 and S2; alpha: the classic ESP32), the esp32-uds-bridge firmware they
 run, and installing it.
 
 Modelled on pokeldn's Boards page: the firmware comes with PokeUDS (2.1-uds, one image per chip, built from
@@ -126,8 +126,7 @@ class BoardView(View):
             "board on a computer whose program only speaks 3DS (PokeUDS, Azahar), one image per chip; installing asks "
             "the board which chip it is and writes that chip's. It is the 3DS radio every generation trades over, and "
             "drives the optional SSD1306 screen. It has no Switch side. "
-            "The classic ESP32 and the S2 are alpha: the classic ESP32 has not traded on a real board yet, and the S2 "
-            "has traded Gen 6 (an S2 Mini). "
+            "The classic ESP32 is alpha: it builds and installs, but has not traded on a real board yet. "
             "To install on an S2, hold BOOT, press and release RESET, release BOOT, then look again. "
             "The source is github.com/Gr3nSkyDragon/VC-Adapter (firmware/esp32-uds-bridge)."))
         problems = [v for chip, v in images.items() if isinstance(v, str) and board.IMAGES[chip][1] is not None]

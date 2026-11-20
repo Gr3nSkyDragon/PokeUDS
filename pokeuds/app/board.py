@@ -17,7 +17,7 @@ serial number, since macOS may name it anew, and the Board page offers 2.1-uds a
 | ESP32-S3 | ``esp32-uds-bridge-2.1-uds-esp32s3.bin`` | native USB (``303A:1001``) | the chip 1.8 ran on |
 | ESP32-C3, ESP32-C6 | ``...-esp32c3.bin``, ``...-esp32c6.bin`` | native USB (``303A:1001``) | traded on (0.1.5) |
 | ESP32 (classic) | ``...-esp32.bin`` (bootloader at 0x1000 inside it) | its board's USB-UART bridge (CP210x, CH340...), 921600 baud | alpha |
-| ESP32-S2 | ``...-esp32s2.bin`` (bootloader at 0x1000 inside it) | TinyUSB CDC (``303A:4001``); flashed from its ROM's download mode (``303A:0002``) | alpha |
+| ESP32-S2 | ``...-esp32s2.bin`` (bootloader at 0x1000 inside it) | TinyUSB CDC (``303A:4001``); flashed from its ROM's download mode (``303A:0002``) | traded on (0.2.2): Gen 6 on an S2 Mini |
 
 The S3, C3 and C6 share one USB id, so flashing asks the chip (esptool) and writes that chip's image. VC-Adapter's
 standalone-board line, **2.1-aio** (2.0-aio, 1.9 before it; HELLO marks it with the link-port feature), is not for a
@@ -44,7 +44,7 @@ IMAGES = {
     "ESP32-C3": ("esp32c3", "80d0c45a06845d386b45e7c06238b1d01a33213a89e268c9004fdaf29870fa59", False),
     "ESP32-C6": ("esp32c6", "5eab752c51a0712d8f9f413c3e8558b0f53ade2b86a232b5f0a043eae34f1984", False),
     "ESP32": ("esp32", "33c9fee387c22b4d073127805e882a035da64c3afb718ab1035c040795cfeb55", True),
-    "ESP32-S2": ("esp32s2", "6ca0194a0f07e70a1d3c181a0560553ef2a3e655df6781125268a15b22349640", True),
+    "ESP32-S2": ("esp32s2", "6ca0194a0f07e70a1d3c181a0560553ef2a3e655df6781125268a15b22349640", False),
 }
 CHIPS = tuple(IMAGES)
 IMAGE_BYTES = 8 << 20          # a merged image is well under the flash of the boards it targets

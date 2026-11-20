@@ -44,7 +44,7 @@ def test_each_chip_has_its_uds_image(chip):
     other = next(c for c in CHIP_DEFS.values() if c.CHIP_NAME in board.CHIPS and c.CHIP_NAME != chip)
     with pytest.raises(esptool.FatalError):
         board.check_image(path, other)           # never another chip's
-    assert board.IMAGES[chip][2] == (chip in {"ESP32", "ESP32-S2"})
+    assert board.IMAGES[chip][2] == (chip == "ESP32")         # alpha: only the classic ESP32 (the others traded)
 
 
 def test_a_changed_firmware_file_is_refused(tmp_path, monkeypatch):
