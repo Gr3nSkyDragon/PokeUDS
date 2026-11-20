@@ -1,6 +1,7 @@
-"""ESP32 radio backend (VC-Adapter ``firmware/esp32-uds-bridge``): an S3, C3 or C6 on its native USB port, or a
-classic ESP32 through its board's USB-UART bridge (CP210x, CH340...) at 921600 baud, opened without pulsing DTR and
-RTS, which such boards wire to the chip's reset (firmware 2.1-uds; docs/hardware.md).
+"""ESP32 radio backend (VC-Adapter ``firmware/esp32-uds-bridge``): an S3, C3 or C6 on its native USB port, an S2
+(alpha) on its TinyUSB CDC port, or a classic ESP32 through its board's USB-UART bridge (CP210x, CH340...) at 921600
+baud, opened without pulsing DTR and RTS, which such boards wire to the chip's reset (firmware 2.1-uds;
+docs/hardware.md).
 
 The board captures and injects raw MPDUs and replays a beacon template on its own timer, so a slow
 USB round trip never shows up as a missing beacon. The protocol is in ``esp32_wire``; the
@@ -23,6 +24,11 @@ log = logging.getLogger(__name__)
 # Espressif USB Serial/JTAG, the native USB port of the S3, C3 and C6.
 ESPRESSIF_VID = 0x303A
 ESPRESSIF_JTAG_PID = 0x1001
+# The S2's firmware port (TinyUSB CDC, which pokeldn's S2 image uses too) and its ROM's download mode.
+S2_CDC_USB = (ESPRESSIF_VID, 0x4001)
+S2_ROM_USB = (ESPRESSIF_VID, 0x0002)
+S2_SHARED_SERIAL = "123456"   # TinyUSB's default USB serial number: every S2 board reports it, so it names none
+NATIVE_USB = {(ESPRESSIF_VID, ESPRESSIF_JTAG_PID), S2_CDC_USB}
 # USB-UART bridges boards put on a UART: the classic ESP32's only way in.
 BRIDGES = {(0x10C4, 0xEA60): "CP210x", (0x1A86, 0x7523): "CH340", (0x1A86, 0x55D3): "CH343",
            (0x0403, 0x6001): "FTDI", (0x0403, 0x6010): "FTDI"}
@@ -39,14 +45,21 @@ REOPEN_DELAY = 1.0
 MIN_FIRMWARE = (1, 7)   # the first 3DS-only image with the screen; 1.8 adds the Switch side
 
 
+def is_native_radio_port(port) -> bool:
+    """Identify native radio candidates without opening a known pokeldn port."""
+    usb_id = (port.vid, port.pid)
+    # Both S2 runtimes share a USB ID. Keep CDC devices without a product string eligible.
+    return usb_id in NATIVE_USB and not (usb_id == S2_CDC_USB and getattr(port, "product", None) == "pokeldn ESP32-S2")
+
+
 def find_port() -> str | None:
-    """The serial port of an attached ESP32: a native USB port first (S3, C3, C6), else a USB-UART bridge (a
+    """The serial port of an attached ESP32: a native USB radio candidate first (S2, S3, C3, C6), else a USB-UART bridge (a
     classic ESP32); None when there is neither."""
     from serial.tools import list_ports
 
     ports = list(list_ports.comports())
     for port in ports:
-        if port.vid == ESPRESSIF_VID and port.pid == ESPRESSIF_JTAG_PID:
+        if is_native_radio_port(port):
             return port.device
     for port in ports:
         if (port.vid, port.pid) in BRIDGES:
@@ -62,19 +75,24 @@ def board_ports() -> list[str]:
         ports = list(list_ports.comports())
     except (ImportError, OSError):
         return []
-    native = [p.device for p in ports if (p.vid, p.pid) == (ESPRESSIF_VID, ESPRESSIF_JTAG_PID)]
+    native = [p.device for p in ports if is_native_radio_port(p)]
     return native + [p.device for p in ports if (p.vid, p.pid) in BRIDGES]
 
 
 def usb_serial(device: str) -> str:
     """The USB serial number of the port ``device`` ("" when it has none or cannot be listed). The S3, C3 and C6
-    give their MAC address there, so it names the board whatever port name the system gives it."""
+    give their MAC address there, so it names the board whatever port name the system gives it. An S2's is the same
+    on every board, so it is taken as none."""
     try:
         from serial.tools import list_ports
 
-        return next((getattr(p, "serial_number", None) or "" for p in list_ports.comports() if p.device == device), "")
+        port = next((p for p in list_ports.comports() if p.device == device), None)
     except (ImportError, OSError):
         return ""
+    serial = (getattr(port, "serial_number", None) or "") if port else ""
+    if (port and (port.vid, port.pid) == S2_CDC_USB) and serial == S2_SHARED_SERIAL:
+        return ""
+    return serial
 
 
 def find_again(name: str, serial: str) -> str | None:
@@ -108,14 +126,19 @@ def unopened(name: str) -> str:
     return f"No board on {name}: it is not connected. Plug the board in by its USB port, then check it on the Board page."
 
 
-def is_bridge(device: str) -> bool:
-    """Whether ``device`` is a USB-UART bridge (a classic ESP32's port) rather than a chip's native USB."""
+def port_usb_id(device: str) -> tuple[int | None, int | None] | None:
+    """The USB (vid, pid) of the port ``device``; None when it is not there or ports cannot be listed."""
     try:
         from serial.tools import list_ports
 
-        return any(p.device == device and (p.vid, p.pid) in BRIDGES for p in list_ports.comports())
+        return next(((p.vid, p.pid) for p in list_ports.comports() if p.device == device), None)
     except (ImportError, OSError):
-        return False
+        return None
+
+
+def is_bridge(device: str) -> bool:
+    """Whether ``device`` is a USB-UART bridge (a classic ESP32's port) rather than a chip's native USB."""
+    return port_usb_id(device) in BRIDGES
 
 
 def open_serial(name: str, baud: int, bridge: bool):
@@ -173,16 +196,20 @@ class Esp32Radio(Radio):
         name = self.port_name or find_port()
         if not name:
             raise RuntimeError(
-                "No ESP32 found. Connect an S3, C3 or C6 board's native USB port (Espressif USB Serial/JTAG, "
-                "303A:1001), or a classic ESP32 board's USB port (its CP210x or CH340), or pass --port.")
+                "No ESP32 found. Connect an S2, S3, C3 or C6 board's native USB port (Espressif USB CDC or Serial/JTAG, "
+                "303A:4001 or 303A:1001), or a classic ESP32 board's USB port (its CP210x or CH340), or pass --port.")
         serial_number = usb_serial(name)     # read while the port is there: after a restart its name may change
         began = time.monotonic()
         deadline = began + OPEN_TIMEOUT
         restarted = opened = False
         while True:
             try:
-                bridge = is_bridge(name)
-                baud = self.baud or (BRIDGE_BAUD if bridge else NATIVE_BAUD)
+                usb_id = port_usb_id(name)
+                bridge = usb_id in BRIDGES
+                default_baud = BRIDGE_BAUD if bridge else NATIVE_BAUD
+                if usb_id == S2_CDC_USB:
+                    default_baud = 115200  # CDC line coding only; the S2 sends at USB speed.
+                baud = self.baud or default_baud
                 self._attach(open_serial(name, baud, bridge))
                 opened = True
                 if self._say_hello(min(deadline, time.monotonic() + HELLO_WINDOW)):

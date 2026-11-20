@@ -44,7 +44,7 @@ class BoardView(View):
         ]
         if self.app.settings.radio == "ldnd":
             controls.append(t.notice("Trades use the USB Wi-Fi adapter (the Trade page's Connection). This page is for ESP32 boards.", t.INFO))
-        controls.append(t.card(t.heading("Boards"), *([self._board(p, image) for p in ports] or [self._none()]), spacing=12))
+        controls.append(t.card(t.heading("Boards"), *([self._board(p, images.get(p.chip, image)) for p in ports] or [self._none()]), spacing=12))
         controls.append(self._firmware(images))
         if self.app.run_kind == "board":
             controls.append(t.card(t.heading("Activity"), log_box(self.app.log, height=200, app=self.app)))
@@ -53,7 +53,7 @@ class BoardView(View):
     def _none(self) -> ft.Control:
         return ft.Column([
             t.label("No board found", color=t.TEXT, size=14),
-            t.label("Plug the ESP32 into this computer with a data cable: an S3, C3 or C6 board by its native USB port "
+            t.label("Plug the ESP32 into this computer with a data cable: an S2, S3, C3 or C6 board by its native USB port "
                     "(often marked USB, not UART), a classic ESP32 board by its only USB port. It shows up here; press "
                     "Look again. A board with no firmware may need BOOT held while plugging it in."),
         ], spacing=4, tight=True)
@@ -66,6 +66,8 @@ class BoardView(View):
             state, color, detail = "Checking...", t.INFO, "Asking the board for its firmware."
         elif self.installing == port.device and busy:
             state, color, detail = "Installing...", t.INFO, "Keep the board plugged in. About a minute."
+        elif port.rom:
+            state, color, detail = "Download mode", t.INFO, "Install firmware, then check the new USB port after RESET."
         elif info:
             described = info.get("described") or board.BUILDS.get(info["build"], info["build"])
             running = f"esp32-uds-bridge {info['firmware']} ({described}), MAC {info['mac']}."
@@ -80,7 +82,9 @@ class BoardView(View):
         elif port.device in self.failed:
             state, color = "No answer", t.BAD
             detail = f"No esp32-uds-bridge answered. Install firmware {board.FIRMWARE} on it."
-            if not port.native:
+            if port.chip == "ESP32-S2":
+                detail += " Hold BOOT, press and release RESET, then release BOOT and look again."
+            elif not port.native:
                 detail += (" On an S3, C3 or C6 board this UART port is not where the firmware listens: use its native "
                            "USB port.")
         elif not port.native:
@@ -90,11 +94,13 @@ class BoardView(View):
         else:
             state, color, detail = "Not checked", t.MUTED, "Check it to read its firmware."
         buttons = []
-        buttons.append(t.secondary("Check", lambda e, d=port.device: self._check(d), ft.Icons.SEARCH, disabled=busy))
+        if not port.rom:
+            buttons.append(t.secondary("Check", lambda e, d=port.device: self._check(d), ft.Icons.SEARCH, disabled=busy))
         install_text = f"Install {board.FIRMWARE}" if not info or info.get("update") else f"Reinstall {board.FIRMWARE}"
-        buttons.append(t.primary(install_text, lambda e, d=port.device: self._install(d), ft.Icons.SYSTEM_UPDATE_ALT,
-                                 disabled=busy or image is None))
-        if info or (port.native and port.device not in self.failed):
+        if port.chip != "ESP32-S2" or port.rom:
+            buttons.append(t.primary(install_text, lambda e, d=port: self._install(d), ft.Icons.SYSTEM_UPDATE_ALT,
+                                     disabled=busy or image is None or isinstance(image, str)))
+        if not port.rom and (info or (port.native and port.device not in self.failed)):
             buttons.append(t.secondary("In use for trades" if in_use else "Use for trades",
                                        lambda e, d=port.device: self._use(d), ft.Icons.CHECK_CIRCLE_OUTLINE,
                                        disabled=busy or in_use))
@@ -109,19 +115,21 @@ class BoardView(View):
         rows: list[ft.Control] = [t.heading("Firmware")]
         for chip, found in images.items():
             ok = not isinstance(found, str)
-            alpha = board.IMAGES[chip][2]
+            _, digest, alpha = board.IMAGES[chip]
+            pending = digest is None
             rows.append(ft.Row([ft.Icon(ft.Icons.MEMORY, color=t.MUTED, size=18),
                                 t.label(f"esp32-uds-bridge {board.FIRMWARE} for the {chip}", color=t.TEXT),
-                                t.pill(("included, alpha" if alpha else "included") if ok else "missing",
-                                       (t.WARN if alpha else t.GOOD) if ok else t.BAD)], spacing=8))
+                                t.pill(("included, alpha" if alpha else "included") if ok else ("pending" if pending else "missing"),
+                                       (t.WARN if alpha else t.GOOD) if ok else (t.WARN if pending else t.BAD))], spacing=8))
         rows.append(t.label(
             f"PokeUDS comes with the firmware it uses: VC-Adapter's esp32-uds-bridge {board.FIRMWARE}, the line for a "
             "board on a computer whose program only speaks 3DS (PokeUDS, Azahar), one image per chip; installing asks "
             "the board which chip it is and writes that chip's. It is the 3DS radio every generation trades over, and "
             "drives the optional SSD1306 screen. It has no Switch side. "
-            "The classic ESP32 is alpha: it builds and installs, but has not traded on a real board yet. "
+            "The classic ESP32 and the S2 are alpha: they build and install, but have not traded on a real board yet. "
+            "To install on an S2, hold BOOT, press and release RESET, release BOOT, then look again. "
             "The source is github.com/Gr3nSkyDragon/VC-Adapter (firmware/esp32-uds-bridge)."))
-        problems = [v for v in images.values() if isinstance(v, str)]
+        problems = [v for chip, v in images.items() if isinstance(v, str) and board.IMAGES[chip][1] is not None]
         if problems:
             rows.append(t.notice("; ".join(problems), t.BAD))
         rows += [
@@ -133,7 +141,7 @@ class BoardView(View):
 
     # -- actions --------------------------------------------------------------------------------
 
-    def _run(self, args: list[str], *, check: str = "", install: str = "") -> None:
+    def _run(self, args: list[str], *, check: str = "", install: str = "", adopt_install: bool = True) -> None:
         self.checking, self.installing = check, install
 
         def event(ev: dict) -> None:
@@ -149,7 +157,7 @@ class BoardView(View):
             if install:                       # the board runs something new: check it again
                 self.found.pop(install, None)
                 self.failed.discard(install)
-                if code == 0:
+                if code == 0 and adopt_install:
                     self._adopt(install)
             self.checking = self.installing = ""
 
@@ -158,8 +166,8 @@ class BoardView(View):
     def _check(self, port: str) -> None:
         self._run(["check", "--port", port], check=port)
 
-    def _install(self, port: str) -> None:
-        self._run(["flash", "--port", port], install=port)
+    def _install(self, port: board.Port) -> None:
+        self._run(["flash", "--port", port.device], install=port.device, adopt_install=not port.rom)
 
     def _adopt(self, port: str) -> None:
         """A board just checked or installed: the Trade page's ESP32 connection uses its port from now on. Runs on the

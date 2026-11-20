@@ -703,12 +703,12 @@ def cmd_board(args) -> int:
             print(port.label())
         status.emit("boards", ports=[{"device": p.device, "description": p.description, "native": p.native} for p in found])
         if not found:
-            print("No ESP32 found (Espressif USB 303A:1001, or a CP210x/CH340 UART bridge).")
+            print("No ESP32 found (Espressif USB 303A:1001 or 303A:4001, or a CP210x/CH340 UART bridge).")
         return 0
     if args.board_command == "check":
-        port = args.port or next((p.device for p in board.ports()), None)
+        port = args.port or next((p.device for p in board.ports() if not p.rom), None)
         if not port:
-            print("No ESP32 found. Plug an S3, C3 or C6 board in by its native USB port, or a classic ESP32 by its "
+            print("No ESP32 found. Plug an S2, S3, C3 or C6 board in by its native USB port, or a classic ESP32 by its "
                   "USB port, or pass --port.")
             return 1
         print(f"Asking the board on {port} for its firmware")
