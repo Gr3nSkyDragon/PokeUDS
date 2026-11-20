@@ -352,6 +352,11 @@ hides every tool it would have added.
 A language pack is a plugin with no code: a `locale` and the translations. Its `name` appears in Settings,
 **App language**; choosing it redraws every page at once.
 
+The app also ships machine translations for the 3DS games' languages (docs/release.md, Translations). A pack for one
+of them (its locale, or its primary language: `es-MX` over `es`) is laid over it: the pack's strings win, and what
+the pack leaves out shows the machine translation, then English. So a pack can start small and fix only what reads
+wrong.
+
 ```toml
 id = "community-es"
 name = "Español"

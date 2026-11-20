@@ -1,4 +1,10 @@
-"""The app's language: English, or a language pack (a data-only plugin, docs/plugins.md, Language packs).
+"""The app's language: English, a built-in machine translation, or a language pack (a data-only plugin,
+docs/plugins.md, Language packs).
+
+Built-in languages are ``data/lang/<locale>.toml``, made from the template by ``scripts/translate_strings.py``
+(machine translations, labelled as such in Settings); ``data/lang/languages.toml`` names them. A pack for the same
+language (its locale, or its primary language: es-MX over es) is laid over the built-in one: its strings win, and
+what it leaves out falls back to the machine translation, then to English.
 
 The app's pages are written in English. A pack's ``strings.toml`` maps English text to its translation:
 
@@ -20,6 +26,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 TEMPLATE = Path(__file__).with_name("data") / "strings.en.toml"
+LANG = Path(__file__).with_name("data") / "lang"
+BUILTIN = "builtin:"                 # a built-in language's choice in the settings: builtin:<locale>
+OFFERED_SHARE = 0.9                  # a built-in language is offered once it covers this much of the app: one being
+                                     # translated (scripts/translate_strings.py saves as it goes) stays out of Settings
 MAX_STRINGS_BYTES = 4 << 20
 FIELD = re.compile(r"\{(\w+)\}")
 
@@ -42,6 +52,7 @@ class Catalog:
     exact: dict = field(default_factory=dict)
     templates: list = field(default_factory=list)      # (regex, translation), longest literal text first
     font_family: str = ""
+    machine: str = ""                  # a built-in machine translation: its tag, in the language (Settings shows it)
 
     def __bool__(self) -> bool:
         return bool(self.exact or self.templates)
@@ -81,7 +92,7 @@ def parse(raw: bytes, where: str = "strings.toml") -> dict[str, str]:
     return out
 
 
-def build(strings: dict[str, str], locale: str = "", name: str = "", font_family: str = "") -> Catalog:
+def build(strings: dict[str, str], locale: str = "", name: str = "", font_family: str = "", machine: str = "") -> Catalog:
     exact, templates = {}, []
     for key, value in strings.items():
         if not fields(key):
@@ -99,7 +110,61 @@ def build(strings: dict[str, str], locale: str = "", name: str = "", font_family
         parts.append(re.escape(key[last:]))
         templates.append((len(literal), re.compile("".join(parts), re.DOTALL), value))
     templates.sort(key=lambda t: -t[0])
-    return Catalog(locale, name or locale, exact, [(p, v) for _, p, v in templates], font_family)
+    return Catalog(locale, name or locale, exact, [(p, v) for _, p, v in templates], font_family, machine)
+
+
+# -- the built-in languages -------------------------------------------------------------------------
+
+@dataclass
+class BuiltIn:
+    locale: str
+    name: str                          # in its own language: 日本語, Français...
+    path: Path
+    tag: str = ""                      # "machine translation" in the language itself: 機械翻訳, Traduction automatique
+
+    @property
+    def id(self) -> str:
+        return BUILTIN + self.locale
+
+    def strings(self) -> dict[str, str]:
+        return parse(self.path.read_bytes(), str(self.path))
+
+    def label(self) -> str:
+        """The name and the machine-translation tag, both in the language itself: "Français · Traduction automatique"."""
+        return f"{self.name} · {self.tag}" if self.tag else self.name
+
+
+def languages() -> dict[str, dict]:
+    """``data/lang/languages.toml``: every language the app is translated into, generated or not, by locale."""
+    try:
+        return tomllib.loads((LANG / "languages.toml").read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError):
+        return {}
+
+
+def built_in() -> list[BuiltIn]:
+    """The built-in languages this copy of the app carries: those in ``languages.toml`` whose strings cover at least
+    ``OFFERED_SHARE`` of the app (a file that is missing, broken or still being made is not offered)."""
+    wanted = template()
+    out = []
+    for locale, meta in languages().items():
+        if not isinstance(meta, dict):
+            continue
+        language = BuiltIn(locale, str(meta.get("name", locale)), LANG / f"{locale}.toml", str(meta.get("tag", "")))
+        try:
+            strings = language.strings()
+        except (OSError, ValueError):
+            continue
+        covered = sum(key in strings for key in wanted) if wanted else len(strings)
+        if strings and covered >= OFFERED_SHARE * len(wanted):
+            out.append(language)
+    return out
+
+
+def built_in_for(locale: str) -> BuiltIn | None:
+    """The built-in language a pack for ``locale`` is laid over: the same locale, else its primary language."""
+    found = {b.locale.lower(): b for b in built_in()}
+    return found.get(locale.lower()) or found.get(locale.split("-")[0].lower())
 
 
 # -- the packs and the choice -----------------------------------------------------------------------
@@ -139,17 +204,34 @@ def current() -> Catalog:
     return _current
 
 
-def select(pack_id: str) -> Catalog:
-    """Use a pack by its plugin id ("" for English); a pack that is gone or broken falls back to English."""
+def select(choice: str) -> Catalog:
+    """Use a language: "" for English, ``builtin:<locale>`` for a built-in one, else a pack by its plugin id, laid
+    over the built-in language it is for. One that is gone or broken falls back to English."""
     global _current
     _current = Catalog()
-    if pack_id:
+    if choice.startswith(BUILTIN):
+        locale = choice[len(BUILTIN):]
+        for language in built_in():
+            if language.locale == locale:
+                try:
+                    _current = build(language.strings(), language.locale, language.name,
+                                     machine=language.tag or language.name)
+                except (OSError, ValueError):
+                    pass
+                break
+    elif choice:
         for pack in packs():
-            if pack.id == pack_id:
+            if pack.id == choice:
                 try:
                     strings = parse((pack.folder / pack.strings).read_bytes(), f"{pack.id}: {pack.strings}")
                 except (OSError, ValueError):
                     break
+                under = built_in_for(pack.locale)
+                if under is not None:
+                    try:
+                        strings = {**under.strings(), **strings}
+                    except (OSError, ValueError):
+                        pass
                 _current = build(strings, pack.locale, pack.name, pack.font_family)
                 break
     return _current

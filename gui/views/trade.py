@@ -619,8 +619,9 @@ class TradeView(View):
         """The trade queue: what PokeUDS offers, one Pokemon per trade, in this order."""
         entry, busy = self.entry, self.app.busy()
         many = len(self.queue) > 1
-        limit = f"up to {entry.max_queue}, a Game Boy party" if entry.key in ("rby", "gsc") else \
-            f"up to {entry.max_queue}"
+        # Translated on its own: it is a field of the sentences below, and text built in code is not in the template.
+        limit = i18n.tr(f"up to {entry.max_queue}, a Game Boy party") if entry.key in ("rby", "gsc") else \
+            i18n.tr(f"up to {entry.max_queue}")
         kinds = ", ".join(f".{x}" for x in entry.extensions)
         head = (f"Trade queue: {len(self.queue)} Pokemon, offered in this order, one per trade; PokeUDS leaves "
                 f"after the last ({limit})." if many else

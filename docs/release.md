@@ -84,9 +84,55 @@ repository's Actions settings:
 
 With signing in use, each release's signing request waits for an approver on SignPath before the workflow goes on.
 
+## Translations
+
+The app ships machine translations into the languages the 3DS games come in, listed in
+`pokeuds/app/data/lang/languages.toml`; each made language is `pokeuds/app/data/lang/<locale>.toml`, and the Settings
+menu offers it with a tag in that language ("Français · Traduction automatique"). They are made from the strings
+template by Claude:
+
+```bash
+pip install -r requirements-translate.txt
+```
+
+```bash
+python scripts/translate_strings.py
+```
+
+It needs Claude API credentials: `ANTHROPIC_API_KEY`, or a profile from `ant auth login` (Anthropic's API command
+line). The Claude API is a Claude Console account, billed by use; a Claude subscription, the one Claude Code signs in
+with, does not include it. Without one, a Claude Code session makes the translations instead:
+
+```bash
+python scripts/translate_strings.py --export translations
+```
+
+writes `translations/<locale>.json` for each language: the strings it lacks, each with an empty translation, and the
+rules and glossary the API would get. Fill them in (the session does), then
+
+```bash
+python scripts/translate_strings.py --import translations
+```
+
+checks each translation as the API's are checked and adds it. Strings left empty are skipped, so a language can be
+done a batch at a time: import after each batch, and the work is saved in `lang/<locale>.toml`; to carry on later,
+export again, which lists only what is still missing. Settings offers a language once it covers 90% of the app
+(`OFFERED_SHARE` in `pokeuds/app/i18n.py`), so one half done stays out of sight. A run sends only the strings
+a language does not have yet (a release's changes: a few dozen), keeps every translation already in the file, so a
+fix made by hand stays, and drops strings the app no longer shows. A translation whose `{value0}` fields differ from
+the English is refused (twice, from the API) and left English; the run lists those. Without API credentials a
+run stops at the first request and writes nothing. Official Pokemon terms come from
+`scripts/translation_glossary.toml`. `--dry-run` says what a run would send; `--check` exits 1 when a language the
+app ships is behind. The release workflow runs the tests with `POKEUDS_TRANSLATIONS_STRICT=1`, so a release with a
+language behind the template fails before anything is built; without the variable that test is skipped, so a
+contributor without credentials can still add strings.
+
+A language pack for the same language lays over the built-in one (docs/plugins.md, Language packs).
+
 ## Checklist
 
-1. `python -m pytest -q` passes; the version is the same in `pyproject.toml` and `pokeuds/__init__.py`.
+1. `python -m pytest -q` passes; the version is the same in `pyproject.toml` and `pokeuds/__init__.py`. If strings
+   changed, `python scripts/translate_strings.py` has run (`--check` passes).
 2. `docs/releases/<tag>.md` says what is new and what is known not to work.
 3. Build the app locally and start `dist/PokeUDS/PokeUDS.exe`: one window, no flashes, the Settings page shows the
    version; a demo trade from the Trade page (Debug's demo radio) completes.

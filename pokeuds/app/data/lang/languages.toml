@@ -1,0 +1,35 @@
+# The languages PokeUDS ships machine translations for: the languages the 3DS games come in. Each one's strings are
+# <locale>.toml beside this file, made from ../strings.en.toml by `python scripts/translate_strings.py`; a language
+# listed here without its strings yet is not offered. `name` is the language's own name and `tag` says "machine
+# translation" in it: the Settings menu shows both ("Français · Traduction automatique"), so no English is shown.
+[ja]
+name = "日本語"
+tag = "機械翻訳"
+
+[fr]
+name = "Français"
+tag = "Traduction automatique"
+
+[de]
+name = "Deutsch"
+tag = "Maschinelle Übersetzung"
+
+[it]
+name = "Italiano"
+tag = "Traduzione automatica"
+
+[es]
+name = "Español"
+tag = "Traducción automática"
+
+[ko]
+name = "한국어"
+tag = "기계 번역"
+
+[zh-Hans]
+name = "简体中文"
+tag = "机器翻译"
+
+[zh-Hant]
+name = "繁體中文"
+tag = "機器翻譯"

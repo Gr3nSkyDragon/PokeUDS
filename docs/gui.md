@@ -31,7 +31,7 @@ other chips can join the firmware list later without renaming anything.
 | Debug | only with Settings, Debug tools on: the demo radio, a network scan, capture analysis |
 | Plugins | installed plugins: on and off, update, remove, add from a file or a followed source, the install screen (docs/plugins.md) |
 | Board | ESP32 boards (the S3; alpha: classic ESP32, C3, C6): their firmware and line, install the included esp32-uds-bridge 2.1-uds for the board's chip, Use for trades (`board ...` children; docs/hardware.md) |
-| Settings | `aes_keys.txt`, the Gen 7 Mystery Gift Key (extracted from your Gen 7 Local Distributor dump into `rsa_d_key.txt`), the output folder, the trainer name the 3DS sees, the app language (English or an installed language pack), Debug tools |
+| Settings | `aes_keys.txt`, the Gen 7 Mystery Gift Key (extracted from your Gen 7 Local Distributor dump into `rsa_d_key.txt`), the output folder, the trainer name the 3DS sees, the app language (English, a built-in machine translation tagged as one, or an installed language pack laid over it), Debug tools |
 
 Above every page, a banner points players looking for the Switch games to
 [pokeldn](https://github.com/Decryptu/pokeldn) ("Looking for Switch games? Check out PokeLDN on GitHub.", the

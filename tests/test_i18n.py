@@ -112,6 +112,7 @@ def test_the_pages_are_translated(monkeypatch, tmp_path):
     for cls in (TradeView, BankView, GiftsView, BoardView, SettingsView, PluginsView):
         walk(cls(app).control(), set())
     data = {"Pseudo", "Pseudo (qps-ploc)", str(tmp_path / "received"), settings.gen7_key_path()}
+    data |= {b.label() for b in i18n.built_in()}              # each built-in language's name, in that language
     assert seen > 100 and [e for e in english if e not in data and not e.startswith("by PokeUDS")] == []
 
 

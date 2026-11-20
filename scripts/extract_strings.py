@@ -24,7 +24,7 @@ APP_FILES = [ROOT / "pokeuds" / "app" / n for n in ("catalog.py", "progress.py",
                                                     "plugin_store.py", "settings.py", "gts.py")] + [ROOT / "pokeuds" / "pkhex.py"]
 OUT = ROOT / "pokeuds" / "app" / "data" / "strings.en.toml"
 CALLS = {"label", "title", "heading", "notice", "primary", "secondary", "pill", "Text", "TextButton", "FilledButton",
-         "OutlinedButton", "ElevatedButton", "_say", "Checkbox", "Switch", "_dd", "_num", "_text", "name_field"}
+         "OutlinedButton", "ElevatedButton", "_say", "Checkbox", "Switch", "_dd", "_num", "_text", "name_field", "tr"}
 KEYWORDS = {"label", "hint_text", "helper", "tooltip", "text", "empty", "error", "dialog_title"}
 ATTRIBUTES = {"message", "headline", "detail", "note"}
 

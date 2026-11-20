@@ -1,0 +1,70 @@
+# Official Pokemon terms for scripts/translate_strings.py: English as the app writes it, then the term the games use
+# in each built-in language (pokeuds/app/data/lang/languages.toml). Only terms whose official wording is certain are
+# here; a language left out of a term lets the model use the games' wording. Add a term, or fix one, and the next run
+# uses it for the strings it translates (strings already translated stay as they are: fix those in lang/<locale>.toml).
+
+["Mystery Gift"]
+ja = "ふしぎなおくりもの"
+fr = "Cadeau Mystère"
+de = "Geheimgeschenk"
+es = "Regalo Misterioso"
+ko = "이상한소포"
+zh-Hans = "神秘礼物"
+zh-Hant = "神秘禮物"
+
+["Wonder Card"]
+ja = "ふしぎなカード"
+fr = "Carte Mystère"
+de = "Wunderkarte"
+es = "Tarjeta Misteriosa"
+ko = "이상한카드"
+zh-Hans = "神秘卡片"
+zh-Hant = "神秘卡片"
+
+["Pokemon"]
+ja = "ポケモン"
+fr = "Pokémon"
+de = "Pokémon"
+it = "Pokémon"
+es = "Pokémon"
+ko = "포켓몬"
+zh-Hans = "宝可梦"
+zh-Hant = "寶可夢"
+
+["Trainer"]
+ja = "トレーナー"
+fr = "Dresseur"
+de = "Trainer"
+it = "Allenatore"
+es = "Entrenador"
+ko = "트레이너"
+zh-Hans = "训练家"
+zh-Hant = "訓練家"
+
+["Egg"]
+ja = "タマゴ"
+fr = "Œuf"
+de = "Ei"
+it = "Uovo"
+es = "Huevo"
+ko = "알"
+zh-Hans = "蛋"
+zh-Hant = "蛋"
+
+["Shiny"]
+ja = "色違い"
+fr = "chromatique"
+de = "schillernd"
+it = "cromatico"
+es = "variocolor"
+zh-Hans = "异色"
+zh-Hant = "異色"
+
+["OT (original trainer)"]
+ja = "おや"
+fr = "DO"
+es = "EO"
+it = "AO"
+ko = "어버이"
+zh-Hans = "初训家"
+zh-Hant = "初訓家"

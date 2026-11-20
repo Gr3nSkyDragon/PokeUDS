@@ -74,16 +74,18 @@ class SettingsView(View):
                          on_blur=self._name, error=problem or None))
         from pokeuds.app import i18n
 
-        packs = i18n.packs()
-        chosen = s.language if any(p.id == s.language for p in packs) else ""
+        packs, built_in = i18n.packs(), i18n.built_in()
+        offered = [b.id for b in built_in] + [p.id for p in packs]
+        chosen = s.language if s.language in offered else ""
         language = t.card(
             t.heading("App language"),
-            t.label("English, or a language pack installed from the Plugins page. Logs, file names and the command "
-                    "line stay English."),
+            t.label("Logs, file names and the command line stay English."),
+            # A built-in language's entry carries its machine-translation tag ("日本語 · 機械翻訳"), so the chosen
+            # one shows it here, in that language, and nowhere else.
             ft.Dropdown(value=chosen, width=320, dense=True, on_select=self._language,
                         options=[ft.DropdownOption(key="", text="English")]
-                        + [ft.DropdownOption(key=p.id, text=f"{p.name} ({p.locale})") for p in packs]),
-            *([t.label("No language pack installed.", size=12)] if not packs else []))
+                        + [ft.DropdownOption(key=b.id, text=b.label()) for b in built_in]
+                        + [ft.DropdownOption(key=p.id, text=f"{p.name} ({p.locale})") for p in packs]))
         from . import pkhex_setup
 
         # PKHeX is part of the app; only a source run without it built has anything to say here.

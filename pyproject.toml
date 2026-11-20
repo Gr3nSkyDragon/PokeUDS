@@ -25,7 +25,7 @@ pokeuds = "pokeuds.cli:main"
 include = ["pokeuds*"]
 
 [tool.setuptools.package-data]
-pokeuds = ["app/data/*.toml", "app/data/*.json", "app/data/firmware/*.bin"]
+pokeuds = ["app/data/*.toml", "app/data/*.json", "app/data/firmware/*.bin", "app/data/lang/*.toml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

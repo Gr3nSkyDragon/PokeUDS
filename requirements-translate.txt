@@ -1,0 +1,2 @@
+# For scripts/translate_strings.py only (machine translations of the app, docs/release.md); the app does not need it.
+anthropic>=1.0
