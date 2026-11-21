@@ -260,15 +260,19 @@ def test_packaged_app_banks_beside_the_exe(monkeypatch, tmp_path):
     legacy.mkdir(parents=True)
     (legacy / "old.pk7").write_bytes(b"x" * 232)
     (legacy / "received.json").write_text("{}", encoding="utf-8")
+    (legacy / "Gen 6").mkdir()                              # an old bank a newer from-source copy sorted already
+    (legacy / "Gen 6" / "sorted.pk6").write_bytes(b"x" * 232)
     assert bank.default_folder() == app / "Bank"
-    assert sorted(p.name for p in (app / "Bank").iterdir()) == ["old.pk7", "received.json"]
+    assert sorted(p.name for p in (app / "Bank").iterdir()) == ["Gen 6", "old.pk7", "received.json"]
     assert (legacy / "old.pk7").is_file()                   # copied, not moved
-    bank.Bank().entries()                                   # opening it tidies received.json into .info
-    assert sorted(p.name for p in (app / "Bank").iterdir()) == [".info", "old.pk7"]
+    bank.Bank().entries()                                   # opening it tidies received.json into .info, old.pk7 into Gen 7
+    assert sorted(p.name for p in (app / "Bank").iterdir()) == [".info", "Gen 6", "Gen 7"]
+    assert (app / "Bank" / "Gen 7" / "old.pk7").is_file() and (app / "Bank" / "Gen 6" / "sorted.pk6").is_file()
     # Copied once: what the player removes from the new bank does not come back on the next start.
-    (app / "Bank" / "old.pk7").unlink()
+    (app / "Bank" / "Gen 7" / "old.pk7").unlink()
     monkeypatch.setattr(bank, "_portable", {})
     assert bank.default_folder() == app / "Bank" and not (app / "Bank" / "old.pk7").exists()
+    assert not (app / "Bank" / "Gen 7" / "old.pk7").exists()
 
 
 def test_packaged_app_falls_back_when_its_folder_is_read_only(monkeypatch, tmp_path):
@@ -301,8 +305,10 @@ def test_the_bank_shows_only_pokemon(b, tmp_path):
     gold.with_suffix(".mail").write_bytes(b"" * 47)
     b.sync_received(out)
     entry = b.set_note(b.entries()[0], "keep")
-    top = sorted(p.suffix or p.name for p in b.folder.iterdir())
-    assert top == [".info", ".mail", ".pk2", ".pk6"]        # the mail stays beside its .pk2, where trades read it
+    assert sorted(p.name for p in b.folder.iterdir()) == [".info", "Gen 2", "Gen 6"]
+    # the mail stays beside its .pk2, where trades read it
+    assert sorted(p.suffix for p in (b.folder / "Gen 2").iterdir()) == [".mail", ".pk2"]
+    assert [p.suffix for p in (b.folder / "Gen 6").iterdir()] == [".pk6"]
     assert sorted(p.name for p in b.info.iterdir()) == sorted([f"{e.id}.json" for e in b.entries()] + ["received.json"])
     assert entry.note == "keep"
     b.remove(entry)
@@ -313,14 +319,17 @@ def test_an_older_bank_is_tidied_into_info(tmp_path):
     folder = tmp_path / "old"
     first = bank.Bank(folder)
     entry, _ = first.deposit(pk6(), "pk6", source="built", note="from before")
-    # the layout before .info: the .json beside the record, received.json at the top
+    # the layout before .info: the record at the top, the .json beside it, received.json at the top
+    entry.path.replace(folder / entry.path.name)
+    entry.path.parent.rmdir()
     (first.info / f"{entry.id}.json").replace(folder / f"{entry.id}.json")
     (folder / "received.json").write_text('{"x": ["a.pk6"]}', encoding="utf-8")
     first.info.rmdir()
     bank._tidied.clear()
     again = bank.Bank(folder)
     assert again.entries()[0].note == "from before" and again.entries()[0].source == "built"
-    assert sorted(p.name for p in folder.iterdir()) == [".info", f"{entry.id}.pk6"]
+    assert sorted(p.name for p in folder.iterdir()) == [".info", "Gen 6"]
+    assert [p.name for p in (folder / "Gen 6").iterdir()] == [f"{entry.id}.pk6"]
     assert again._seen("x") == ["a.pk6"]
 
 
@@ -343,3 +352,109 @@ def test_a_received_vc_pokemon_keeps_its_titles_language(b, tmp_path):
     bank.migrate(b, added["pk2"], vc_game="gold", helper=helper)
     bank.migrate(b, added["pk1"], vc_game="red", helper=helper)
     assert helper.languages == ["de", ""]
+
+
+def _flatten(b: bank.Bank) -> None:
+    """The layout before the generation folders: every record (and mail) at the top of the bank."""
+    for name in bank.FOLDERS.values():
+        place = b.folder / name
+        if place.is_dir():
+            for path in place.iterdir():
+                path.replace(b.folder / path.name)
+            place.rmdir()
+    bank._tidied.clear()
+
+
+def test_new_records_go_in_their_generation_folder(b):
+    made = [b.deposit(sample_mon(1, 4, 12, "CHARMY").to_file(), "pk1", source="imported")[0],
+            b.deposit(sample_mon(2, 155, 10, "CYNDA").to_file(), "pk2", source="imported", mail=b"\x01" * 47)[0],
+            b.deposit(pk6(), "pk6", source="imported")[0],
+            b.deposit(make_pk8(species=26, form=1, nickname="Zappy", version=36), "pk8", source="migrated")[0]]
+    assert [e.path.parent.name for e in made] == ["Gen 1", "Gen 2", "Gen 6", "Gen 8"]
+    assert made[1].has_mail and made[1].path.with_suffix(".mail").parent.name == "Gen 2"
+    assert all(b.find(e.id).path == e.path for e in made) and len(b.entries()) == 4
+
+
+def test_a_flat_bank_is_sorted_into_generation_folders(tmp_path):
+    """An older bank (a folder chosen in Settings here) moves into the generation folders once, when it is opened:
+    each record keeps its .info, a .pk2 its mail, the GTS its listings, and a trade queue finds the moved files."""
+    from pokeuds.app import gts
+    from tests.test_gts import EEVEE, legal
+
+    b = bank.Bank(tmp_path / "chosen")
+    out = tmp_path / "received"
+    received.save(pk6(species=133, nickname="Vee", ec=5), out, game="xy", stamp="20261104-120000")
+    b.sync_received(out)
+    red, _ = b.deposit(sample_mon(1, 4, 12, "CHARMY").to_file(), "pk1", source="imported", note="first")
+    gold, _ = b.deposit(sample_mon(2, 155, 10, "CYNDA").to_file(), "pk2", source="imported", mail=b"\x01" * 47,
+                        extra={"language": "de"})
+    sparky, _ = b.deposit(pk6(), "pk6", source="built", note="keep")
+    rope, _ = bank.escape_rope(b, red, vc_game="red", helper=FakeHelper())        # its .pk7 and .pk8 copies
+    market = gts.Gts(b, check=legal)
+    listing = market.list_pokemon(b.deposit(pk6(species=26, nickname="Volt", ec=9), "pk6", source="imported")[0],
+                                  [EEVEE], "Me")
+    before = {e.id: (e.extension, e.source, e.note, e.has_mail, e.legal, e.data()) for e in b.entries()}
+    info = sorted(p.name for p in b.info.iterdir())
+    _flatten(b)
+    flat = sorted(p.name for p in b.folder.iterdir() if p.is_file())
+    assert len(flat) == len(before) + 1 and f"{gold.id}.mail" in flat                     # the records and the mail
+    queued = str(b.folder / sparky.path.name)                                              # a trade queue's old path
+
+    again = bank.Bank(b.folder)                                                            # opening it sorts it
+    assert sorted(p.name for p in again.folder.iterdir()) == [".gts", ".info", "Gen 1", "Gen 2", "Gen 6", "Gen 7", "Gen 8"]
+    entries = again.entries()
+    assert {e.id: (e.extension, e.source, e.note, e.has_mail, e.legal, e.data()) for e in entries} == before
+    assert all(e.path.parent == again.folder / bank.FOLDERS[e.extension] for e in entries)
+    assert (again.folder / "Gen 2" / f"{gold.id}.mail").read_bytes() == b"\x01" * 47
+    assert sorted(p.name for p in again.info.iterdir()) == info                            # .info is left as it was
+    assert bank.language_of(again.find(gold.id).path) == "de"
+    assert bank.swsh_copy(again, again.find(red.id)).id == rope.id                         # the Escape Rope's links hold
+    assert again.sync_received(out) == []                                                  # received.json still read
+    assert bank.current_path(queued) == str(again.folder / "Gen 6" / sparky.path.name)
+    assert bank.current_path(out / "x.pk6") == str(out / "x.pk6")                          # not a moved record
+
+    # The GTS listing stayed in .gts, the bank's records in their folders count as held, and a withdrawn listing's
+    # Pokemon comes back into its generation folder.
+    market = gts.Gts(again, check=legal)
+    [item] = market.items()
+    assert item.path == listing.path and item.status == "open" and bank.parse("x.pk6", item.record()).dex == 26
+    held = market.ours().held
+    assert all(gts._digest(e.path) in held for e in entries)
+    market.withdraw(item)
+    back = next(e for e in again.entries() if e.dex == 26)
+    assert back.path.parent == again.folder / "Gen 6"
+
+    # Once is enough: a second opening finds nothing at the top to move.
+    bank._tidied.clear()
+    assert len(bank.Bank(again.folder).entries()) == len(before) + 1
+
+
+def test_sorting_never_overwrites_and_tries_again(b, monkeypatch):
+    import shutil
+
+    one, _ = b.deposit(pk6(), "pk6", source="imported")
+    two, _ = b.deposit(pk6(species=133, nickname="Vee", ec=7), "pk6", source="imported")
+    three, _ = b.deposit(sample_mon(2, 155, 10, "CYNDA").to_file(), "pk2", source="imported", mail=b"\x01" * 47)
+    shutil.copy2(one.path, b.folder / one.path.name)          # the same file at the top as well: that copy goes
+    other = pk6(species=133, nickname="Other", ec=7)
+    (b.folder / two.path.name).write_bytes(other)             # a different file of the same name: neither is replaced
+    for path in (three.path, three.path.with_suffix(".mail")):
+        path.replace(b.folder / path.name)                    # another program has this .pk2 open
+    real = bank._move
+
+    def busy(source, target):
+        if source.suffix == ".pk2":
+            raise PermissionError("in use")
+        real(source, target)
+
+    monkeypatch.setattr(bank, "_move", busy)
+    bank._tidied.clear()
+    again = bank.Bank(b.folder)
+    assert not (b.folder / one.path.name).exists() and one.path.is_file()
+    assert (b.folder / two.path.name).read_bytes() == other and two.path.read_bytes() == pk6(species=133, nickname="Vee", ec=7)
+    stuck = again.find(three.id)
+    assert stuck.path == b.folder / three.path.name and stuck.has_mail     # still listed, its mail kept beside it
+    assert b.folder.resolve() not in bank._tidied                          # to be tried again
+    monkeypatch.setattr(bank, "_move", real)
+    moved = bank.Bank(b.folder).find(three.id)
+    assert moved.path == three.path and moved.has_mail and not (b.folder / f"{three.id}.mail").exists()

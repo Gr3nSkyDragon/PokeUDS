@@ -54,8 +54,11 @@ class TradeView(View):
         return self.queue[0] if self.queue else None
 
     def _load_offer(self) -> None:
-        self.queue = [catalog.describe_offer(self.entry, p) for p in self.app.settings.offer_queue(self.entry.key)
-                      if Path(p).exists()]
+        from pokeuds.app.bank import current_path
+
+        # A queue saved before the bank was sorted into generation folders finds its Pokemon in them.
+        paths = [current_path(p) for p in self.app.settings.offer_queue(self.entry.key)]
+        self.queue = [catalog.describe_offer(self.entry, p) for p in paths if Path(p).exists()]
 
     def _keep_queue(self) -> None:
         self.app.settings.set_offer_queue(self.entry.key, [o.path for o in self.queue])

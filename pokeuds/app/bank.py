@@ -1,16 +1,21 @@
 """The bank: the Pokemon the app keeps between trades.
 
-Each record is a file in the bank folder (``default_folder``, or Settings' bank folder); what the app knows about
-it is a ``.json`` of the same name in the hidden ``.info`` folder inside, so the bank shows only Pokemon:
+Each record is a file in its generation's folder inside the bank folder (``default_folder``, or Settings' bank
+folder); what the app knows about it is a ``.json`` of the same name in the hidden ``.info`` folder at the top, so the
+bank shows only Pokemon:
 
-    20261104-153012_025_Sparky_1a2b3c4d.pk6          the record, as PKHeX writes it (decrypted, stored); a .pk8 is a
-                                                     Sword/Shield copy the Escape Rope made
-    20261104-153012_025_Sparky_1a2b3c4d.mail         a Gen 2 Pokemon's mail, when it holds one (beside its .pk2,
+    Gen 6/20261104-153012_025_Sparky_1a2b3c4d.pk6    the record, as PKHeX writes it (decrypted, stored): Gen 1 .pk1,
+                                                     Gen 2 .pk2, Gen 6 .pk6, Gen 7 .pk7, Gen 8 .pk8 (a Sword/Shield
+                                                     copy the Escape Rope made)
+    Gen 2/20261104-153012_155_Cynda_1a2b3c4d.mail    a Gen 2 Pokemon's mail, when it holds one (beside its .pk2,
                                                      where the trade reads it)
     .info/20261104-153012_025_Sparky_1a2b3c4d.json   {"source", "created", "origin", "game", "note", "legal", ...}
     .info/received.json                              the received files already deposited
+    .gts/                                            the GTS's listings and offers (pokeuds.app.gts)
 
-A bank from before ``.info`` (the ``.json`` beside each record) is tidied into it the first time it is opened.
+A bank from before ``.info`` (the ``.json`` beside each record) is tidied into it, and one from before the generation
+folders (every record at the top) sorted into them, the first time it is opened. A record's ``.info`` is named by its
+id, which sorting does not change, so it stays where it is.
 
 Records are kept once: a Pokemon already banked is not added again, even when a trade changed what a
 trade changes (``identity``): the same Abra traded to a 3DS and back carries the 3DS player as its handler,
@@ -44,6 +49,9 @@ PORTABLE = "Bank"           # the packaged Windows app's bank, beside PokeUDS.ex
 PORTABLE_ON = ("win32",)    # a Mac app bundle is replaced whole by an update and is often read-only
 INFO = ".info"              # inside a bank: the records' .json and received.json, hidden
 SEEN = "received.json"
+# Each format in its own folder, named as the Bank page's filters name the generations. One folder per format, not
+# per filter: the Game Boy filter holds two formats, and a .mail goes with a .pk2 only.
+FOLDERS = {"pk1": "Gen 1", "pk2": "Gen 2", "pk6": "Gen 6", "pk7": "Gen 7", "pk8": "Gen 8"}
 _portable: dict[Path, Path | None] = {}
 _tidied: set[Path] = set()
 
@@ -67,7 +75,8 @@ def language_of(path: str | Path) -> str:
             return "jp"
     except OSError:
         return ""
-    for meta in (path.parent / INFO / f"{path.stem}.json", path.with_suffix(".json")):
+    for meta in (path.parent.parent / INFO / f"{path.stem}.json", path.parent / INFO / f"{path.stem}.json",
+                 path.with_suffix(".json")):
         try:
             language = json.loads(meta.read_text(encoding="utf-8")).get("language", "")
         except (OSError, ValueError, AttributeError):
@@ -109,8 +118,8 @@ def portable_folder(app_folder: Path) -> Path | None:
             for item in legacy.iterdir():
                 if item.is_file() and not (folder / item.name).exists():
                     shutil.copy2(item, folder / item.name)
-                elif item.is_dir() and item.name == INFO:
-                    shutil.copytree(item, folder / INFO, dirs_exist_ok=True)
+                elif item.is_dir() and (item.name == INFO or item.name in FOLDERS.values()):
+                    shutil.copytree(item, folder / item.name, dirs_exist_ok=True)
     except OSError:
         folder = None
     _portable[app_folder] = folder
@@ -262,6 +271,40 @@ def _g7_tid(plain: bytes) -> int:
 
 # -- the folder -----------------------------------------------------------------------------------
 
+def record_files(folder: str | Path) -> list[Path]:
+    """The Pokemon files in a bank folder: those in its generation folders, and any at the top (a bank not sorted yet,
+    or a plain folder of Pokemon files such as the received folder). Nothing deeper: ``.gts`` holds records that
+    left the bank."""
+    folder = Path(folder)
+    found = []
+    for place in [folder] + [folder / name for name in FOLDERS.values()]:
+        try:
+            found += [p for p in place.iterdir() if p.suffix.lower() in EXTENSIONS and p.is_file()]
+        except OSError:
+            continue
+    return found
+
+
+def current_path(path: str | Path) -> str:
+    """Where a bank record is now: a path saved before its bank was sorted into generation folders (a trade queue's)
+    gives the record in its folder. Any other path comes back as it was."""
+    p = Path(path)
+    ext = p.suffix.lower().lstrip(".")
+    if ext not in FOLDERS or p.exists():
+        return str(path)
+    moved = p.parent / FOLDERS[ext] / p.name
+    return str(moved) if moved.is_file() else str(path)
+
+
+def _move(source: Path, target: Path) -> None:
+    """Move a file into place without overwriting: a target holding the same bytes already takes the source's place;
+    a different one leaves both as they are."""
+    if not target.exists():
+        source.replace(target)
+    elif target.read_bytes() == source.read_bytes():
+        source.unlink()
+
+
 def _hide(folder: Path) -> None:
     """Windows shows a folder whose name starts with a dot; mark it hidden as well."""
     if sys.platform == "win32":
@@ -285,8 +328,15 @@ class Bank:
             _hide(self.info)
         return self.info
 
+    def _place(self, extension: str) -> Path:
+        """The generation folder a format's records go in, made when the first one does."""
+        folder = self.folder / FOLDERS[extension]
+        folder.mkdir(parents=True, exist_ok=True)
+        return folder
+
     def _tidy(self) -> None:
-        """Move an older bank's .json files (beside each record) and received.json into .info, once a run."""
+        """Once a run: move an older bank's .json files (beside each record) and received.json into .info, then sort
+        the records at the top into their generation folders (``_sort``)."""
         if not self.folder.is_dir():
             return
         key = self.folder.resolve()
@@ -302,8 +352,33 @@ class Bank:
                     path.unlink()           # .info already holds the newer copy
                 else:
                     path.replace(target)
+            done = self._sort()
         except OSError:
+            done = False
+        if not done:
             _tidied.discard(key)            # try again next time; the old files are still read meanwhile
+
+    def _sort(self) -> bool:
+        """Move each record at the top of the bank into its generation folder, then each Gen 2 mail after its .pk2.
+        Its .info stays: it is named by the record's id, which does not change. A file that cannot move now (another
+        program has it open) stays where it is, still listed, and is tried again the next time the bank is opened; a
+        different file of the same name in the folder already is never overwritten. -> True when nothing is left to
+        try."""
+        done = True
+        for path in sorted(self.folder.iterdir()):
+            if path.suffix in EXTENSIONS and path.is_file():
+                try:
+                    _move(path, self._place(path.suffix[1:]) / path.name)
+                except OSError:
+                    done = False
+        for mail in sorted(self.folder.glob("*.mail")):
+            target = self.folder / FOLDERS["pk2"] / mail.name
+            if target.with_suffix(".pk2").is_file() and not mail.with_suffix(".pk2").exists():
+                try:
+                    _move(mail, target)
+                except OSError:
+                    done = False
+        return done
 
     # listing
 
@@ -312,14 +387,14 @@ class Bank:
         if not self.folder.is_dir():
             return []
         self._tidy()
-        found = [e for p in self.folder.iterdir() if p.suffix in EXTENSIONS and (e := self._entry(p))]
+        found = [e for p in record_files(self.folder) if (e := self._entry(p))]
         return sorted(found, key=lambda e: (e.created, e.id), reverse=True)
 
     def find(self, entry_id: str) -> Entry | None:
         for ext in EXTENSIONS:
-            path = self.folder / f"{entry_id}{ext}"
-            if path.exists():
-                return self._entry(path)
+            for path in (self.folder / FOLDERS[ext[1:]] / f"{entry_id}{ext}", self.folder / f"{entry_id}{ext}"):
+                if path.exists():
+                    return self._entry(path)
         return None
 
     def _entry(self, path: Path) -> Entry | None:
@@ -397,11 +472,10 @@ class Bank:
         digests = self._digests() if digests is None else digests
         if key in digests and (existing := self.find(digests[key])):
             return existing, False
-        self.folder.mkdir(parents=True, exist_ok=True)
         stamp = time.strftime("%Y%m%d-%H%M%S")
         nick = _UNSAFE.sub("", parsed.nickname)[:12] or "unnamed"
         entry_id = f"{stamp}_{parsed.dex:03d}_{nick}_{digest[:8]}"
-        path = self.folder / f"{entry_id}.{parsed.extension}"
+        path = self._place(parsed.extension) / f"{entry_id}.{parsed.extension}"
         path.write_bytes(parsed.content)
         if mail and parsed.extension == "pk2":
             path.with_suffix(".mail").write_bytes(mail)

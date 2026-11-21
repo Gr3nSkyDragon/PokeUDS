@@ -21,7 +21,8 @@ from .. import theme as t
 from .common import View, awaiting, open_folder
 from .sprite import sprite
 
-FILTERS = (("all", "All"), ("gb", "Game Boy"), ("6", "Gen 6"), ("7", "Gen 7"), ("illegal", "Not legal"))
+# "8": the Sword/Shield .pk8 copies the Escape Rope made.
+FILTERS = (("all", "All"), ("gb", "Game Boy"), ("6", "Gen 6"), ("7", "Gen 7"), ("8", "Gen 8"), ("illegal", "Not legal"))
 # Apart from the others, at the row's far end: everything Sword/Shield can take, each with its .pk8 copy to make.
 ESCAPE_ROPE = (("swsh", "Escape Rope"),)
 SOURCE_COLORS = {"received": t.GOOD, "imported": t.MUTED, "built": t.INFO, "converted": t.WARN, "gift": t.ACCENT,
@@ -340,7 +341,7 @@ class BankView(View):
             kept = {str(d.path): str(k.path) for d, k in removed}
             s = self.app.settings
             for game in list(s.offers) + list(s.queued):  # an offer on a removed copy moves to the one kept
-                queue = [kept.get(p, p) for p in s.offer_queue(game)]
+                queue = [kept.get(p, p) for p in map(bank.current_path, s.offer_queue(game))]
                 s.set_offer_queue(game, list(dict.fromkeys(queue)))
             self.app.settings.save()
             if self.selected in {d.id for d, _ in removed}:

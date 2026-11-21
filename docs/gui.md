@@ -91,9 +91,19 @@ at a time, since one radio serves one process.
 
 ## The bank
 
-The bank is a folder holding one file per Pokemon (`pokeuds/app/bank.py`). What the app knows about each one is a
-`.json` of the same name in the hidden `.info` folder inside, so the folder itself shows only Pokemon (and a Gen 2
-Pokemon's `.mail`, which trades read beside its `.pk2`); a bank from before `.info` is tidied into it when opened.
+The bank is a folder holding one file per Pokemon (`pokeuds/app/bank.py`), each in its generation's folder: `Gen 1`
+(`.pk1`), `Gen 2` (`.pk2`, with a Pokemon's `.mail` beside it, where trades read it), `Gen 6` (`.pk6`), `Gen 7`
+(`.pk7`) and `Gen 8` (`.pk8`, the Sword/Shield copies the Escape Rope makes). The names are the Bank page's filters',
+one folder per format: the Game Boy filter's two formats stay apart, as a `.pk1` and a `.pk2` are different files for
+different games, and a Time Capsule copy lands in the other one. A folder is made when its first Pokemon arrives.
+What the app knows about each one is a `.json` of the same name in the hidden `.info` folder at the top, so the
+folders show only Pokemon; a bank from before `.info` is tidied into it when opened. A bank from before the
+generation folders (every record at the top) is sorted into them the same way, once, when the app opens it: each
+record moves with its mail, its `.info` stays as it is (it is named by the record's id, which does not change), the
+GTS's `.gts` is left alone, and a trade queue saved before finds its Pokemon in the new folder. Nothing is
+overwritten: a different file of the same name already in a generation folder leaves both, and a file another
+program has open stays at the top, still listed, until the next start moves it. This works for a bank folder chosen
+in Settings as well.
 The packaged Windows app keeps it in `Bank` beside PokeUDS.exe and `_internal` (its home: [The launcher](#the-launcher)), which the release zip never contains, so an update
 unzipped over the app's folder leaves it alone; on its first start it copies the records of an older
 `%APPDATA%\PokeUDS\bank` there (the old folder stays). Its data folder is `Data` beside the exe too (hidden:
@@ -104,10 +114,11 @@ app, whose bundle an update replaces whole, keeps it in `~/Library/Application S
 it is `<data folder>/bank`. Settings' `bank` overrides both.
 
 ```
-20261104-153012_025_Sparky_1a2b3c4d.pk6          the record: .pk1/.pk2 as PokeUDS writes them, .pk6/.pk7 decrypted and stored, as PKHeX opens them
-20261104-153012_025_Sparky_1a2b3c4d.mail         a Gen 2 Pokemon's mail, when it holds one
-.info/20261104-153012_025_Sparky_1a2b3c4d.json   source (received, imported, built, converted, gift, migrated), when, the file it came from, a note, PKHeX's verdict
+Gen 6/20261104-153012_025_Sparky_1a2b3c4d.pk6    the record: .pk1/.pk2 as PokeUDS writes them, .pk6/.pk7/.pk8 decrypted and stored, as PKHeX opens them
+Gen 2/20261104-153012_155_Cynda_5e6f7a8b.mail    a Gen 2 Pokemon's mail, when it holds one, beside its .pk2
+.info/20261104-153012_025_Sparky_1a2b3c4d.json   source (received, imported, built, converted, gift, migrated, gts), when, the file it came from, a note, PKHeX's verdict
 .info/received.json                              the received files already deposited
+.gts/                                            the GTS's listings and offers, each with the record that left the bank (docs/online.md)
 ```
 
 - **Received Pokemon** still land in the output folder first (one file per trade, as before; by default `received`
@@ -136,6 +147,8 @@ it is `<data folder>/bank`. Settings' `bank` overrides both.
   **From the bank** for a Gen 7 game do the same: the Gen 1, 2 and 6 Pokemon are listed, and picking one asks
   first, migrates it, and offers the copy. Nothing official goes from the Game Boy to Gen 6, or back from Gen 7,
   so PokeUDS does not either.
+- **Filters:** All, Game Boy (`.pk1` and `.pk2`), Gen 6, Gen 7, **Gen 8** (the `.pk8` copies the Escape Rope made)
+  and Not legal.
 - **Escape Rope** (the filter row's far end) lists everything Sword/Shield can take: the species and forms they
   have (`pokeuds/app/data/swsh_present.json`, from PKHeX: `scripts/swsh_present.py`), and the `.pk8` copies already
   made. A record's **Migrate to SwSh** makes a `.pk8` copy as Pokemon HOME would bring it to Sword/Shield, kept

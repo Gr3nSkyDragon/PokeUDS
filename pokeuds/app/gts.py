@@ -244,10 +244,7 @@ class Gts:
                         records.setdefault(digest, path)
                         held.add(digest)
         for folder in [self.bank.folder] + self.near:
-            try:
-                files = [p for p in folder.iterdir() if p.suffix.lower() in banking.EXTENSIONS and p.is_file()]
-            except OSError:
-                continue
+            files = banking.record_files(folder)        # a bank's generation folders too
             is_bank = folder == self.bank.folder or (folder / banking.INFO).is_dir() or (folder / FOLDER).is_dir()
             for path in files:
                 if (digest := _digest(path)) is not None:

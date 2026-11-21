@@ -93,10 +93,12 @@ def _offer_file(path: str) -> str:
     from .app import bank
     from .app.settings import Settings
 
+    if Path(moved := bank.current_path(Path(path).expanduser())).is_file():
+        return moved                    # a bank record saved before the bank was sorted into generation folders
     settings = Settings.load()
     name = Path(path).name
     for folder in (settings.output, settings.bank or str(bank.default_folder())):
-        candidate = Path(folder).expanduser() / name
+        candidate = Path(bank.current_path(Path(folder).expanduser() / name))     # in the bank: its generation folder
         if folder and candidate.is_file():
             print(f"using {candidate}", file=sys.stderr)
             return str(candidate)

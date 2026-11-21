@@ -557,3 +557,23 @@ def test_the_bank_checks_received_pokemon_by_itself(tmp_path, monkeypatch):
     assert checked == [received.id]
     view.control()                                                         # once a visit, not on every redraw
     assert checked == [received.id]
+
+
+def test_the_bank_filters_gen_8(tmp_path):
+    """Gen 8, just before Not legal, lists the Sword/Shield .pk8 copies only."""
+    pytest.importorskip("flet")
+    from gui.app import App
+    from gui.views import bank as bank_page
+    from tests.test_bank import pk6
+    from tests.test_pk8 import make_pk8
+
+    keys = [k for k, _ in bank_page.FILTERS]
+    assert keys[keys.index("illegal") - 1] == "8" and dict(bank_page.FILTERS)["8"] == "Gen 8"
+    view = bank_page.BankView(App(None, Settings(bank=str(tmp_path / "bank"), output=str(tmp_path / "received"))))
+    view.bank.deposit(pk6(), "pk6", source="imported")
+    gen8, _ = view.bank.deposit(make_pk8(species=26, form=1, nickname="Zappy", version=36), "pk8", source="migrated")
+    view.filter = "8"
+    assert [e.id for e in view.bank.entries() if view._keep(e)] == [gen8.id]
+    view.filter = "6"
+    assert [e.extension for e in view.bank.entries() if view._keep(e)] == ["pk6"]
+    view.control()
