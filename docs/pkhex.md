@@ -80,7 +80,7 @@ A built or checked record comes back as `legal`, `report` (PKHeX's legality repo
 encounter it came from), `extension`, `data` (base64, decrypted) and `summary` (species, nickname, level,
 shiny, gender, OT, TID, move names, IVs, item, nature, ability, ball, origin).
 
-## Migrating to Gen 7
+## Migrating to Gen 7 and Sword/Shield
 
 `migrate` uses PKHeX.Core's converters, which copy what Nintendo's apps do (`services/pkhex/Migrate.cs`):
 
@@ -96,6 +96,13 @@ shiny, gender, OT, TID, move names, IVs, item, nature, ability, ball, origin).
 
 `trainer` is who runs the app: the handling trainer, and their 3DS region. An Egg is refused, and `game` must be
 Gen 7: nothing official reaches Gen 6 from the Game Boy.
+
+`game` swsh moves a Gen 7 record (`from` sm/usum) to Sword/Shield as **Pokemon HOME** does (`PK7.ConvertToPK8`),
+for the species and forms Sword/Shield have (`{"cmd":"present","game":"swsh"}` lists them; anything else is
+refused). The origin game stays, and with it the origin mark. HOME's tracker is a random number (none can be had
+from HOME itself); the trainer taking it into Sword/Shield becomes its handler, even its own OT, and the previous
+handler's memories are cleared, as PKHeX's legality check expects. A Gen 1/2/6 record goes to Gen 7 first; the
+bank keeps that `.pk7` as well (`pokeuds/app/bank.py` `escape_rope`).
 
 ## How a build works
 

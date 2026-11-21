@@ -12,6 +12,14 @@
 //
 // The trainer is who runs Transporter or Bank: they become the Pokemon's handling trainer, and their 3DS region
 // its region. Nothing else is official: there is no way from Gen 1/2 to Gen 6, and none backwards.
+//
+//   {"cmd":"migrate","game":"swsh","data":"<base64 .pk7>","from":"sm","trainer":{...}}  -> the .pk8
+//
+// Gen 7 -> Sword/Shield is Pokemon HOME's (PK7.ConvertToPK8), for the species and forms Sword/Shield have
+// ("present" lists them). The origin game stays as it was, and with it the origin mark the Switch games show: the
+// Game Boy for a Virtual Console Pokemon, the pentagon for a Gen 6 one, the clover for a Gen 7 one. HOME gives it
+// a tracker (a random number here: none can be had from HOME itself) and the Sword/Shield trainer who takes it out
+// becomes its handling trainer. A Gen 1/2/6 Pokemon goes through Gen 7 first, as it went through Bank to HOME.
 
 using System.Text.Json.Nodes;
 using PKHeX.Core;
@@ -37,8 +45,10 @@ static partial class Program
 
     static JsonObject Migrate(Game game, JsonObject request)
     {
+        if (game.Generation == 8)
+            return MigrateHome(game, request);
         if (game.Generation != 7)
-            throw new ArgumentException("Pokemon move to Generation 7 only (Transporter and Bank go nowhere else)");
+            throw new ArgumentException("Pokemon move to Generation 7 or to Sword/Shield only (Transporter, Bank and HOME go nowhere else)");
         var from = Games.GetValueOrDefault((string?)request["from"] ?? "") ?? throw new ArgumentException("unknown source game");
         var context = from.Generation switch
         {
@@ -145,5 +155,90 @@ static partial class Program
         if (pk7.Stat_HPMax == 0)
             pk7.ResetPartyStats();
         return Describe(game, pk7, new LegalityAnalysis(pk7), null);
+    }
+
+    // -- Gen 7 to Sword/Shield, as Pokemon HOME --------------------------------------------------
+
+    static JsonObject Present(Game game)
+    {
+        if (game.Generation != 8)
+            throw new ArgumentException("present lists what Sword/Shield take");
+        var present = new JsonArray();
+        for (ushort species = 1; species <= 807; species++)
+        {
+            var forms = new JsonArray();
+            for (byte form = 0; form < PersonalTable.USUM[species].FormCount; form++)
+                if (PersonalTable.SWSH.IsPresentInGame(species, form))
+                    forms.Add(form);
+            if (forms.Count > 0)
+                present.Add(new JsonArray(species, forms));
+        }
+        return new JsonObject { ["ok"] = true, ["present"] = present };
+    }
+
+    static JsonObject MigrateHome(Game game, JsonObject request)
+    {
+        var from = Games.GetValueOrDefault((string?)request["from"] ?? "") ?? throw new ArgumentException("unknown source game");
+        if (from.Generation != 7)
+            throw new ArgumentException("only a Gen 7 Pokemon goes to Sword/Shield here: move a Gen 1, 2 or 6 one to Gen 7 first");
+        var pk = EntityFormat.GetFromBytes(Convert.FromBase64String((string)request["data"]!), EntityContext.Gen7) as PK7
+                 ?? throw new ArgumentException("not a Gen 7 record PKHeX can read");
+        if (pk.IsEgg)
+            throw new ArgumentException("an Egg cannot be moved: hatch it first");
+        if (!PersonalTable.SWSH.IsPresentInGame(pk.Species, pk.Form))
+            throw new ArgumentException(PersonalTable.SWSH.IsPresentInGame(pk.Species, 0)
+                ? "Sword and Shield do not have this form"
+                : $"{Name(Strings.Species, pk.Species)} is not in Sword or Shield");
+
+        var t = request["trainer"]?.AsObject() ?? new JsonObject();
+        var trainer = new SimpleTrainerInfo(GameVersion.SW)
+        {
+            OT = (string?)t["ot"] ?? "POKEUDS",
+            TID16 = (ushort)((int?)t["tid"] ?? 12345),
+            SID16 = (ushort)((int?)t["sid"] ?? 54321),
+            Gender = (byte)((int?)t["gender"] ?? 0),
+            Language = (int?)t["language"] ?? (int)LanguageID.English,
+            Generation = 8,
+            Context = EntityContext.Gen8,
+        };
+        PKM? moved;
+        EntityConverterResult result;
+        lock (MigrateLock)
+        {
+            RecentTrainerCache.SetRecentTrainer(trainer);
+            moved = EntityConverter.ConvertToType(pk, typeof(PK8), out result);
+        }
+        if (moved is not PK8 pk8)
+            throw new ArgumentException(result switch
+            {
+                EntityConverterResult.IncompatibleForm => "Sword and Shield do not have this form",
+                EntityConverterResult.IncompatibleSpecies => "this species cannot go to Sword or Shield",
+                _ => $"PKHeX could not move it ({result})",
+            });
+        if (pk8.Tracker == 0)
+            pk8.Tracker = ((ulong)(uint)Random.Shared.Next() << 32 | (uint)Random.Shared.Next()) | 1;
+        HomeHandler(pk8, trainer);
+        if (pk8.Stat_HPMax == 0)
+            pk8.ResetPartyStats();
+        pk8.RefreshChecksum();
+        return Describe(game, pk8, new LegalityAnalysis(pk8), null);
+    }
+
+    // Taken out of HOME into Sword/Shield by `trainer`: its handling trainer, even its own OT (PKHeX requires a handler
+    // of every Pokemon from before Gen 8), with what the previous handler left behind cleared as HOME clears it.
+    static void HomeHandler(PK8 pk8, SimpleTrainerInfo trainer)
+    {
+        if (pk8.HandlingTrainerName != trainer.OT)
+        {
+            pk8.HandlingTrainerName = trainer.OT;
+            pk8.HandlingTrainerFriendship = pk8.PersonalInfo.BaseFriendship;
+        }
+        pk8.HandlingTrainerGender = trainer.Gender;
+        pk8.HandlingTrainerLanguage = (byte)trainer.Language;
+        pk8.HandlingTrainerMemory = 0;
+        pk8.HandlingTrainerMemoryIntensity = 0;
+        pk8.HandlingTrainerMemoryFeeling = 0;
+        pk8.HandlingTrainerMemoryVariable = 0;
+        pk8.CurrentHandler = 1;
     }
 }

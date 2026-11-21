@@ -114,7 +114,8 @@ it is `<data folder>/bank`. Settings' `bank` overrides both.
   the Bank page opens, files there that it has not seen are deposited; one deleted from the bank is not
   brought back (`.info/received.json` remembers what was seen).
 - **One copy each:** a Pokemon already banked is not added again, whatever its file name, and also after a trade there and back: what a trade writes into a record (Gen 6/7: the handling trainer, geolocations, memories, friendship and affection, the checksum; Gen 2: friendship) does not count. Anything else does, so a Pokemon that levelled up, learned a move or evolved is a new entry. Copies banked before this check existed show a **Remove duplicates** button, which keeps the oldest copy of each and moves an offer on a removed copy to it.
-- **Import** takes `.pk1`, `.pk2`, `.pk6`, `.pk7`, `.ek6` and `.ek7` (encrypted records are stored decrypted),
+- **Import** takes `.pk1`, `.pk2`, `.pk6`, `.pk7`, `.pk8`, `.ek6`, `.ek7` and `.ek8` (encrypted records are stored decrypted;
+  a `.pk8` only of a species the 3DS games have),
   with a `.pk2`'s `.mail` beside it.
 - **Add to a trade queue** lists the games that take the record (a `.pk1` or `.pk2` reaches both VC games,
   the Time Capsule converting it on the way; a `.pk6` X/Y and ORAS; a `.pk7` Sun/Moon and Ultra Sun/Ultra
@@ -134,6 +135,14 @@ it is `<data folder>/bank`. Settings' `bank` overrides both.
   **From the bank** for a Gen 7 game do the same: the Gen 1, 2 and 6 Pokemon are listed, and picking one asks
   first, migrates it, and offers the copy. Nothing official goes from the Game Boy to Gen 6, or back from Gen 7,
   so PokeUDS does not either.
+- **Escape Rope** (the filter row's far end) lists everything Sword/Shield can take: the species and forms they
+  have (`pokeuds/app/data/swsh_present.json`, from PKHeX: `scripts/swsh_present.py`), and the `.pk8` copies already
+  made. A record's **Migrate to SwSh** makes a `.pk8` copy as Pokemon HOME would bring it to Sword/Shield, kept
+  beside the original, once (asking again shows that copy). A Gen 1/2/6 record goes through its `.pk7` copy (the
+  one made before, else a new one, kept too), as it would through Transporter and Bank to HOME. The copy keeps the
+  game it came from, so the Switch games show its origin mark: the Game Boy for a Virtual Console Pokemon, the
+  pentagon for a Gen 6 one, the clover for a Gen 7 one (the detail shows it as **Origin mark** on a `.pk7`/`.pk8`).
+  PokeUDS does not trade with a Switch: export the `.pk8` for PKHeX or a Switch save. Nothing goes to BDSP's `.pb8`.
 
 Levels of stored Gen 6/7 records (which carry no level byte) come from their experience and the species'
 growth rate (`pokeuds/species.py`, taken from PKHeX.Core).

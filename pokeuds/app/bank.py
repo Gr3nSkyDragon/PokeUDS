@@ -3,7 +3,8 @@
 Each record is a file in the bank folder (``default_folder``, or Settings' bank folder); what the app knows about
 it is a ``.json`` of the same name in the hidden ``.info`` folder inside, so the bank shows only Pokemon:
 
-    20261104-153012_025_Sparky_1a2b3c4d.pk6          the record, as PKHeX writes it (decrypted, stored)
+    20261104-153012_025_Sparky_1a2b3c4d.pk6          the record, as PKHeX writes it (decrypted, stored); a .pk8 is a
+                                                     Sword/Shield copy the Escape Rope made
     20261104-153012_025_Sparky_1a2b3c4d.mail         a Gen 2 Pokemon's mail, when it holds one (beside its .pk2,
                                                      where the trade reads it)
     .info/20261104-153012_025_Sparky_1a2b3c4d.json   {"source", "created", "origin", "game", "note", "legal", ...}
@@ -29,11 +30,11 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .. import gbpk, pkx, species
+from .. import gbpk, pk8, pkx, species
 from .settings import data_dir, system_data_dir
 
-EXTENSIONS = (".pk1", ".pk2", ".pk6", ".pk7")
-IMPORTABLE = EXTENSIONS + (".ek6", ".ek7")
+EXTENSIONS = (".pk1", ".pk2", ".pk6", ".pk7", ".pk8")
+IMPORTABLE = EXTENSIONS + (".ek6", ".ek7", ".ek8")
 SOURCES = {"received": "Received", "imported": "Imported", "built": "Built", "converted": "Converted",
            "gift": "Mystery Gift", "migrated": "Migrated", "gts": "GTS"}
 _UNSAFE = re.compile(r"[^\w\-]+", re.UNICODE)
@@ -118,7 +119,7 @@ def portable_folder(app_folder: Path) -> Path | None:
 class Entry:
     id: str
     path: Path
-    extension: str           # "pk1", "pk2", "pk6", "pk7"
+    extension: str           # "pk1", "pk2", "pk6", "pk7", "pk8"
     generation: int
     dex: int
     species: str
@@ -136,7 +137,7 @@ class Entry:
     report: str = ""
     has_mail: bool = False
     meta: dict = field(default_factory=dict, compare=False, repr=False)
-    form: int = 0            # Gen 6/7: the form (Alolan, Unown's letter...), for its sprite
+    form: int = 0            # Gen 6-8: the form (Alolan, Unown's letter...), for its sprite
 
     @property
     def when(self) -> str:
@@ -159,7 +160,7 @@ class Entry:
 
 @dataclass
 class Parsed:
-    content: bytes           # what the bank writes: a .pk1/.pk2 as is, a Gen 6/7 record decrypted and stored
+    content: bytes           # what the bank writes: a .pk1/.pk2 as is, a Gen 6-8 record decrypted and stored
     extension: str
     generation: int
     dex: int
@@ -170,11 +171,11 @@ class Parsed:
     tid: int
     held_item: int
     form: int = 0
-    family: str = "intl"     # a Game Boy record's language family (pokeuds.vc.gbtext); "intl" for Gen 6/7
+    family: str = "intl"     # a Game Boy record's language family (pokeuds.vc.gbtext); "intl" for Gen 6-8
 
 
 def parse(path: str | Path, raw: bytes | None = None, language: str = "") -> Parsed:
-    """Read a .pk1/.pk2/.pk6/.pk7/.ek6/.ek7, or raise ValueError saying why it is not one. ``language`` is a Game
+    """Read a .pk1/.pk2/.pk6/.pk7/.pk8/.ek6/.ek7/.ek8, or raise ValueError saying why it is not one. ``language`` is a Game
     Boy record's game language, which tells a Korean one (the size tells a Japanese one)."""
     path = Path(path)
     raw = Path(path).expanduser().read_bytes() if raw is None else raw
@@ -202,6 +203,21 @@ def parse(path: str | Path, raw: bytes | None = None, language: str = "") -> Par
         level = s.level or species.level_for_exp(s.species, int.from_bytes(plain[0x10:0x14], "little"))
         return Parsed(pkx.to_stored(plain), f"pk{gen}", gen, s.species, s.nickname, level, s.shiny, s.ot_name,
                       s.tid if gen == 6 else _g7_tid(plain), s.held_item, form=plain[0x1D] >> 3)
+    if ext in (".pk8", ".ek8"):
+        if len(raw) not in pk8.SIZES:
+            raise ValueError(f"{path.name}: {len(raw)} bytes is not a Sword/Shield record (328 or 344)")
+        try:
+            plain = pk8.plain(raw)
+        except ValueError as exc:
+            raise ValueError(f"{path.name}: {exc}") from None
+        s = pk8.summary(plain)
+        # The bank holds the Pokemon the 3DS games know: a Galar newcomer has no place in any of them.
+        if not 0 < s.species <= pkx.PK7.max_species:
+            raise ValueError(f"{path.name}: the bank keeps Sword/Shield Pokemon of the 3DS games' species "
+                             f"(1-{pkx.PK7.max_species}), not species {s.species}")
+        level = s.level or species.level_for_exp(s.species, s.exp)
+        return Parsed(pk8.to_stored(plain), "pk8", 8, s.species, s.nickname, level, s.shiny, s.ot_name,
+                      s.shown_tid, s.held_item, form=s.form)
     raise ValueError(f"{path.name}: not a Pokemon file ({', '.join(IMPORTABLE)})")
 
 
@@ -210,6 +226,9 @@ def parse(path: str | Path, raw: bytes | None = None, language: str = "") -> Par
 # the geolocations, the handler's friendship, affection and memory, Amie fullness and enjoyment
 # (0x78-0xAF); the original trainer's friendship, affection and memory (0xCA-0xD0).
 TRADE_FIELDS_PKX = ((0x06, 0x08), (0x78, 0xB0), (0xCA, 0xD1))
+# Sword/Shield (the stored record): the checksum; the handling trainer (0xA8-0xCD); fullness and enjoyment; the
+# original trainer's friendship and memory (0x112-0x118).
+TRADE_FIELDS_PK8 = ((0x06, 0x08), (0xA8, 0xCE), (0xDC, 0xDE), (0x112, 0x119))
 # Gen 2 (.pk2 file: 01 species FF, then the party struct): friendship, which a trade sets anew.
 TRADE_FIELDS_PK2 = ((3 + 27, 3 + 28),)
 
@@ -217,7 +236,8 @@ TRADE_FIELDS_PK2 = ((3 + 27, 3 + 28),)
 def identity(parsed: Parsed) -> str:
     """A digest that is the same for a Pokemon before and after it went through trades: the record without
     what a trade writes into it (TRADE_FIELDS_*). Anything else, a level, a move, an evolution, still counts."""
-    blank = {"pk6": TRADE_FIELDS_PKX, "pk7": TRADE_FIELDS_PKX, "pk2": TRADE_FIELDS_PK2}.get(parsed.extension, ())
+    blank = {"pk6": TRADE_FIELDS_PKX, "pk7": TRADE_FIELDS_PKX, "pk8": TRADE_FIELDS_PK8,
+             "pk2": TRADE_FIELDS_PK2}.get(parsed.extension, ())
     data = bytearray(parsed.content)
     for start, end in blank:
         data[start:end] = bytes(end - start)
@@ -513,6 +533,8 @@ def pkhex_game(entry: Entry) -> str:
     """The PKHeX helper's game for a record: by format, and for Gen 6/7 by the game it came from."""
     if entry.extension in ("pk1", "pk2"):
         return "rby" if entry.extension == "pk1" else "gsc"
+    if entry.extension == "pk8":
+        return "swsh"
     version = pkx.summary(entry.data()).version
     if entry.extension == "pk6":
         return "oras" if version in (26, 27) else "xy"
@@ -617,4 +639,99 @@ def migrate(bank: Bank, entry: Entry, *, vc_game: str | None = None, trainer: di
     meta = bank._meta(entry.path)
     meta.setdefault("migrated", {})[str(target)] = copy.id
     bank._write_meta(entry.path, meta)
+    return copy, True
+
+
+# -- the Escape Rope: out of the 3DS games, to Sword/Shield ----------------------------------------
+
+# Pokemon HOME takes a Gen 7 Pokemon (and through Bank a Gen 6 one, through Transporter and Bank a Virtual Console
+# one) to Sword/Shield, when Sword/Shield have its species and form. The Escape Rope makes that .pk8 copy here,
+# without HOME: the record keeps the game it came from, and with it the origin mark the Switch games show (the Game
+# Boy, the pentagon, the clover). Its table of what Sword/Shield have is PKHeX's (scripts/swsh_present.py).
+SWSH = "swsh"
+SWSH_GEN = 8
+SWSH_APP = "Pokemon HOME"
+_swsh_present: dict[int, frozenset[int]] | None = None
+
+
+def origin_mark(entry: Entry) -> str:
+    """The mark the Gen 7 and Switch games show for where a .pk7/.pk8 came from, read from its origin game: the Game
+    Boy for a Virtual Console Pokemon, the pentagon for a Gen 6 one, the clover for a Gen 7 one. "" for the other
+    formats (the 3DS games before Gen 7 show none, and a Game Boy record has no origin game)."""
+    if entry.extension not in ("pk7", "pk8"):
+        return ""
+    try:
+        data = entry.data()
+    except OSError:
+        return ""
+    version = data[0xDF] if entry.extension == "pk7" else data[pk8.VERSION]
+    if 35 <= version <= 41:
+        return "Game Boy (Virtual Console)"
+    if 24 <= version <= 27:
+        return "Pentagon (Generation 6)"
+    if 30 <= version <= 33:
+        return "Clover (Generation 7)"
+    if version in (44, 45):
+        return "Galar (Sword/Shield)"
+    return ""
+
+
+def swsh_present() -> dict[int, frozenset[int]]:
+    """National dex number -> the forms Sword/Shield have, for the species up to Gen 7."""
+    global _swsh_present
+    if _swsh_present is None:
+        raw = json.loads((Path(__file__).parent / "data" / "swsh_present.json").read_text(encoding="utf-8"))
+        _swsh_present = {int(k): frozenset(v) for k, v in raw.items()}
+    return _swsh_present
+
+
+def reaches_swsh(entry: Entry) -> bool:
+    """A record the Escape Rope takes to Sword/Shield (or a .pk8 already there). A Cosplay Pikachu (a .pk6 Pikachu
+    with a form) stays in Gen 6, as Bank keeps it; Gen 1/2 Pokemon have no forms that matter here."""
+    if entry.extension == "pk8":
+        return True
+    if entry.extension not in ("pk1", "pk2", "pk6", "pk7"):
+        return False
+    form = entry.form if entry.extension in ("pk6", "pk7") else 0
+    if entry.extension == "pk6" and entry.dex == 25 and form:
+        return False
+    return form in swsh_present().get(entry.dex, ())
+
+
+def swsh_copy(bank: Bank, entry: Entry) -> Entry | None:
+    """The Sword/Shield copy made of this record (or of its Gen 7 copy) before, while it is still in the bank."""
+    copy_id = (entry.meta.get("migrated") or {}).get(str(SWSH_GEN))
+    if not copy_id and (gen7 := migrated_copy(bank, entry)) is not None:
+        copy_id = (gen7.meta.get("migrated") or {}).get(str(SWSH_GEN))
+    return bank.find(copy_id) if copy_id else None
+
+
+def escape_rope(bank: Bank, entry: Entry, *, vc_game: str | None = None, trainer: dict | None = None,
+                helper=None) -> tuple[Entry, bool]:
+    """Make a .pk8 copy of the record as Pokemon HOME would bring it to Sword/Shield, and keep it in the bank beside
+    the original, which stays as it was. A Gen 1/2/6 record goes through its Gen 7 copy (``migrate``: the one made
+    before, else a new one, kept as well), as it would go through Transporter and Bank to HOME. A record roped out
+    before gives the copy made then. -> (copy, made now)"""
+    if entry.extension == "pk8":
+        raise ValueError("this is a Sword/Shield record already")
+    if not reaches_swsh(entry):
+        raise ValueError(f"{entry.species} cannot go to Sword or Shield (they do not have it)")
+    if (copy := swsh_copy(bank, entry)) is not None:
+        return copy, False
+    if helper is None:
+        from .. import pkhex
+
+        helper = pkhex.shared()
+    gen7 = entry
+    if entry.extension != "pk7":
+        gen7, _ = migrate(bank, entry, vc_game=vc_game, trainer=trainer, helper=helper)
+    built = helper.migrate(SWSH, gen7.data(), pkhex_game(gen7), trainer=trainer)
+    copy, _ = bank.deposit(built.data, "pk8", source="migrated", origin=gen7.id,
+                           note=f"Escape Rope copy of {entry.describe()}",
+                           extra={"legal": built.legal, "report": built.report, "encounter": built.encounter,
+                                  "migrated_from": gen7.id})
+    for record in {gen7.id: gen7, entry.id: entry}.values():
+        meta = bank._meta(record.path)
+        meta.setdefault("migrated", {})[str(SWSH_GEN)] = copy.id
+        bank._write_meta(record.path, meta)
     return copy, True

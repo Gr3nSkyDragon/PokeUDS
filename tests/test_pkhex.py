@@ -125,6 +125,64 @@ def test_what_cannot_migrate(helper):
         helper.migrate("sm", pkx.fix_checksum(bytes(egg)), "oras")
 
 
+
+# The origin game (PK7 0xDF, PK8 0xDE) is what the Gen 7 and Switch games draw the origin mark from: the Game Boy for
+# the Virtual Console games (35-41), the pentagon for Gen 6 (24-27), the clover for Gen 7 (30-33).
+ORIGIN_CASES = [("rby", 25, 30, "red", 35), ("rby", 25, 30, "blue", 36), ("rby", 25, 30, "yellow", 38),
+                ("gsc", 25, 30, "gold", 39), ("gsc", 25, 30, "silver", 40), ("gsc", 25, 30, "crystal", 41),
+                ("xy", 25, 40, None, None), ("oras", 383, 45, None, None)]
+
+
+@pytest.mark.parametrize("game,species,level,vc,version", ORIGIN_CASES)
+def test_migrated_pokemon_keep_their_origin_game_in_gen_7_and_in_sword_shield(helper, game, species, level, vc, version):
+    from pokeuds import pk8
+
+    trainer = {"ot": "PLAYER", "tid": 5, "sid": 6}
+    built = helper.build(game, species, level=level, trainer={"ot": "ASH", "tid": 1234, "sid": 4321})
+    if version is None:                                             # Gen 6: the game it was built in, X or Omega Ruby
+        version = plain(built.data)[0xDF]
+        assert version in (24, 25, 26, 27)
+    gen7 = helper.migrate("sm", built.data, game, vc_game=vc, trainer=trainer)
+    assert gen7.legal, gen7.report
+    assert plain(gen7.data)[0xDF] == version
+    for handler in (trainer, {"ot": "ASH", "tid": 1234, "sid": 4321}):    # another trainer, or its own OT
+        swsh = helper.migrate("swsh", plain(gen7.data)[:pkx.STORED_SIZE], "sm", trainer=handler)
+        assert swsh.legal, swsh.report
+        assert swsh.extension == "pk8" and len(swsh.data) == pk8.PARTY_SIZE
+        record = pk8.plain(swsh.data)
+        assert record[pk8.VERSION] == version and pk8.summary(record).species == species
+        assert pk8.summary(record).level == level and swsh.summary["ot_name"] == built.summary["ot_name"]
+
+
+def test_gen_7_pokemon_go_to_sword_shield_with_the_clover(helper):
+    from pokeuds import pk8
+
+    for game, species, form in (("sm", 785, 0), ("usum", 26, 1)):          # Tapu Koko, Alolan Raichu
+        built = helper.build(game, species, level=60, form=form, trainer={"ot": "ASH", "tid": 1234, "sid": 4321})
+        swsh = helper.migrate("swsh", plain(built.data), game, trainer={"ot": "PLAYER"})
+        assert swsh.legal, swsh.report
+        record = pk8.plain(swsh.data)
+        assert record[pk8.VERSION] == plain(built.data)[0xDF] and pk8.summary(record).form == form
+        again = helper.check("swsh", pk8.encrypt(pk8.to_stored(record)))     # PKHeX reads PokeUDS's encryption
+        assert again.legal and again.summary["species"] == species
+
+
+def test_what_cannot_go_to_sword_shield(helper):
+    typhlosion = helper.build("sm", 157, level=40)
+    with pytest.raises(ValueError, match="not in Sword or Shield"):
+        helper.migrate("swsh", plain(typhlosion.data), "sm")
+    gold = helper.build("gsc", 25, level=5)
+    with pytest.raises(ValueError, match="Gen 7 first"):
+        helper.migrate("swsh", gold.data, "gsc")                     # HOME takes Gen 7 records here
+
+
+def test_the_banks_sword_shield_table_is_pkhexs(helper):
+    from pokeuds.app import bank
+
+    present = {species: frozenset(forms) for species, forms in helper.request("present", game="swsh")["present"]}
+    assert present == bank.swsh_present()
+
+
 PASTE = """=== [gen7] Team ===
 
 Sparky (Raichu-Alola) (M) @ Aloraichium Z

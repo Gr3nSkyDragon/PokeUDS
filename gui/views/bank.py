@@ -3,7 +3,8 @@
 Received Pokemon are deposited from the output folder each time the page opens. A record can be
 offered in a trade, checked by PKHeX (or the whole bank at once), copied through the Time Capsule
 (Gen 1 <-> Gen 2), migrated to Gen 7 as Poke Transporter or Pokemon Bank would (a copy; the original stays),
-exported or deleted; Import adds files from anywhere.
+roped out to Sword/Shield as Pokemon HOME would (the Escape Rope: a .pk8 copy), exported or deleted; Import adds
+files from anywhere.
 """
 
 from __future__ import annotations
@@ -21,6 +22,8 @@ from .common import View, awaiting, open_folder
 from .sprite import sprite
 
 FILTERS = (("all", "All"), ("gb", "Game Boy"), ("6", "Gen 6"), ("7", "Gen 7"), ("illegal", "Not legal"))
+# Apart from the others, at the row's far end: everything Sword/Shield can take, each with its .pk8 copy to make.
+ESCAPE_ROPE = (("swsh", "Escape Rope"),)
 SOURCE_COLORS = {"received": t.GOOD, "imported": t.MUTED, "built": t.INFO, "converted": t.WARN, "gift": t.ACCENT,
                  "gts": t.GOOD}
 
@@ -86,17 +89,28 @@ class BankView(View):
                 t.notice(takes + ". Double-click one to queue it and go back.", t.INFO),
                 t.secondary("Show everything", self._stop_choosing, ft.Icons.CLOSE)], spacing=8))
         else:
-            controls.append(ft.SegmentedButton(
-                segments=[ft.Segment(k, label=ft.Text(v)) for k, v in FILTERS], selected=[self.filter],
-                on_change=self._filter))
+            roping = self.filter == "swsh"
+            controls.append(ft.Row([
+                ft.SegmentedButton(segments=[ft.Segment(k, label=ft.Text(v)) for k, v in FILTERS],
+                                   selected=[] if roping else [self.filter], allow_empty_selection=True,
+                                   on_change=self._filter),
+                ft.Container(expand=True),
+                ft.SegmentedButton(segments=[ft.Segment(k, label=ft.Text(v), icon=ft.Icons.EXIT_TO_APP)
+                                             for k, v in ESCAPE_ROPE],
+                                   selected=["swsh"] if roping else [], allow_empty_selection=True,
+                                   show_selected_icon=False, on_change=self._filter,
+                                   tooltip="The Pokemon Sword and Shield can take: make a .pk8 copy of any of them, "
+                                           "as Pokemon HOME would move it"),
+            ], spacing=8))
         if self.message:
             controls.append(t.notice(self.message, self.message_color))
 
         if not entries:
             listing = t.card(t.label("The bank is empty. Pokemon the 3DS sends land here after each trade; "
-                                     "Import adds .pk1, .pk2, .pk6, .pk7 (or .ek6/.ek7) files you have."))
+                                     "Import adds .pk1, .pk2, .pk6, .pk7, .pk8 (or .ek6/.ek7/.ek8) files you have."))
         elif not shown:
-            listing = t.card(t.label("Nothing here matches."))
+            listing = t.card(t.label("Nothing in the bank can go to Sword or Shield." if self.filter == "swsh" else
+                                     "Nothing here matches."))
         else:
             listing = t.card(*[self._row(e) for e in shown[:300]], spacing=0, padding=8)
         body = ft.Row([ft.Container(listing, expand=True)], vertical_alignment=ft.CrossAxisAlignment.START, spacing=t.GAP)
@@ -109,7 +123,8 @@ class BankView(View):
         if self.app.bank_for:
             return self.app.bank_for in bank.games_for(e) or self.app.bank_for in bank.migrates_to(e)
         return (self.filter == "all" or (self.filter == "gb" and e.generation <= 2)
-                or (self.filter == "illegal" and e.legal is False) or self.filter == str(e.generation))
+                or (self.filter == "illegal" and e.legal is False) or self.filter == str(e.generation)
+                or (self.filter == "swsh" and bank.reaches_swsh(e)))
 
     def _row(self, e: bank.Entry) -> ft.Control:
         row = self._row_box(e)
@@ -147,6 +162,10 @@ class BankView(View):
             ("Format", f".{e.extension} (Generation {e.generation})"),
             ("From", bank.SOURCES.get(e.source, e.source) + f", {e.when}"),
         ]
+        if e.extension == "pk8":
+            facts[4] = ("Format", f".{e.extension} (Sword/Shield)")
+        if mark := bank.origin_mark(e):
+            facts.append(("Origin mark", mark))
         if e.generation <= 2 and e.meta.get("language") in vc_titles.LANGUAGES:
             facts.append(("Language", f"{vc_titles.LANGUAGES[e.meta['language']]} (the game it came from)"))
         if e.has_mail:
@@ -190,9 +209,13 @@ class BankView(View):
                                lambda _, x=e, k=g: self._offer_migrated(x, k), ft.Icons.MOVE_UP,
                                disabled=busy or self.migrating or not pkhex_ok)
                    for g in bank.migrates_to(e)]
-        rows.append(ft.Column(offers or [t.label("No game here takes this record.", size=12)], spacing=6, tight=True))
+        none = ("PokeUDS trades with the 3DS games only: export this .pk8 to take it into PKHeX or a Switch save."
+                if e.extension == "pk8" else "No game here takes this record.")
+        rows.append(ft.Column(offers or [t.label(none, size=12)], spacing=6, tight=True))
         if target:
             rows += [ft.Divider(color=t.LINE), *self._migration(e, target, pkhex_ok)]
+        if e.extension != "pk8" and bank.reaches_swsh(e):
+            rows += [ft.Divider(color=t.LINE), *self._escape_rope(e, pkhex_ok)]
         actions = [t.secondary("Export...", awaiting(self._export, e), ft.Icons.FILE_DOWNLOAD_OUTLINED)]
         if e.extension in ("pk1", "pk2", "pk6", "pk7") and not e.has_mail:
             actions.insert(0, t.secondary("List on the GTS", lambda _, x=e: self._to_gts(x), ft.Icons.PUBLIC))
@@ -497,3 +520,86 @@ class BankView(View):
                 self.app.ui(self.refresh)
 
         threading.Thread(target=work, daemon=True, name="pkhex-migrate").start()
+
+    # -- the Escape Rope: a Sword/Shield copy -----------------------------------------------------------
+
+    def _escape_rope(self, e: bank.Entry, pkhex_ok: bool) -> list[ft.Control]:
+        rows: list[ft.Control] = [t.label("Migrate to SwSh", color=t.TEXT)]
+        copy = bank.swsh_copy(self.bank, e)
+        if copy:
+            rows.append(t.label(f"Migrated already: {copy.describe()} (.{copy.extension}). The copy is kept beside "
+                                "this one; migrating again gives the same copy.", size=12))
+            rows.append(ft.Row([t.secondary("Show the copy", lambda _, i=copy.id: self._select(i), ft.Icons.ARROW_FORWARD)]))
+        else:
+            rows.append(t.label(f"A .pk8 copy for Sword and Shield, made as {bank.SWSH_APP} would move it, with its "
+                                f"origin mark. This .{e.extension} stays in the bank as it is.", size=12))
+            rows.append(ft.Row([t.secondary("Make a .pk8 copy...", lambda _, x=e: self._confirm_escape_rope(x),
+                                            ft.Icons.EXIT_TO_APP, disabled=self.migrating or not pkhex_ok),
+                                ft.ProgressRing(width=16, height=16, visible=self.migrating)], spacing=8))
+        return rows
+
+    def _confirm_escape_rope(self, entry: bank.Entry) -> None:
+        page = self.app.page
+        gen7 = entry if entry.extension == "pk7" else bank.migrated_copy(self.bank, entry)
+        needs_gen7 = gen7 is None
+        choice = {"vc": bank.VC_GAMES[entry.generation][0][0] if entry.generation <= 2 and needs_gen7 else None}
+        # A .pk7 may have come from Gen 6 or the Virtual Console itself: its own origin game says which mark it has.
+        mark = (bank.origin_mark(entry) if entry.extension == "pk7" else
+                "Pentagon (Generation 6)" if entry.extension == "pk6" else "Game Boy (Virtual Console)")
+        what = (f"{entry.describe()} gets a .pk8 copy for Sword and Shield, as {bank.SWSH_APP} would bring it there. "
+                f"It keeps the game it came from, and with it its origin mark: {mark}. The .{entry.extension} stays "
+                "in the bank; the .pk8 copy can never come back to the 3DS games.")
+        if entry.extension == "pk7":
+            route = "From Gen 7 it goes straight to Sword/Shield."
+        elif needs_gen7:
+            app = bank.MIGRATION_APPS[entry.extension]
+            path = "Poke Transporter and Pokemon Bank" if entry.generation <= 2 else "Pokemon Bank"
+            route = (f"It goes through Gen 7 first, as through {path} to HOME: PokeUDS makes its .pk7 copy as {app} "
+                     "does (kept in the bank too), then the .pk8 from that.")
+        else:
+            route = f"It goes from the .pk7 copy made of it before ({gen7.describe()})."
+        changes = ("As HOME does it: you (the Builder's trainer) become its handling trainer, the handler's memories "
+                   "are cleared, and it gets a HOME tracker and a height and weight of its own. Its moves, nickname, "
+                   "met data and OT stay as they are.")
+        controls: list[ft.Control] = [ft.Text(what), ft.Text(route, size=13, color=t.MUTED),
+                                      ft.Text(changes, size=13, color=t.MUTED)]
+        if entry.generation <= 2 and needs_gen7:
+            controls.append(ft.Dropdown(
+                label="Transferred from", value=choice["vc"], width=220, dense=True,
+                options=[ft.DropdownOption(key=k, text=v) for k, v in bank.VC_GAMES[entry.generation]],
+                tooltip="The Virtual Console game Transporter reads it from; its record names that game as its origin",
+                on_select=lambda ev: choice.__setitem__("vc", ev.control.value)))
+
+        def close(_=None) -> None:
+            page.pop_dialog()
+
+        def go(_) -> None:
+            page.pop_dialog()
+            self._rope_out(entry, choice["vc"])
+
+        page.show_dialog(ft.AlertDialog(
+            title=ft.Text(f"Escape Rope: {entry.species} to Sword/Shield?"),
+            content=ft.Column(controls, tight=True, spacing=12, width=460),
+            actions=[ft.TextButton("Cancel", on_click=close), ft.FilledButton("Make the .pk8", on_click=go)]))
+
+    def _rope_out(self, entry: bank.Entry, vc_game: str | None) -> None:
+        from pokeuds.app.builder import Trainer
+
+        s = self.app.settings
+        trainer = Trainer.from_dict(s.trainer, s.trainer_name or "POKEUDS").request(bank.SWSH_GEN)
+        self.migrating = True
+        self.refresh()
+
+        def work() -> None:
+            try:
+                copy, new = bank.escape_rope(self.bank, entry, vc_game=vc_game, trainer=trainer)
+                legal = "legal" if copy.legal else "NOT legal"
+                self._say(f"Escape Rope: {copy.describe()} (.pk8), {legal} by PKHeX." if new else
+                          f"Already migrated: {copy.describe()}.", t.GOOD if copy.legal else t.WARN)
+                self.selected = copy.id
+            except Exception as exc:        # what PKHeX refuses (an Egg, a form Sword/Shield lack), or the helper gone
+                self._say(f"Could not take {entry.species} to Sword/Shield: {exc}", t.BAD)
+            self.migrating = False
+            self.app.ui(self.refresh)
+
+        threading.Thread(target=work, daemon=True, name="pkhex-escape-rope").start()

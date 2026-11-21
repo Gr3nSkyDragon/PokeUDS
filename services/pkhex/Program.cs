@@ -12,9 +12,11 @@
 //   {"cmd":"card","game":"xy",...}                   -> a card from the editor's fields (CardEditor.cs), and what it gives
 //   {"cmd":"card_fields","game":"xy","data":...}     -> any card (or an official key) as the editor's fields
 //   {"cmd":"migrate","game":"sm","from":"rby",...}   -> a Gen 1/2/6 record moved to Gen 7 as Transporter/Bank do (Migrate.cs)
+//   {"cmd":"migrate","game":"swsh","from":"sm",...}  -> a Gen 7 record moved to Sword/Shield as Pokemon HOME does
+//   {"cmd":"present","game":"swsh"}                  -> the Gen 7 species and forms Sword/Shield take
 //
-// Every reply has "ok"; a failed request has "error" instead. Games: rby, gsc, xy, oras, sm, usum; and for Mystery
-// Gifts only so far, dp, pt, hgss, bw, b2w2.
+// Every reply has "ok"; a failed request has "error" instead. Games: rby, gsc, xy, oras, sm, usum; for Mystery
+// Gifts only so far, dp, pt, hgss, bw, b2w2; and swsh for checking and migrating only (the Bank's Escape Rope).
 // Legality is PKHeX.Core's (LegalityAnalysis); the build tries the species' encounters in PKHeX's
 // order and keeps the first that stays legal with everything asked for (docs/pkhex.md).
 
@@ -40,6 +42,8 @@ static partial class Program
         ["oras"] = new("oras", [GameVersion.OR, GameVersion.AS], () => new PK6(), () => new SAV6AO(), 6),
         ["sm"] = new("sm", [GameVersion.SN, GameVersion.MN], () => new PK7(), () => new SAV7SM(), 7),
         ["usum"] = new("usum", [GameVersion.US, GameVersion.UM], () => new PK7(), () => new SAV7USUM(), 7),
+        // Sword/Shield: a Gen 7 Pokemon moved there as HOME would (Migrate.cs) and checked; nothing built or traded.
+        ["swsh"] = new("swsh", [GameVersion.SW, GameVersion.SH], () => new PK8(), () => new SAV8SWSH(), 8),
     };
 
     static readonly GameStrings Strings = GameInfo.GetStrings("en");
@@ -92,6 +96,7 @@ static partial class Program
             "card_fields" => CardFieldsReply(game, request),
             "fingerprint" => FingerprintReply(game, request),
             "migrate" => Migrate(game, request),
+            "present" => Present(game),
             _ => throw new ArgumentException($"unknown cmd {cmd}"),
         };
     }
@@ -109,7 +114,8 @@ static partial class Program
 
     static EntityContext MetContext(Game game) => game.Generation switch
     {
-        4 => EntityContext.Gen4, 5 => EntityContext.Gen5, 6 => EntityContext.Gen6, _ => EntityContext.Gen7,
+        4 => EntityContext.Gen4, 5 => EntityContext.Gen5, 6 => EntityContext.Gen6, 8 => EntityContext.Gen8,
+        _ => EntityContext.Gen7,
     };
 
     static JsonObject Lists(Game game)
@@ -565,7 +571,7 @@ static partial class Program
         var context = game.Generation switch
         {
             1 => EntityContext.Gen1, 2 => EntityContext.Gen2, 4 => EntityContext.Gen4, 5 => EntityContext.Gen5,
-            6 => EntityContext.Gen6, _ => EntityContext.Gen7,
+            6 => EntityContext.Gen6, 8 => EntityContext.Gen8, _ => EntityContext.Gen7,
         };
         var pk = EntityFormat.GetFromBytes(data, context)
                  ?? throw new ArgumentException("not a Pokemon record PKHeX can read");

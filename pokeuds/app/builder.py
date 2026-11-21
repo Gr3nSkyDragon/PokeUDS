@@ -19,7 +19,7 @@ GAMES = {
     "sm": ("Sun / Moon", 7, 802),
     "usum": ("Ultra Sun / Ultra Moon", 7, 807),
 }
-NAME_LIMITS = {1: (10, 7), 2: (10, 7), 6: (12, 12), 7: (12, 12)}      # (nickname, OT) characters
+NAME_LIMITS = {1: (10, 7), 2: (10, 7), 6: (12, 12), 7: (12, 12), 8: (12, 12)}      # (nickname, OT) characters
 # The game language a built Pokemon comes from: PokeUDS's key -> (name, PKHeX's LanguageID). It sets the species name
 # a Pokemon without a nickname gets, and for Gen 1/2 the record itself (Japanese names are 6 bytes; pokeuds.vc.gbtext).
 LANGUAGES = {"en": ("English", 2), "jp": ("Japanese", 1), "fr": ("French", 3), "it": ("Italian", 4),

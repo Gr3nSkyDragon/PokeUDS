@@ -6,9 +6,10 @@ from dataclasses import replace
 
 import pytest
 
-from pokeuds import gbpk, pkhex, pkx, received
+from pokeuds import gbpk, pk8, pkhex, pkx, received
 from pokeuds.app import bank
 from pokeuds.radio.demo import sample_mon
+from tests.test_pk8 import make_pk8
 from tests.test_pkx import make_record
 
 
@@ -154,6 +155,8 @@ class FakeHelper:
     def migrate(self, game, data, source, vc_game=None, trainer=None, language=""):
         self.migrated.append((game, source, vc_game, trainer))
         self.languages = getattr(self, "languages", []) + [language]
+        if game == "swsh":
+            return pkhex.Built(True, "Legal!", "HOME transfer", "pk8", make_pk8(species=6, ec=len(self.migrated)), {})
         return pkhex.Built(True, "Legal!", "Virtual Console Transfer", "pk7", pk6(species=6, ec=len(self.migrated)), {})
 
 
@@ -187,6 +190,53 @@ def test_migrating_keeps_the_original_and_makes_one_copy(b):
         bank.migrate(b, replace(gen1, meta={}), vc_game="gold", helper=helper)   # Gold is not a Gen 1 game
     xy_copy, made = bank.migrate(b, xy, helper=helper)
     assert made and helper.migrated[-1][1] == "xy" and xy_copy.note.startswith("Pokemon Bank copy")
+
+
+def test_pk8_files_are_banked(b, tmp_path):
+    src = tmp_path / "zappy.ek8"
+    src.write_bytes(pk8.encrypt(make_pk8(species=26, form=1, nickname="Zappy", version=36)))
+    entry, added = b.import_file(src)
+    assert added and entry.extension == "pk8" and entry.generation == 8 and entry.species == "Raichu" and entry.form == 1
+    assert entry.level == 30 and pk8.checksum_valid(entry.data()) and len(entry.data()) == pk8.STORED_SIZE
+    assert bank.games_for(entry) == [] and bank.migration_target(entry) is None and bank.pkhex_game(entry) == "swsh"
+    assert bank.origin_mark(entry) == "Game Boy (Virtual Console)" and bank.reaches_swsh(entry)
+    assert b.import_file(src)[1] is False
+    (tmp_path / "grookey.pk8").write_bytes(make_pk8(species=810))
+    with pytest.raises(ValueError, match="3DS games' species"):
+        b.import_file(tmp_path / "grookey.pk8")
+
+
+def test_what_reaches_sword_and_shield(b):
+    pikachu = replace(b.deposit(pk6(species=25), "pk6", source="imported")[0], form=0)   # the test record's 0x1D
+    typhlosion, _ = b.deposit(pk6(species=157, nickname="Typh"), "pk6", source="imported")
+    gb, _ = b.deposit(sample_mon(1, 4, 12, "CHARMY").to_file(), "pk1", source="imported")
+    assert bank.reaches_swsh(pikachu) and bank.reaches_swsh(gb) and not bank.reaches_swsh(typhlosion)
+    assert not bank.reaches_swsh(replace(pikachu, form=1))         # a Cosplay Pikachu stays in Gen 6
+    alolan = replace(pikachu, extension="pk7", generation=7, dex=26, form=1)
+    assert bank.reaches_swsh(alolan) and bank.origin_mark(pikachu) == ""
+
+
+def test_the_escape_rope_goes_through_gen_7_and_makes_one_copy(b):
+    helper = FakeHelper()
+    gen1, _ = b.deposit(sample_mon(1, 4, 12, "CHARMY").to_file(), "pk1", source="imported")
+    copy, made = bank.escape_rope(b, gen1, vc_game="red", trainer={"ot": "ME"}, helper=helper)
+    assert made and copy.extension == "pk8" and copy.source == "migrated" and copy.legal is True
+    assert [m[:3] for m in helper.migrated] == [("sm", "rby", "red"), ("swsh", "sm", None)]
+    gen7 = bank.migrated_copy(b, b.find(gen1.id))
+    assert gen7 is not None and gen7.extension == "pk7" and copy.meta["migrated_from"] == gen7.id
+    assert bank.swsh_copy(b, b.find(gen1.id)).id == copy.id == bank.swsh_copy(b, gen7).id
+    again, made = bank.escape_rope(b, b.find(gen1.id), helper=helper)
+    assert not made and again.id == copy.id and len(helper.migrated) == 2
+    with pytest.raises(ValueError, match="already"):
+        bank.escape_rope(b, copy, helper=helper)
+    # A Gen 1 Pokemon migrated to Gen 7 before ropes out from that copy, not from a new one.
+    gen1b, _ = b.deposit(sample_mon(1, 7, 12, "SQUIRT").to_file(), "pk1", source="imported")
+    first, _ = bank.migrate(b, gen1b, vc_game="blue", helper=helper)
+    roped, made = bank.escape_rope(b, b.find(gen1b.id), helper=helper)
+    assert made and helper.migrated[-1][0] == "swsh" and roped.meta["migrated_from"] == first.id
+    typhlosion, _ = b.deposit(pk6(species=157, nickname="Typh"), "pk6", source="imported")
+    with pytest.raises(ValueError, match="cannot go"):
+        bank.escape_rope(b, typhlosion, helper=helper)
 
 
 def _packaged(monkeypatch, tmp_path):
