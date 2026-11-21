@@ -2,7 +2,7 @@
 
 | Your computer | Download | Then |
 |---|---|---|
-| Windows | `PokeUDS-windows.zip` | Unzip it anywhere and run `PokeUDS/PokeUDS.exe`. |
+| Windows | `PokeUDS-windows.zip` | Unzip it anywhere and run `PokeUDS/PokeUDS.exe`. For the Desktop, use the app's **Create desktop shortcut**. |
 | Mac with Apple Silicon (M1 or newer) | `PokeUDS-macos-arm64.zip` | Unzip it and move `PokeUDS.app` to Applications. |
 | Intel Mac | `PokeUDS-macos-x64.zip` | Unzip it and move `PokeUDS.app` to Applications. |
 | Linux | none | Run PokeUDS from source (README, "From source"). |
