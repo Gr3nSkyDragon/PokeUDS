@@ -8,7 +8,7 @@ from pathlib import Path
 import flet as ft
 
 from pokeuds import __version__
-from pokeuds.app import update
+from pokeuds.app import i18n, update
 from pokeuds.app.settings import data_dir
 
 from .. import theme as t
@@ -112,13 +112,24 @@ class SettingsView(View):
             ft.Row([t.secondary("Check now", lambda e: self.app.updates.check() if getattr(self.app, "updates", None)
                                 else None, ft.Icons.SYSTEM_UPDATE_ALT),
                     t.label(f"This is PokeUDS {__version__}.", size=12)], spacing=12))
+        from .. import shortcut
+
+        # The Windows app behind its launcher: a desktop shortcut, also after its banner was closed (gui/shortcut.py).
+        self.shortcut_status = ft.Text("", size=12, color=t.MUTED, visible=False)
+        desktop = t.card(
+            ft.Row([ft.Column([t.heading("Desktop shortcut"),
+                               t.label("PokeUDS.exe has to stay in its folder, beside _internal. A shortcut on the "
+                                       "desktop opens it from there.")],
+                              spacing=4, expand=True),
+                    t.secondary("Create desktop shortcut", self._shortcut, ft.Icons.ADD_TO_HOME_SCREEN)]),
+            self.shortcut_status) if shortcut.available() else None
         debug = t.card(
             ft.Row([ft.Column([t.heading("Debug tools"),
                                t.label("Adds a Debug page: the demo radio, a network scan and capture analysis.")],
                               spacing=4, expand=True),
                     ft.Switch(value=s.debug, on_change=self._debug)]))
         return ft.Column([c for c in (t.title("Settings"), keys, gen7, output, trainer, language, helper, art, updates,
-                                      debug)
+                                      desktop, debug)
                           if c is not None] + [
                           t.label(f"PokeUDS {__version__}", size=12)],
                          spacing=t.GAP, scroll=ft.ScrollMode.AUTO)
@@ -230,6 +241,30 @@ class SettingsView(View):
         self.app.settings.sprites = bool(e.control.value)
         sprites.CACHE.online = self.app.settings.sprites
         self.app.save()
+
+    def _shortcut(self, e) -> None:
+        from .. import shortcut
+
+        status = getattr(self, "shortcut_status", None)
+        e.control.disabled = True
+        e.control.update()
+
+        def done(error: str) -> None:
+            e.control.disabled = False
+            if status is not None:
+                status.value = (i18n.tr(f"Could not create the shortcut: {error}") if error
+                                else i18n.tr("Shortcut created: PokeUDS is on your desktop."))
+                status.color = t.BAD if error else t.GOOD
+                status.visible = True
+            if not error:
+                self.app.settings.shortcut_banner = False      # the banner has nothing left to offer
+                self.app.save()
+            try:
+                e.control.page.update()
+            except (RuntimeError, AssertionError, AttributeError):
+                pass
+
+        shortcut.create(self.app, done)
 
     def _updates(self, e) -> None:
         self.app.settings.updates = bool(e.control.value)

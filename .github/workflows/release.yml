@@ -40,6 +40,13 @@ jobs:
           PYTHONIOENCODING: utf-8
           POKEUDS_TRANSLATIONS_STRICT: "1"    # a built-in language that lacks a string fails the release (docs/release.md)
       - run: python scripts/build_exe.py --no-zip
+      # The launcher hands its arguments to the app and returns its exit code (docs/gui.md, The launcher); an older
+      # app's updater relies on that when it starts this release's PokeUDS.exe --apply-update.
+      - name: Check the launcher
+        run: |
+          $out = & dist/PokeUDS/PokeUDS.exe --cli --help | Out-String
+          if ($LASTEXITCODE -ne 0 -or $out -notmatch "usage") { Write-Output $out; exit 1 }
+          Write-Output "the launcher starts the app's command line"
       # SignPath Foundation signs PokeUDS.exe and the PKHeX helper (.github/signpath/artifact-configuration.xml,
       # docs/code_signing.md). Without the SIGNPATH_API_TOKEN secret (a fork, or before SignPath is set up) the app
       # ships unsigned. The SIGNPATH_ORGANIZATION_ID variable is the SignPath organization; SIGNPATH_POLICY switches

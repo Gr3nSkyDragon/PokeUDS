@@ -1,6 +1,7 @@
 r"""Build the desktop app for this computer (docs/release.md):
 
-- Windows: dist/PokeUDS/PokeUDS.exe, zipped to dist/PokeUDS-windows.zip
+- Windows: dist/PokeUDS/PokeUDS.exe (the launcher) and dist/PokeUDS/_internal (the app), zipped to
+  dist/PokeUDS-windows.zip
 - macOS: dist/PokeUDS.app, zipped to dist/PokeUDS-macos-arm64.zip (Apple Silicon) or -x64.zip (Intel)
 
     pip install -r requirements-gui.txt pyinstaller
@@ -8,6 +9,13 @@ r"""Build the desktop app for this computer (docs/release.md):
     python scripts/build_exe.py --zip-only       # Windows: zip dist/PokeUDS as it is (after signing it)
 
 ``flet pack`` (PyInstaller) builds the app with Python, the game profiles, the strings and Flet's window inside.
+
+On Windows the app is ``_internal/PokeUDS-app.exe``, built flat (PyInstaller's ``--contents-directory .``, so its
+Python sits beside it in ``_internal``), and the ``PokeUDS.exe`` players click is a small launcher compiled here from
+packaging/launcher with MSVC (Visual Studio or its Build Tools, "Desktop development with C++"). An app moved away
+from the files beside it cannot start; the launcher can be moved anywhere and still finds the app's folder
+(docs/gui.md, The launcher). The top of the folder stays ``PokeUDS.exe`` and ``_internal``, as before the launcher,
+so an older app's updater installs this layout without knowing it changed.
 
 On Windows, Flet ships its window as a zip that it unpacks into ``%USERPROFILE%\.flet\client`` on first start; this
 script unpacks it into the app's own folder instead (``_internal/flet_view``, found through ``FLET_VIEW_PATH`` by
@@ -55,6 +63,8 @@ from pokeuds import __version__, pkhex  # noqa: E402
 from pokeuds.util import NO_WINDOW  # noqa: E402
 
 NAME = "PokeUDS"
+APP_NAME = "PokeUDS-app"    # Windows: the app behind the launcher, _internal/PokeUDS-app.exe (pokeuds/app/home.py)
+LAUNCHER = ROOT / "packaging" / "launcher"
 BUNDLE_ID = "io.github.gr3nskydragon.pokeuds"
 MAC = sys.platform == "darwin"
 ENTRY = ROOT / "packaging" / "pokeuds_app.py"
@@ -92,9 +102,9 @@ def bundle_helper() -> Path:
 
 
 def pack(icon: Path | None, dist: Path) -> Path:
-    """Run flet pack; -> the built app: dist/PokeUDS (Windows) or dist/PokeUDS.app (macOS)."""
+    """Run flet pack; -> the built app: dist/PokeUDS-app, flat (Windows), or dist/PokeUDS.app (macOS)."""
     # flet pack through scripts/pack_flet.py, as pokeldn runs it: on macOS it keeps the window's entitlements (file dialogs).
-    args = [sys.executable, str(ROOT / "scripts" / "pack_flet.py"), "pack", str(ENTRY), "--name", NAME,
+    args = [sys.executable, str(ROOT / "scripts" / "pack_flet.py"), "pack", str(ENTRY), "--name", NAME if MAC else APP_NAME,
             "--distpath", str(dist), "--yes",
             "--product-name", NAME, "--file-description", f"{NAME} {__version__}",
             "--product-version", __version__, "--file-version", file_version(__version__),
@@ -114,6 +124,8 @@ def pack(icon: Path | None, dist: Path) -> Path:
              "--specpath", str(ROOT / "build")]
     if MAC:
         args += ["--onedir"]        # after flet pack's own --onefile, so PyInstaller builds a one-folder .app
+    else:
+        args += ["--contents-directory", "."]       # flat: the folder becomes _internal, the exe inside it
     print(" ".join(args), flush=True)
     subprocess.run(args, cwd=ROOT, check=True, **NO_WINDOW)
     if MAC:
@@ -121,9 +133,66 @@ def pack(icon: Path | None, dist: Path) -> Path:
         if not (app / "Contents" / "MacOS" / NAME).is_file():
             sys.exit(f"flet pack finished but {app}/Contents/MacOS/{NAME} is missing")
         return app
-    folder = dist / NAME
-    if not (folder / f"{NAME}.exe").is_file():
-        sys.exit(f"flet pack finished but {folder / NAME}.exe is missing")
+    folder = dist / APP_NAME
+    if not (folder / f"{APP_NAME}.exe").is_file():
+        sys.exit(f"flet pack finished but {folder / APP_NAME}.exe is missing")
+    if (folder / "_internal").exists():
+        sys.exit(f"{folder} has an _internal folder of its own: PyInstaller ignored --contents-directory .")
+    return folder
+
+
+def msvc() -> dict[str, str]:
+    """The environment of Visual Studio's x64 build tools (vcvars64.bat), found with vswhere."""
+    vswhere = Path(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")) / "Microsoft Visual Studio" \
+        / "Installer" / "vswhere.exe"
+    found = ""
+    if vswhere.is_file():
+        found = subprocess.run([str(vswhere), "-latest", "-products", "*", "-requires",
+                                "Microsoft.VisualStudio.Component.VC.Tools.x86.x64", "-property", "installationPath"],
+                               capture_output=True, text=True).stdout.strip().split("\n")[0].strip()
+    vcvars = Path(found) / "VC" / "Auxiliary" / "Build" / "vcvars64.bat" if found else None
+    if vcvars is None or not vcvars.is_file():
+        sys.exit("The launcher needs Microsoft's C compiler: install Visual Studio or its Build Tools with "
+                 '"Desktop development with C++", then build again.')
+    out = subprocess.run(f'cmd /d /s /c ""{vcvars}" >nul && set"', capture_output=True, text=True, check=True).stdout
+    return dict(line.split("=", 1) for line in out.splitlines() if "=" in line and not line.startswith("="))
+
+
+def build_launcher(icon: Path | None, dest: Path) -> Path:
+    """Windows: compile packaging/launcher into dest (PokeUDS.exe), with the app's icon and version."""
+    work = ROOT / "build" / "launcher"
+    shutil.rmtree(work, ignore_errors=True)
+    work.mkdir(parents=True)
+    header = [f'#define POKEUDS_VERSION "{__version__}"',
+              f"#define POKEUDS_VERSION_COMMAS {file_version(__version__).replace('.', ',')}"]
+    if icon:
+        header.append(f'#define POKEUDS_ICON "{icon.resolve().as_posix()}"')
+    (work / "version.h").write_text("\n".join(header) + "\n", encoding="utf-8")
+    env = msvc()
+    path = next((v for k, v in env.items() if k.upper() == "PATH"), "")
+    tools = {name: shutil.which(name, path=path) for name in ("rc", "cl")}
+    if not all(tools.values()):
+        sys.exit(f"vcvars64.bat gave no {' or '.join(n for n, t in tools.items() if not t)}.exe")
+    subprocess.run([tools["rc"], "/nologo", "/I", str(work), "/fo", str(work / "launcher.res"), "launcher.rc"],
+                   cwd=LAUNCHER, env=env, check=True)
+    subprocess.run([tools["cl"], "/nologo", "/O1", "/MT", "/W4", "/GS", "/utf-8", "launcher.c",
+                    str(work / "launcher.res"), f"/Fo{work}\\", f"/Fe{dest}",
+                    "/link", "/SUBSYSTEM:WINDOWS", "/MANIFEST:NO",
+                    "user32.lib", "shell32.lib", "ole32.lib", "comctl32.lib"],
+                   cwd=LAUNCHER, env=env, check=True)
+    if not dest.is_file():
+        sys.exit(f"the launcher was compiled but {dest} is missing")
+    return dest
+
+
+def assemble(app: Path, folder: Path, icon: Path | None) -> Path:
+    """Windows: the flat app becomes folder/_internal and the launcher folder/PokeUDS.exe. -> folder."""
+    internal = folder / "_internal"
+    if internal.exists() or (folder / f"{NAME}.exe").exists():
+        sys.exit(f"{folder} still holds an earlier build's program files")
+    folder.mkdir(parents=True, exist_ok=True)
+    app.rename(internal)
+    build_launcher(icon, folder / f"{NAME}.exe")
     return folder
 
 
@@ -223,8 +292,10 @@ def main(argv: list[str] | None = None) -> int:
     if sys.platform not in ("win32", "darwin"):
         sys.exit("build_exe.py builds the Windows and macOS apps; on Linux, run PokeUDS from source (README)")
     if a.zip_only:
-        if MAC or not (a.dist / NAME / f"{NAME}.exe").is_file():
-            sys.exit(f"--zip-only zips a built Windows app: {a.dist / NAME / NAME}.exe is missing")
+        missing = [p for p in (a.dist / NAME / f"{NAME}.exe", a.dist / NAME / "_internal" / f"{APP_NAME}.exe")
+                   if not p.is_file()]
+        if MAC or missing:
+            sys.exit(f"--zip-only zips a built Windows app: {missing[0] if missing else 'not on a Mac'} is missing")
         print(f"zipped {zip_folder(a.dist / NAME, a.dist / zip_name())}")
         return 0
     icon = a.icon or (DEFAULT_ICON if DEFAULT_ICON.is_file() else None)
@@ -245,6 +316,7 @@ def main(argv: list[str] | None = None) -> int:
         if not MAC and (a.dist / NAME / name).is_dir():
             (a.dist / NAME / name).rename(aside)
     shutil.rmtree(a.dist / NAME, ignore_errors=True)
+    shutil.rmtree(a.dist / APP_NAME, ignore_errors=True)
     try:
         built = pack(icon, a.dist.resolve())
     finally:
@@ -262,7 +334,8 @@ def main(argv: list[str] | None = None) -> int:
         if not a.no_zip:
             print(f"zipped {zip_app(built, a.dist / zip_name())}")
         return 0
-    print(f"built {built / NAME}.exe")
+    built = assemble(built, a.dist / NAME, icon)
+    print(f"built {built / NAME}.exe (the launcher) and {built / '_internal' / APP_NAME}.exe")
     shutil.copyfile(ROOT / "LICENSE", built / "LICENSE.txt")
     print(f"window unpacked to {unpack_view(built)}")
     if not a.no_zip:

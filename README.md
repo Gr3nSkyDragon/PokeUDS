@@ -69,7 +69,9 @@ Download the app for your computer from the [releases](https://github.com/Gr3nSk
 apps carry everything, PKHeX included: nothing else to install or download.
 
 **Windows:** download `PokeUDS-windows.zip`, unzip it anywhere you can write (Documents, the Desktop, a USB
-drive) and run `PokeUDS/PokeUDS.exe`.
+drive) and run `PokeUDS/PokeUDS.exe`. Keep `PokeUDS.exe` in that folder, beside `_internal`; to start it from the
+Desktop, use the app's **Create desktop shortcut** (or make a shortcut yourself). A `PokeUDS.exe` moved out of the
+folder anyway still finds it: it opens the folder the app last ran from, or looks for it and asks.
 
 Everything the app keeps stays in its own folder: your Pokemon in `PokeUDS/Bank`, received files in
 `PokeUDS/received`, and its settings, sprites and plugins in `PokeUDS/Data` (hidden). Nothing is written to your

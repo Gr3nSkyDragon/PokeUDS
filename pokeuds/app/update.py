@@ -3,10 +3,15 @@ copy replace the old one once it has quit (docs/gui.md, Updates).
 
 The design is pokeldn's (pokeldn/app/update.py, AGPL-3.0, Decryptu; its waiting for processes is adapted here):
 the release's ``SHA256SUMS`` must list the archive's checksum, the archive unpacks into ``Data/update/new``, and
-the new app runs as a helper (``PokeUDS.exe --apply-update``) that waits for the old app to quit, swaps the app in
-and opens it, putting the old app back on any failure. It differs where PokeUDS keeps the player's files beside
-the app: only what a release ships (``PokeUDS.exe``, ``_internal``, ``LICENSE.txt``) is replaced. ``Bank`` (and the
-GTS's ``Bank/.gts``), ``Data`` and ``received``, and anything else in the folder, are never moved or touched.
+the new app runs as a helper (``_internal/PokeUDS-app.exe --apply-update``) that waits for the old app to quit, swaps
+the app in and opens it, putting the old app back on any failure. It differs where PokeUDS keeps the player's files
+beside the app: only what a release ships (``PokeUDS.exe``, the launcher, ``_internal``, ``LICENSE.txt``) is
+replaced. ``Bank`` (and the GTS's ``Bank/.gts``), ``Data`` and ``received``, and anything else in the folder, are never
+moved or touched.
+
+An app from before the launcher (0.2.3 and older) starts the new release's ``PokeUDS.exe --apply-update``: that is
+the launcher now, which hands the arguments to the app beside it and waits, so the older app's updater installs the
+launcher layout as it installs any release (docs/gui.md, The launcher).
 
 PokeUDS's releases are pre-releases (``v0.*``) and are offered; a draft never is. The Mac app is offered as a
 download only (its bundle is replaced whole by hand), and an app run from source is never updated.
@@ -32,6 +37,7 @@ from pathlib import Path, PurePosixPath
 from typing import Callable
 
 from .. import __version__
+from .home import APP, INTERNAL, install_folder
 
 REPO = "Gr3nSkyDragon/PokeUDS"
 RELEASES = os.environ.get("POKEUDS_UPDATE_URL") or f"https://api.github.com/repos/{REPO}/releases?per_page=20"
@@ -162,11 +168,11 @@ def check(url: str = RELEASES, current: str = __version__, system: str = sys.pla
 # -- where an update happens ----------------------------------------------------------------------
 
 def install_root(executable: str = sys.executable, frozen: bool | None = None, system: str = sys.platform) -> Path | None:
-    """The packaged Windows app's folder (where PokeUDS.exe is); None from source and on other systems."""
+    """The packaged Windows app's folder (PokeUDS.exe's, above _internal); None from source and on other systems."""
     frozen = bool(getattr(sys, "frozen", False)) if frozen is None else frozen
     if not frozen or system != "win32":
         return None
-    return Path(executable).resolve().parent
+    return install_folder(executable)
 
 
 def work_folder(root: Path) -> Path:
@@ -275,9 +281,16 @@ def _spawn(args: list[str], cwd: Path, out=subprocess.DEVNULL) -> None:
                      creationflags=detached, start_new_session=sys.platform != "win32")
 
 
+def helper_executable(new: Path) -> Path:
+    """The unpacked release's app: ``_internal/PokeUDS-app.exe`` behind its launcher; ``PokeUDS.exe`` in a release
+    from before the launcher."""
+    app = new / INTERNAL / APP
+    return app if app.is_file() else new / EXECUTABLE
+
+
 def start_swap(new: Path, root: Path, version: str) -> None:
     """Start the new app as the helper that replaces the app at ``root`` once this process exits."""
-    args = [str(new / EXECUTABLE), "--apply-update", str(new), str(root), str(os.getpid()), version]
+    args = [str(helper_executable(new)), "--apply-update", str(new), str(root), str(os.getpid()), version]
     with (work_folder(root) / "helper.log").open("ab") as log:
         # Started from Explorer, this app's working folder is root: inherited, Windows would refuse the moves.
         _spawn(args, new.parent, log)
@@ -381,6 +394,7 @@ def _remove(path: Path) -> None:
 
 
 def launch(root: Path) -> None:
+    """Open the app again through its launcher (PokeUDS.exe), as a double-click would."""
     _spawn([str(root / EXECUTABLE)], root)
 
 

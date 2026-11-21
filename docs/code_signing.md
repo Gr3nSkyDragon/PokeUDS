@@ -6,7 +6,8 @@
 Windows may warn about an unknown publisher when the app first starts.
 
 What signing would cover, once granted: an Authenticode signature on the binaries built from this repository's
-source, `PokeUDS.exe` and the PKHeX helper `pokeuds-pkhex.exe`. GitHub Actions builds them from a `v*` tag of this
+source, `PokeUDS.exe` (the launcher), the app behind it (`_internal/PokeUDS-app.exe`) and the PKHeX helper
+`pokeuds-pkhex.exe`. GitHub Actions builds them from a `v*` tag of this
 repository ([release.yml](https://github.com/Gr3nSkyDragon/PokeUDS/blob/main/.github/workflows/release.yml)), and
 only the files that build produced would be signed, nothing built elsewhere. The workflow and the artifact
 configuration

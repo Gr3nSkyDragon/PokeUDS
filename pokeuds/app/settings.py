@@ -1,8 +1,9 @@
 """App settings, kept as JSON in the app's data folder (``data_dir``; ``POKEUDS_DATA`` overrides it).
 
-The packaged Windows app keeps everything in its own folder: ``Data`` beside PokeUDS.exe (hidden) holds the
-settings, sprites, plugins and gift projects; received Pokemon go to ``received`` beside the exe, as ``Bank``
-holds the bank. Nothing is written to the user's profile, and a folder the app cannot write is reported rather
+The packaged Windows app keeps everything in its own folder (``home.install_folder``, the one with PokeUDS.exe
+and ``_internal``): ``Data`` (hidden) holds the settings, sprites, plugins and gift projects; received Pokemon go to
+``received``, as ``Bank`` holds the bank. Nothing is written to the user's profile but the one line that tells a
+moved launcher where the folder is (pokeuds/app/home.py), and a folder the app cannot write is reported rather
 than replaced by one outside it: unzip PokeUDS somewhere writable. The release zip holds none of these folders,
 so an update unzipped over the app leaves them as they are. On its first start ``Data`` takes a copy of what an
 older version kept in ``%APPDATA%\\PokeUDS``. From source or in the Mac app (whose bundle an update replaces),
@@ -42,9 +43,11 @@ def system_data_dir() -> Path:
 
 
 def app_folder() -> Path | None:
-    """The packaged Windows app's own folder (where PokeUDS.exe is); None from source and on other systems."""
+    """The packaged Windows app's own folder (PokeUDS.exe's, above _internal); None from source and on other systems."""
     if getattr(sys, "frozen", False) and sys.platform == "win32" and not os.environ.get("POKEUDS_DATA"):
-        return Path(sys.executable).resolve().parent
+        from .home import install_folder
+
+        return install_folder()
     return None
 
 
@@ -165,6 +168,7 @@ class Settings:
     updates: bool = True                            # ask GitHub for a newer release at start (pokeuds.app.update)
     window: dict = field(default_factory=dict)      # the app window's last place and size (gui/window.py)
     pokeldn_banner: bool = True                     # the "Looking for Switch games?" banner, until closed (gui/promo.py)
+    shortcut_banner: bool = True                    # the Windows app's desktop-shortcut offer, until used or closed (gui/shortcut.py)
     online: bool = False                            # Gen 6/7 trades with a player far away (docs/online.md)
     online_code: str = ""                           # the room code both players type; "" meets anyone without one
     touch_trade: bool = False                       # offer back what the 3DS offers: trade evolutions (offers.Mirror)

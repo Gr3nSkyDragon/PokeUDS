@@ -31,11 +31,12 @@ other chips can join the firmware list later without renaming anything.
 | Debug | only with Settings, Debug tools on: the demo radio, a network scan, capture analysis |
 | Plugins | installed plugins: on and off, update, remove, add from a file or a followed source, the install screen (docs/plugins.md) |
 | Board | ESP32 boards (the S3; alpha: classic ESP32, C3, C6): their firmware and line, install the included esp32-uds-bridge 2.1-uds for the board's chip, Use for trades (`board ...` children; docs/hardware.md) |
-| Settings | `aes_keys.txt`, the Gen 7 Mystery Gift Key (extracted from your Gen 7 Local Distributor dump into `rsa_d_key.txt`), the output folder, the trainer name the 3DS sees, the app language (English, a built-in machine translation tagged as one, or an installed language pack laid over it), Debug tools |
+| Settings | `aes_keys.txt`, the Gen 7 Mystery Gift Key (extracted from your Gen 7 Local Distributor dump into `rsa_d_key.txt`), the output folder, the trainer name the 3DS sees, the app language (English, a built-in machine translation tagged as one, or an installed language pack laid over it), a desktop shortcut (the Windows app), Debug tools |
 
 Above every page, a banner points players looking for the Switch games to
 [pokeldn](https://github.com/Decryptu/pokeldn) ("Looking for Switch games? Check out PokeLDN on GitHub.", the
 button opening it in the browser); its close button hides it for good (`gui/promo.py`, Settings' `pokeldn_banner`).
+In the Windows app a second banner offers a desktop shortcut, also until used or closed ([The launcher](#the-launcher)).
 
 On the Trade page:
 
@@ -93,7 +94,7 @@ at a time, since one radio serves one process.
 The bank is a folder holding one file per Pokemon (`pokeuds/app/bank.py`). What the app knows about each one is a
 `.json` of the same name in the hidden `.info` folder inside, so the folder itself shows only Pokemon (and a Gen 2
 Pokemon's `.mail`, which trades read beside its `.pk2`); a bank from before `.info` is tidied into it when opened.
-The packaged Windows app keeps it in `Bank` beside PokeUDS.exe, which the release zip never contains, so an update
+The packaged Windows app keeps it in `Bank` beside PokeUDS.exe and `_internal` (its home: [The launcher](#the-launcher)), which the release zip never contains, so an update
 unzipped over the app's folder leaves it alone; on its first start it copies the records of an older
 `%APPDATA%\PokeUDS\bank` there (the old folder stays). Its data folder is `Data` beside the exe too (hidden:
 settings, sprites, plugins and gift projects); received Pokemon go to `received` beside the exe, so the packaged
@@ -147,6 +148,36 @@ it is `<data folder>/bank`. Settings' `bank` overrides both.
 Levels of stored Gen 6/7 records (which carry no level byte) come from their experience and the species'
 growth rate (`pokeuds/species.py`, taken from PKHeX.Core).
 
+## The launcher
+
+The Windows app is two programs in one folder, its home: `PokeUDS.exe`, a small launcher (`packaging/launcher`, C,
+built by `scripts/build_exe.py` with MSVC), and `_internal/PokeUDS-app.exe`, the app (PyInstaller, built flat so its
+Python sits beside it in `_internal`). The app cannot start away from the files beside it, and players drag
+`PokeUDS.exe` to the Desktop; before the launcher that broke the app. The launcher finds the app wherever it is:
+
+| | |
+|---|---|
+| `_internal\PokeUDS-app.exe` beside the launcher | starts it: the folder as it was unzipped |
+| the saved home | the app writes its folder to `%LOCALAPPDATA%\PokeUDS\home.txt` (one line, UTF-8) each time it starts (`pokeuds/app/home.py`), so a launcher moved out afterwards opens it |
+| a search | the launcher's own folder, Desktop, Downloads and Documents, two folders deep (an update's `Data\update` copy is skipped): one PokeUDS folder found is used |
+| none, or several | a dialog lists the ones found, or asks for the `_internal` folder that came in the download (the folder holding it counts too); the app then saves it |
+
+With no arguments the launcher starts the app in its folder and exits. With arguments it hands them over as they
+are, with its standard input and output, waits, and returns the app's exit code: `PokeUDS.exe --cli ...` works from a
+command prompt, and an older app's updater (below) gets its helper. Two copies of the folder are two players; the
+saved home is the last one started.
+
+The data stays in the home whatever starts the app: `Bank`, `Data` and `received` sit beside `PokeUDS.exe` and
+`_internal` (`home.install_folder`), never beside wherever the launcher was moved. `home.txt` is the one thing the
+app writes outside its folder.
+
+Above every page, until used or closed, a banner offers a desktop shortcut: "Start PokeUDS from your desktop?",
+**Create desktop shortcut** (`gui/shortcut.py`, Settings' `shortcut_banner`). It makes `PokeUDS.lnk` on the Desktop
+(the one Windows reports, OneDrive's too) pointing at the home's launcher, through PowerShell's `WScript.Shell`. It
+shows only in the packaged Windows app, started from its home with the launcher there, and only while the Desktop
+has no `PokeUDS.lnk`; Settings > Desktop shortcut has the same button after the banner is gone. The Mac app needs no
+launcher: a `.app` bundle moves whole.
+
 ## Updates
 
 `pokeuds/app/update.py`, `gui/updates.py`. At start (Settings > Updates, on by default) the app asks GitHub for
@@ -156,12 +187,12 @@ the pages shows only the download's progress and the restart, and once, how the 
 Updates > **Check now** asks again. The design is pokeldn's: the release's
 `SHA256SUMS` must list `PokeUDS-windows.zip`'s checksum (a mismatch is refused), the zip unpacks into
 `Data/update/new` (every name under `PokeUDS/`, none climbing out), and the new app runs as a helper
-(`PokeUDS.exe --apply-update`) that waits for the old app and its children (the window, PKHeX, a trade) to quit,
-replaces the app and opens it again.
+(`_internal/PokeUDS-app.exe --apply-update`) that waits for the old app and its children (the window, PKHeX, a
+trade) to quit, replaces the app and opens it again through the launcher.
 
 | | |
 |---|---|
-| what is replaced | only what the release ships: `PokeUDS.exe`, `_internal`, `LICENSE.txt` |
+| what is replaced | only what the release ships: `PokeUDS.exe` (the launcher), `_internal` (the app), `LICENSE.txt` |
 | never touched | `Bank` (its `.gts` GTS listings and `.info` too), `Data`, `received`, and anything else in the folder |
 | a failure | the old files go back; the next start says what happened |
 | pre-releases | offered (PokeUDS's releases are `v0.*`); a draft never is |
@@ -170,6 +201,11 @@ replaces the app and opens it again.
 
 The checksum shows the download is whole; it does not prove who made the release. An app before 0.1.4 has no
 updater: from it, the next version is downloaded once by hand.
+
+An app from before the launcher updates to it on its own: the release's top level is still `PokeUDS.exe` and
+`_internal`, which its updater replaces as always, and it starts the new `PokeUDS.exe --apply-update` as the helper,
+which is the launcher now and hands the arguments to the new app beside it. A folder already broken by moving the
+old `PokeUDS.exe` out of it cannot start, so cannot update: put the exe back, or unzip the new version over it.
 
 ## Pokemon sprites
 

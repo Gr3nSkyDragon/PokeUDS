@@ -31,14 +31,17 @@ pip install -r requirements-gui.txt pyinstaller
 python scripts/build_exe.py
 ```
 
-`flet pack` (PyInstaller) builds `dist/PokeUDS/` (the exe, Python, the game profiles, the strings, and Flet's window)
-and zips it to `dist/PokeUDS-windows.zip`. Flet would unpack its window into `%USERPROFILE%\.flet\client` on first
+`flet pack` (PyInstaller) builds the app (Python, the game profiles, the strings, and Flet's window) flat into
+`dist/PokeUDS/_internal`, with the app as `_internal/PokeUDS-app.exe`; the build compiles the launcher,
+`dist/PokeUDS/PokeUDS.exe`, from `packaging/launcher` (it needs MSVC: Visual Studio or its Build Tools with "Desktop
+development with C++"; GitHub's Windows runners have it), and zips the folder to `dist/PokeUDS-windows.zip`. Players
+click the launcher, which finds the app even when moved out of the folder ([gui.md](gui.md#the-launcher)). Flet would unpack its window into `%USERPROFILE%\.flet\client` on first
 start; the build script unpacks it into `_internal/flet_view` instead, and the exe points Flet there
 (`FLET_VIEW_PATH`), so the app is self-contained and writes nothing outside its folder: settings in `Data`, the
 bank in `Bank`, received Pokemon in `received`. Unzip it somewhere writable; a packaged app in a folder it cannot
 write reports that instead of falling back to the user profile. The
-window is the exe's own: no console opens, and a trade runs as a second copy of the exe (`PokeUDS.exe --cli trade
-...`, `packaging/pokeuds_app.py`) started without a window, as `python -m pokeuds` is from source. The exe's
+window is the exe's own: no console opens, and a trade runs as a second copy of the app (`PokeUDS-app.exe --cli
+trade ...`, `packaging/pokeuds_app.py`) started without a window, as `python -m pokeuds` is from source. The exe's
 command-line mode is for the app; from a terminal use `python -m pokeuds`.
 
 The icon is `gui/assets/icon.ico` (or `--icon some.ico`), made from the artwork in `packaging/icon.jpg` by `python
@@ -69,7 +72,8 @@ that is not there and fails if that crashes instead of reporting the missing por
 
 PokeUDS is not code-signed yet: SignPath Foundation did not accept its application, and it is working towards it
 ([code_signing.md](code_signing.md)). The secret below is not set, so every release ships unsigned. The workflow is
-ready for when signing is granted: the Windows app's own binaries, `PokeUDS.exe` and the PKHeX helper, would be
+ready for when signing is granted: the Windows app's own binaries, `PokeUDS.exe` (the launcher),
+`_internal/PokeUDS-app.exe` and the PKHeX helper, would be
 signed through SignPath. With the secret set, the release workflow builds `dist/PokeUDS` unzipped, uploads it, submits it
 to SignPath (artifact configuration `pokeuds-windows`, `.github/signpath/artifact-configuration.xml`), waits for
 the request to be approved, puts the signed folder in its place and only then zips it
@@ -135,7 +139,8 @@ A language pack for the same language lays over the built-in one (docs/plugins.m
    changed, `python scripts/translate_strings.py` has run (`--check` passes).
 2. `docs/releases/<tag>.md` says what is new and what is known not to work.
 3. Build the app locally and start `dist/PokeUDS/PokeUDS.exe`: one window, no flashes, the Settings page shows the
-   version; a demo trade from the Trade page (Debug's demo radio) completes.
+   version; a demo trade from the Trade page (Debug's demo radio) completes. Copy `PokeUDS.exe` to the Desktop and
+   start it there: the same app opens.
 4. Commit, then tag, and push `main` with the tag (`git tag v0.1.0`, `git push --atomic origin main v0.1.0`). Push
    `main` too: GitHub refuses to make a release from a commit whose workflow files differ from `main`'s.
 5. When the workflow is done, check the draft: each zip unzips and starts on a computer without Python (the Mac app

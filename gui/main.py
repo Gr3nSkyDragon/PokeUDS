@@ -14,6 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import flet as ft  # noqa: E402
 
 from gui import promo  # noqa: E402
+from gui import shortcut  # noqa: E402
 from gui import theme as t  # noqa: E402
 from gui import window  # noqa: E402
 from gui.translate import translate  # noqa: E402
@@ -94,9 +95,9 @@ class Shell:
         self.content.content = self.views[self.current].control()
         rails = ft.Container(ft.Column([self.rail, self.foot], spacing=0), bgcolor=t.PANEL,
                              padding=ft.Padding(0, 0, 0, 12))
-        # The PokeLDN banner (gui/promo.py), until closed, then the update bar (gui/updates.py), hidden until there is
-        # something to say, sit above every page.
-        body = ft.Column([promo.banner(self.app),
+        # The PokeLDN banner (gui/promo.py) and the desktop-shortcut offer (gui/shortcut.py), each until closed, then
+        # the update bar (gui/updates.py), hidden until there is something to say, sit above every page.
+        body = ft.Column([promo.banner(self.app), shortcut.banner(self.app),
                           ft.Container(self.updates.banner, padding=ft.Padding(0, t.GAP, t.GAP, 0)), self.content],
                          spacing=0, expand=True)
         return ft.Row([rails, body], spacing=t.GAP, expand=True,
@@ -173,6 +174,7 @@ def _report(message: str) -> None:
 
 
 def run() -> None:
+    from pokeuds.app import home
     from pokeuds.app.settings import AppFolderNotWritable, data_dir
 
     try:
@@ -180,6 +182,8 @@ def run() -> None:
     except AppFolderNotWritable as exc:
         _report(str(exc))
         return
+    if home.in_home():
+        home.remember(home.install_folder())    # where a launcher moved out of the folder finds it (docs/gui.md)
     if port := os.environ.get("POKEUDS_GUI_WEB"):
         # POKEUDS_GUI_HOST=0.0.0.0 also serves other machines (a preview pane, a phone on the LAN).
         ft.run(main, view=ft.AppView.WEB_BROWSER, no_cdn=True, port=int(port), host=os.environ.get("POKEUDS_GUI_HOST") or None)

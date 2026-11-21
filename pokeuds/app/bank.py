@@ -85,7 +85,9 @@ def default_folder() -> Path:
     replaces), with ``POKEUDS_DATA`` set, or when the exe's folder cannot be written (Program Files), it is
     ``<data>/bank`` (on a Mac, ``~/Library/Application Support/PokeUDS/bank``)."""
     if getattr(sys, "frozen", False) and sys.platform in PORTABLE_ON and not os.environ.get("POKEUDS_DATA"):
-        if (folder := portable_folder(Path(sys.executable).resolve().parent)) is not None:
+        from .home import install_folder
+
+        if (folder := portable_folder(install_folder())) is not None:
             return folder
     return data_dir() / "bank"
 

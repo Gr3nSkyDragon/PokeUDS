@@ -1,0 +1,38 @@
+// The launcher's icon, version and manifest (packaging/launcher/launcher.c). version.h is written by
+// scripts/build_exe.py for each build.
+#include <windows.h>
+#include "version.h"
+
+#ifdef POKEUDS_ICON
+1 ICON POKEUDS_ICON
+#endif
+1 RT_MANIFEST "launcher.manifest"
+
+VS_VERSION_INFO VERSIONINFO
+FILEVERSION POKEUDS_VERSION_COMMAS
+PRODUCTVERSION POKEUDS_VERSION_COMMAS
+FILEFLAGSMASK VS_FFI_FILEFLAGSMASK
+FILEFLAGS 0
+FILEOS VOS_NT_WINDOWS32
+FILETYPE VFT_APP
+FILESUBTYPE 0
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904B0"
+        BEGIN
+            VALUE "CompanyName", "Gr3nSkyDragon and contributors"
+            VALUE "FileDescription", "PokeUDS"
+            VALUE "FileVersion", POKEUDS_VERSION
+            VALUE "InternalName", "PokeUDS"
+            VALUE "LegalCopyright", "Gr3nSkyDragon and contributors"
+            VALUE "OriginalFilename", "PokeUDS.exe"
+            VALUE "ProductName", "PokeUDS"
+            VALUE "ProductVersion", POKEUDS_VERSION
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END
