@@ -68,3 +68,215 @@ it = "AO"
 ko = "어버이"
 zh-Hans = "初训家"
 zh-Hant = "初訓家"
+
+# Game titles, as each game is officially titled in the language (X and Y are the same everywhere).
+
+["Omega Ruby"]
+ja = "オメガルビー"
+fr = "Rubis Oméga"
+de = "Omega Rubin"
+it = "Rubino Omega"
+es = "Rubí Omega"
+ko = "오메가루비"
+zh-Hans = "终极红宝石"
+zh-Hant = "終極紅寶石"
+
+["Alpha Sapphire"]
+ja = "アルファサファイア"
+fr = "Saphir Alpha"
+de = "Alpha Saphir"
+it = "Zaffiro Alpha"
+es = "Zafiro Alfa"
+ko = "알파사파이어"
+zh-Hans = "始源蓝宝石"
+zh-Hant = "始源藍寶石"
+
+["Ultra Sun"]
+ja = "ウルトラサン"
+fr = "Ultra-Soleil"
+de = "Ultrasonne"
+it = "Ultrasole"
+es = "Ultrasol"
+ko = "울트라썬"
+zh-Hans = "究极之日"
+zh-Hant = "究極之日"
+
+["Ultra Moon"]
+ja = "ウルトラムーン"
+fr = "Ultra-Lune"
+de = "Ultramond"
+it = "Ultraluna"
+es = "Ultraluna"
+ko = "울트라문"
+zh-Hans = "究极之月"
+zh-Hant = "究極之月"
+
+["Black 2"]
+ja = "ブラック2"
+fr = "Noire 2"
+de = "Schwarz 2"
+it = "Nero 2"
+es = "Negro 2"
+ko = "블랙2"
+zh-Hans = "黑2"
+zh-Hant = "黑2"
+
+["White 2"]
+ja = "ホワイト2"
+fr = "Blanche 2"
+de = "Weiß 2"
+it = "Bianco 2"
+es = "Blanco 2"
+ko = "화이트2"
+zh-Hans = "白2"
+zh-Hant = "白2"
+
+["HeartGold"]
+ja = "ハートゴールド"
+fr = "Or HeartGold"
+de = "Goldene Edition HeartGold"
+it = "Oro HeartGold"
+es = "Oro HeartGold"
+ko = "하트골드"
+zh-Hans = "心金"
+zh-Hant = "心金"
+
+["SoulSilver"]
+ja = "ソウルシルバー"
+fr = "Argent SoulSilver"
+de = "Silberne Edition SoulSilver"
+it = "Argento SoulSilver"
+es = "Plata SoulSilver"
+ko = "소울실버"
+zh-Hans = "魂银"
+zh-Hant = "魂銀"
+
+["Diamond"]
+ja = "ダイヤモンド"
+fr = "Diamant"
+de = "Diamant"
+it = "Diamante"
+es = "Diamante"
+ko = "다이아몬드"
+zh-Hans = "钻石"
+zh-Hant = "鑽石"
+
+["Pearl"]
+ja = "パール"
+fr = "Perle"
+de = "Perl"
+it = "Perla"
+es = "Perla"
+ko = "펄"
+zh-Hans = "珍珠"
+zh-Hant = "珍珠"
+
+["Platinum"]
+ja = "プラチナ"
+fr = "Platine"
+de = "Platin"
+it = "Platino"
+es = "Platino"
+ko = "플라티나"
+zh-Hans = "白金"
+zh-Hant = "白金"
+
+["Black"]
+ja = "ブラック"
+fr = "Noire"
+de = "Schwarz"
+it = "Nero"
+es = "Negro"
+ko = "블랙"
+zh-Hans = "黑"
+zh-Hant = "黑"
+
+["White"]
+ja = "ホワイト"
+fr = "Blanche"
+de = "Weiß"
+it = "Bianco"
+es = "Blanco"
+ko = "화이트"
+zh-Hans = "白"
+zh-Hant = "白"
+
+["Red"]
+ja = "赤"
+fr = "Rouge"
+de = "Rot"
+it = "Rossa"
+es = "Rojo"
+ko = "레드"
+zh-Hans = "红"
+zh-Hant = "紅"
+
+["Blue"]
+ja = "青"
+fr = "Bleue"
+de = "Blau"
+it = "Blu"
+es = "Azul"
+ko = "블루"
+zh-Hans = "蓝"
+zh-Hant = "藍"
+
+["Yellow"]
+ja = "ピカチュウ"
+fr = "Jaune"
+de = "Gelb"
+it = "Gialla"
+es = "Amarillo"
+ko = "옐로"
+zh-Hans = "皮卡丘"
+zh-Hant = "皮卡丘"
+
+["Gold"]
+ja = "金"
+fr = "Or"
+de = "Gold"
+it = "Oro"
+es = "Oro"
+ko = "골드"
+zh-Hans = "金"
+zh-Hant = "金"
+
+["Silver"]
+ja = "銀"
+fr = "Argent"
+de = "Silber"
+it = "Argento"
+es = "Plata"
+ko = "실버"
+zh-Hans = "银"
+zh-Hant = "銀"
+
+["Crystal"]
+ja = "クリスタル"
+fr = "Cristal"
+de = "Kristall"
+it = "Cristallo"
+es = "Cristal"
+ko = "크리스탈"
+zh-Hans = "水晶"
+zh-Hant = "水晶"
+
+["Sun"]
+ja = "サン"
+fr = "Soleil"
+de = "Sonne"
+it = "Sole"
+es = "Sol"
+ko = "썬"
+zh-Hans = "太阳"
+zh-Hant = "太陽"
+
+["Moon"]
+ja = "ムーン"
+fr = "Lune"
+de = "Mond"
+it = "Luna"
+es = "Luna"
+ko = "문"
+zh-Hans = "月亮"
+zh-Hant = "月亮"

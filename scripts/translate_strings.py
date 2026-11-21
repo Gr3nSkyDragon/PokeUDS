@@ -45,7 +45,9 @@ You get a JSON list of English UI strings, each with an id. Return every one tra
 Rules:
 - Keep each {{value0}}-style field exactly as written (same names, same braces); move it where the grammar needs it.
 - Keep untranslated: PokeUDS, PKHeX, Azahar, mGBA, GitHub, ESP32 and chip names (S2, S3, C3, C6), 3DS, DS, GTS, USB, \
-COM, file names and extensions (.wc6, .pk7...), commands, and game titles as they are written in English.
+COM, file names and extensions (.wc6, .pk7...), commands, and the abbreviations ORAS and USUM.
+- Write game titles as the games are officially titled in {language} (the glossary has them): Sun / Moon, Red / Blue / \
+Yellow, HeartGold... are names the players know in their own language.
 - Use the official term for every Pokemon word in the glossary below; for other Pokemon words, the term the games use \
 in {language}.
 - Match the English's length and tone: short, plain, direct. Buttons stay short. Keep the punctuation style (a \
