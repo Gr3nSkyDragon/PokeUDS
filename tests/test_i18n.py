@@ -71,6 +71,8 @@ def test_the_pages_are_translated(monkeypatch, tmp_path):
     flet = pytest.importorskip("flet")
     import dataclasses
 
+    # Its own data folder: the pages read and write the default bank, which is otherwise the player's own.
+    monkeypatch.setenv("POKEUDS_DATA", str(tmp_path / "data"))
     monkeypatch.setenv("POKEUDS_PLUGINS", str(PSEUDO))
     plugins.reload()
     i18n.select("pseudo")

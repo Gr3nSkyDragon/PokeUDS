@@ -104,8 +104,9 @@ def test_managed_run_stops_when_asked(data, offers, tmp_path):
     assert codes == [130] and events[-1] == {"event": "stopped", "reason": "user"}
 
 
-def test_gui_pages_build(data, offers):
+def test_gui_pages_build(data, offers, monkeypatch):
     pytest.importorskip("flet")
+    import gui.views.bank as bank_page
     from gui.app import App
     from gui.views.debug import DebugView
     from gui.views.bank import BankView
@@ -113,6 +114,9 @@ def test_gui_pages_build(data, offers):
     from gui.views.settings import SettingsView, name_problem
     from gui.views.trade import TradeView
 
+    # No PKHeX: the received Pokemon's check would run in a thread that redraws the page after the test, when
+    # POKEUDS_DATA is the player's own again, and bank them there (test_the_bank_checks_received_pokemon_by_itself).
+    monkeypatch.setattr(bank_page, "_pkhex_ready", lambda: False)
     pk1, pk2 = offers
     settings = Settings(radio="demo", port="red", debug=True, output=str(pk1.parent), offers={"rby": str(pk1)})
     app = App(None, settings)
