@@ -111,6 +111,24 @@ def test_species_field_survives_the_rebuild_its_pick_causes(tmp_path, monkeypatc
     moves = [box(trade.control(), f"Move {i}") for i in (1, 2, 3, 4)]
     assert all(m is not None and m.options[0].text == "None" for m in moves)
 
+    # A pick draws what it changes in place: the builder is not redrawn (its boxes' thousands of entries made each
+    # pick lag, 2026-11-23), and a box that only echoes its own entry's name does not redraw it when left either.
+    redraws = []
+    monkeypatch.setattr(trade.builder, "refresh", lambda: redraws.append(1))
+    field = box(trade.control(), "Pokemon")
+    moves = [box(trade.root, f"Move {i}") for i in (1, 2, 3, 4)]
+    moves[0].value = "84"
+    trade.builder.wish.moves = [84]
+    field.value = "25"
+    field.on_select(SimpleNamespace(control=field, data="25"))
+    assert trade.builder.wish.species == 25 and trade.builder.wish.moves == [] and moves[0].value == "0"
+    field.on_text_change(SimpleNamespace(control=field, data="Pikachu"))
+    field.on_blur(SimpleNamespace(control=field))
+    assert redraws == []
+    field.on_text_change(SimpleNamespace(control=field, data="pika"))     # a part typed: the box shows the name again
+    field.on_blur(SimpleNamespace(control=field))
+    assert redraws == [1] and trade.builder.wish.species == 25
+
 
 @pytest.mark.skipif(pkhex.helper_path() is None, reason="the PKHeX helper is not built")
 def test_build_and_keep(tmp_path):
@@ -420,6 +438,25 @@ def test_a_pick_box_takes_what_is_typed():
     assert pick("charizard", choices) == "6" and pick("charm", choices) == "4"      # exact, then the first that starts
     assert pick("mrmime", choices) == "122" and pick("Mr. M", choices) == "122"   # spaces and dots ignored
     assert pick("izard", choices) == "6" and pick("", choices) is None and pick("zzz", choices) is None
+
+
+def test_a_long_pick_box_holds_its_own_entry_until_focused():
+    """A list of LAZY_FROM entries or more is in the window only while its box is focused (gui/views/pickbox.py):
+    the builder's seven long lists held about 340 MB in the window and slowed every click."""
+    pytest.importorskip("flet")
+    from gui.views import pickbox
+
+    options = [(i, f"Move {i}") for i in range(pickbox.LAZY_FROM + 50)]
+    wrapper = pickbox.pick_box("Move 1", 7, options, lambda e: None)
+    box = pickbox.dropdown(wrapper)                         # in a wrapper that fills it when the pointer comes over
+    assert wrapper.on_hover is not None and box is not wrapper
+    assert [o.key for o in box.options] == ["7"] and len(box.every) == len(options) and box.on_focus is not None
+    pickbox.fill(box)                                       # not on a page: nothing to fill yet
+    assert len(box.options) == 1
+    pickbox.set_value(wrapper, "0")                         # the app changes it: still its own entry alone
+    assert box.value == "0" and [o.key for o in box.options] == ["0"]
+    short = pickbox.pick_box("Gender", "-", [("-", "Any"), ("m", "Male")], lambda e: None)
+    assert pickbox.dropdown(short) is short and len(short.options) == 2 and not hasattr(short, "every")
 
 
 def test_the_builder_follows_the_title_pokeuds_stands_in_for(tmp_path, monkeypatch):

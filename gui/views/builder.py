@@ -22,7 +22,7 @@ from pokeuds.app.builder import ABILITIES, GAMES, GENDERS, HIDDEN_POWER, STATS, 
 from .. import theme as t
 from ..translate import translate
 from .common import View
-from .pickbox import pick, pick_box  # noqa: F401  (pick: the builder's typed-text rule)
+from .pickbox import pick, pick_box, quiet, set_value  # noqa: F401  (pick: the builder's typed-text rule)
 from .sprite import sprite
 
 ANY = "-"
@@ -66,6 +66,10 @@ class BuilderPanel(View):
         self.pasted: list[Pasted] | None = None
         self.form_name = ""                 # the form a pasted set chose, shown beside the species
         self.stats_open = False             # the IVs and EVs section (opened by a paste that brings them)
+        # Drawn in place when only they change (_show_species): a redraw of the whole builder re-sends every pick
+        # box's thousands of entries, which made each pick lag (2026-11-23).
+        self.preview = ft.Container()
+        self.move_boxes: list[ft.Dropdown] = []
 
     @property
     def trainer(self) -> Trainer:
@@ -162,6 +166,9 @@ class BuilderPanel(View):
                             padding=ft.Padding(12, 10, 12, 10))
 
     def _paste_changed(self, e) -> None:
+        # quiet() in the builder's handlers: each one redraws or updates what it changes itself, so Flet's update of
+        # the whole page after it (a diff of every pick box's entries, 50 to 190 ms) is skipped (gui/views/pickbox.py).
+        quiet()
         had = bool(self.paste_text.strip())
         self.paste_text = e.control.value or ""
         if had != bool(self.paste_text.strip()):
@@ -236,8 +243,8 @@ class BuilderPanel(View):
                              self._language, disabled=busy)],
                    spacing=12, vertical_alignment=MIDDLE),
         ], spacing=12)
-        preview = sprite(self.app, w.species, shiny=w.shiny and gen >= 2, size=112, on_ready=self.refresh)
-        rows: list[ft.Control] = [ft.Row([names, ft.Container(expand=True), preview], spacing=24,
+        self.preview = ft.Container(self._sprite())
+        rows: list[ft.Control] = [ft.Row([names, ft.Container(expand=True), self.preview], spacing=24,
                                          vertical_alignment=ft.CrossAxisAlignment.START)]
         wishes: list[ft.Control] = [self._dd("Gender", w.gender or ANY, [(k or ANY, v) for k, v in GENDERS.items()],
                                              self._gender, disabled=busy)]
@@ -261,6 +268,7 @@ class BuilderPanel(View):
         moves = [(NONE, "None")] + list(lists["moves"])
         boxes = [self._dd(f"Move {i + 1}", str(m), moves, lambda e, i=i: self._move(i, e), disabled=busy)
                  for i, m in enumerate(current)]
+        self.move_boxes = boxes
         rows.append(t.label("Moves: leave them empty for the moves it would know at that level."))
         rows += [ft.Row(boxes[:2], spacing=12, vertical_alignment=MIDDLE),           # Move 1, Move 2
                  ft.Row(boxes[2:], spacing=12, vertical_alignment=MIDDLE)]           # Move 3, Move 4
@@ -492,10 +500,31 @@ class BuilderPanel(View):
 
     # -- inputs ---------------------------------------------------------------------------------
 
-    def _changed(self) -> None:
+    def _changed(self, in_place: Callable[[], None] | None = None) -> None:
+        """A wish changed. ``in_place`` draws what it changed without redrawing the builder (its pick boxes hold
+        thousands of entries); the builder is redrawn when a message or a closest build goes away with it."""
+        redraw = in_place is None or bool(self.message) or self.closest is not None
         self.message = ""
         self.closest = None                 # a field changed: the closest build was for the old wishes
-        self.refresh()
+        if redraw:
+            self.refresh()
+        else:
+            in_place()
+
+    def _sprite(self) -> ft.Control:
+        w = self.wish
+        return sprite(self.app, w.species, shiny=w.shiny and builder.generation(w.game) >= 2, size=112)
+
+    def _show_species(self) -> None:
+        """The species changed: its sprite, and the move boxes emptied (the moves were the old species')."""
+        self.preview.content = translate(self._sprite())
+        for box in self.move_boxes:
+            set_value(box, NONE)
+        for control in (self.preview, *self.move_boxes):
+            try:
+                control.update()
+            except RuntimeError:                 # not on the page (the builder is closed)
+                pass
 
     def _apply_game(self, game: str) -> None:
         self.wish.game = game
@@ -531,64 +560,83 @@ class BuilderPanel(View):
         self.wish.moves = [m for m in moves if m]
 
     def _species(self, e) -> None:
+        quiet()
         if e.control.value and e.control.value.isdigit():
+            shown_form = bool(self.wish.form and self.form_name)     # its line goes away: redraw
             self.wish.species = int(e.control.value)
             self.wish.moves = []
             self.wish.form, self.form_name = 0, ""
-            self._changed()
+            self._changed(None if shown_form else self._show_species)
 
     def _level(self, e) -> None:
+        quiet()
         try:
             self.wish.level = max(1, min(100, int(e.control.value)))
         except (TypeError, ValueError):
             pass
-        self._changed()
+        self._changed(lambda: None)         # nothing else shows the level
 
     def _language(self, e) -> None:
+        quiet()
         self.wish.language = e.control.value or "en"
         self.language_chosen = True         # the player's own choice: the console's language no longer overrides it
-        self._changed()
+        self._changed(lambda: None)         # nothing else shows the language
 
     def _nickname(self, e) -> None:
+        quiet()
         self.wish.nickname = (e.control.value or "").strip()
 
     def _shiny(self, e) -> None:
+        quiet()
         self.wish.shiny = bool(e.control.value)
-        self.refresh()                       # the preview turns shiny
+        self.preview.content = translate(self._sprite())     # the preview turns shiny
+        try:
+            self.preview.update()
+        except RuntimeError:
+            pass
 
     def _gender(self, e) -> None:
+        quiet()
         self.wish.gender = "" if e.control.value == ANY else e.control.value
 
     def _nature(self, e) -> None:
+        quiet()
         self.wish.nature = None if e.control.value == ANY else int(e.control.value)
 
     def _ability(self, e) -> None:
+        quiet()
         self.wish.ability = "" if e.control.value == ANY else e.control.value
 
     def _item(self, e) -> None:
+        quiet()
         value = e.control.value
         self.wish.held_item = (int(value) or None) if value and value.isdigit() else None
 
     def _ball(self, e) -> None:
+        quiet()
         self.wish.ball = None if e.control.value == ANY else int(e.control.value)
 
     def _move(self, slot: int, e) -> None:
+        quiet()
         moves = (self.wish.moves + [0, 0, 0, 0])[:4]
         value = e.control.value
         moves[slot] = int(value) if value and value.isdigit() else 0
         self.wish.moves = [m for m in moves if m]
 
     def _ot(self, e) -> None:
+        quiet()
         tr = self.trainer
         tr.ot = (e.control.value or "").strip() or tr.ot
         self._save_trainer(tr)
 
     def _ot_gender(self, e) -> None:
+        quiet()
         tr = self.trainer
         tr.female = bool(e.control.value)
         self._save_trainer(tr)
 
     def _id(self, e, which: str) -> None:
+        quiet()
         tr = self.trainer
         try:
             value = int(e.control.value)
@@ -602,6 +650,7 @@ class BuilderPanel(View):
         self._save_trainer(tr)
 
     def _g7_id(self, id_event, sid_event) -> None:
+        quiet()
         tr = self.trainer
         try:
             shown = int(id_event.control.value) if id_event else int(tr.shown_id(7))

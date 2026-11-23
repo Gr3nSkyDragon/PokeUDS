@@ -8,7 +8,7 @@ pip install -r requirements-gui.txt
 python -m gui
 ```
 
-A desktop app (Flet 1.1.2, the toolkit pokeldn uses) over the same code as the command line.
+A desktop app (Flet 1.0.5) over the same code as the command line.
 
 ![The Trade page after a demo trade](assets/gui_trade.png)
 
@@ -235,6 +235,20 @@ A sprite that arrives is drawn into its own placeholder: the page is not rebuilt
 cards) neither flickers nor scrolls back to the top while its sprites come in, and Mystery Gift shows a bar,
 "Downloading sprites: 40 of 100", the first time they download (`gui/views/sprite.py`).
 Code: `pokeuds/app/sprites.py` (the cache), `gui/views/sprite.py` (the preview).
+
+## Performance
+
+The builder's pick boxes hold thousands of entries (four move lists, the items, the species). Three rules keep it
+quick, as pokeldn's do (its docs/gui.md, Performance), measured in 2026-11:
+
+| cost | rule |
+|---|---|
+| Flet ends an event handler that calls no `update()` with an update of the whole page, a diff of every entry in Python: 50 to 190 ms each with the builder open. Each box reports its text when it reaches the window, so opening the builder queued about a second of them before a click was handled | a handler that updates what it changes itself, or changes nothing on screen, calls `quiet()` (`gui/views/pickbox.py`): every pick box event and the builder's inputs |
+| the window keeps every entry of every box built and rebuilds a box's whole list whenever the box changes (its focus, its value, a key): the builder's seven long boxes held about 340 MB in the window (476 MB open, 140 MB closed) and slowed each click | a pick box of `LAZY_FROM` (100) entries or more holds its own entry alone; it gets its whole list when the pointer first comes over it (or Tab focuses it) and keeps it: 148 MB with the builder opened, and a species pick costs the window about 28 ms instead of 65. A list that arrives on the click itself closes the menu and drops the keys typed after it, so the pointer, which always comes first, fetches it. It never gives the list back: a menu opened by the arrow leaves the box unfocused and the pointer off it, and giving the list back then closed the menu |
+| a pick redrew the whole builder, sending every list again, and a quick second click landed on boxes about to be replaced | a pick draws what it changes in place (the species: its sprite and the emptied move boxes); the builder redraws only when a message or a closest build goes away |
+
+Leaving a pick box with Tab after typing part of a name picks the first match, but its filtered list stays open
+until the next click: Flet has no way to close it, and the redraw that used to close it was the lag.
 
 ## The demo radio
 

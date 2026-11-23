@@ -36,7 +36,8 @@ if errorlevel 1 (
 if errorlevel 1 goto :failed
 
 echo.
-echo Built dist\PokeUDS\PokeUDS.exe and dist\PokeUDS-windows.zip
+echo Built dist\PokeUDS\PokeUDS.exe
+echo %* | "%SystemRoot%\System32\find.exe" /i "--no-zip" >nul || echo and dist\PokeUDS-windows.zip
 set "CODE=0"
 goto :end
 
